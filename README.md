@@ -1,1 +1,2 @@
-# surf_renderer
+# DiffRend: An Experimental Differentiable Renderer
+
