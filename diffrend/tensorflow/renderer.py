@@ -14,6 +14,7 @@ def tensor_cross_prod(u, M):
 
     return tf.stack((s0, s1, s2), axis=2)
 
+
 def point_along_ray(eye, ray_dir, ray_dist):
     print(ray_dist)
     return eye[tf.newaxis, tf.newaxis, :] + ray_dist[..., tf.newaxis] * ray_dir.T[np.newaxis, ...]
@@ -127,7 +128,7 @@ def ray_triangle_intersection(eye, ray_dir, triangles):
     :return:
     """
 
-    planes = {'pos': triangles['faces'][:, 0, :], 'normal': triangles['normal']}
+    planes = {'pos': triangles['face'][:, 0, :], 'normal': triangles['normal']}
     print(planes)
     result = ray_plane_intersection(eye, ray_dir, planes)
     intersection_pts = result['intersect']  # M x N x 4 matrix where M is the number of objects and N pixels.
@@ -137,17 +138,17 @@ def ray_triangle_intersection(eye, ray_dir, triangles):
     num_pixels = intersection_pts.shape[1]
     # check if intersection point is inside or outside the triangle
     # M x N x 3
-    v_p0 = (intersection_pts - triangles['faces'][:, 0, :][:, tf.newaxis, :])[..., :3]
-    v_p1 = (intersection_pts - triangles['faces'][:, 1, :][:, tf.newaxis, :])[..., :3]
-    v_p2 = (intersection_pts - triangles['faces'][:, 2, :][:, tf.newaxis, :])[..., :3]
+    v_p0 = (intersection_pts - triangles['face'][:, 0, :][:, tf.newaxis, :])[..., :3]
+    v_p1 = (intersection_pts - triangles['face'][:, 1, :][:, tf.newaxis, :])[..., :3]
+    v_p2 = (intersection_pts - triangles['face'][:, 2, :][:, tf.newaxis, :])[..., :3]
 
     print(v_p0)
-    print('sub', tf.constant(triangles['faces'][:, 1, :3] - triangles['faces'][:, 0, :3])[:, tf.newaxis, :])
+    print('sub', tf.constant(triangles['face'][:, 1, :3] - triangles['face'][:, 0, :3])[:, tf.newaxis, :])
     # Tensorflow's cross product requires both inputs to be of the same size unlike numpy
     # M x 3
-    v01 = triangles['faces'][:, 1, :3] - triangles['faces'][:, 0, :3]
-    v12 = triangles['faces'][:, 2, :3] - triangles['faces'][:, 1, :3]
-    v20 = triangles['faces'][:, 0, :3] - triangles['faces'][:, 2, :3]
+    v01 = triangles['face'][:, 1, :3] - triangles['face'][:, 0, :3]
+    v12 = triangles['face'][:, 2, :3] - triangles['face'][:, 1, :3]
+    v20 = triangles['face'][:, 0, :3] - triangles['face'][:, 2, :3]
 
     print(v01.shape)
     # cond_v01 = []
@@ -443,7 +444,7 @@ def optimize_scene(out_dir, max_iter=1000, learning_rate=1e-3, print_interval=10
                                   'radius': np.array([3.0, 2.0]),
                                   'material_idx': np.array([3, 3])
                                   },
-                       'triangle': {'faces': np.array([[[-20.0, -18.0, -10.0, 1.0],
+                       'triangle': {'face': np.array([[[-20.0, -18.0, -10.0, 1.0],
                                                         [10.0, -18.0, -10.0, 1.],
                                                         [-2.5, 18.0, -10.0, 1.]],
                                                        [[15.0, -18.0, -10.0, 1.0],
@@ -487,7 +488,6 @@ def optimize_scene(out_dir, max_iter=1000, learning_rate=1e-3, print_interval=10
             res = render(scene_test)
             loss = tf.reduce_mean((res['image'] - im_target) ** 2)
             opt = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(loss)
-
 
         with tf.Session(graph=graph) as sess:
             tf.global_variables_initializer().run()
@@ -544,7 +544,7 @@ def optimize_scene(out_dir, max_iter=1000, learning_rate=1e-3, print_interval=10
 
 
 if __name__ == '__main__':
-    mat_final, mat_target, loss_per_iter = optimize_scene(out_dir='./opt_res_2', max_iter=2000,
+    mat_final, mat_target, loss_per_iter = optimize_scene(out_dir='./opt_res_3', max_iter=2000,
                                                           imsave_interval=20, print_interval=20,
                                                           b_optimize=True)
     print('final', mat_final)

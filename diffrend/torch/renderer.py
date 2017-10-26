@@ -1,4 +1,8 @@
 import numpy as np
+import torch
+from torch.autograd import Variable
+import torch.nn as nn
+import torch.nn.functional as F
 
 
 def point_along_ray(eye, ray_dir, ray_dist):
@@ -62,7 +66,7 @@ def ray_plane_intersection(eye, ray_dir, plane):
 
     denom = np.dot(normal, ray_dir)
 
-    # TODO: check for denom = 0
+    # check for denom = 0
     intersection_mask = np.abs(denom) > 0
 
     ray_dist = (dist[:, np.newaxis] - np.dot(normal, eye)[:, np.newaxis]) / denom
@@ -103,20 +107,20 @@ def ray_triangle_intersection(eye, ray_dir, triangles):
     :return:
     """
 
-    planes = {'pos': triangles['faces'][:, 0, :], 'normal': triangles['normal']}
+    planes = {'pos': triangles['face'][:, 0, :], 'normal': triangles['normal']}
     result = ray_plane_intersection(eye, ray_dir, planes)
     intersection_pts = result['intersect']  # M x N x 4 matrix where M is the number of objects and N pixels.
     normals = result['normal'][..., :3]  # M x N x 4
     ray_dist = result['ray_distance']
 
     # check if intersection point is inside or outside the triangle
-    v_p0 = (intersection_pts - triangles['faces'][:, 0, :][:, np.newaxis, :])[..., :3]  # M x N x 3
-    v_p1 = (intersection_pts - triangles['faces'][:, 1, :][:, np.newaxis, :])[..., :3]  # M x N x 3
-    v_p2 = (intersection_pts - triangles['faces'][:, 2, :][:, np.newaxis, :])[..., :3]  # M x N x 3
+    v_p0 = (intersection_pts - triangles['face'][:, 0, :][:, np.newaxis, :])[..., :3]  # M x N x 3
+    v_p1 = (intersection_pts - triangles['face'][:, 1, :][:, np.newaxis, :])[..., :3]  # M x N x 3
+    v_p2 = (intersection_pts - triangles['face'][:, 2, :][:, np.newaxis, :])[..., :3]  # M x N x 3
 
-    v01 = (triangles['faces'][:, 1, :3] - triangles['faces'][:, 0, :3])[:, np.newaxis, :]  # M x 1 x 3
-    v12 = (triangles['faces'][:, 2, :3] - triangles['faces'][:, 1, :3])[:, np.newaxis, :]  # M x 1 x 3
-    v20 = (triangles['faces'][:, 0, :3] - triangles['faces'][:, 2, :3])[:, np.newaxis, :]  # M x 1 x 3
+    v01 = (triangles['face'][:, 1, :3] - triangles['face'][:, 0, :3])[:, np.newaxis, :]  # M x 1 x 3
+    v12 = (triangles['face'][:, 2, :3] - triangles['face'][:, 1, :3])[:, np.newaxis, :]  # M x 1 x 3
+    v20 = (triangles['face'][:, 0, :3] - triangles['face'][:, 2, :3])[:, np.newaxis, :]  # M x 1 x 3
 
     cond_v01 = np.sum(np.cross(v01, v_p0) * normals, axis=-1) >= 0
     cond_v12 = np.sum(np.cross(v12, v_p1) * normals, axis=-1) >= 0
@@ -260,79 +264,108 @@ def ray_object_intersections(eye, ray_dir, scene_objects):
     return obj_intersections, ray_dist, normals, material_idx
 
 
-def render(scene):
-    """
-    :param scene: Scene description
-    :return: [H, W, 3] image
-    """
-    # Construct rays from the camera's eye position through the screen coordinates
-    camera = scene['camera']
-    eye, ray_dir, H, W = generate_rays(camera)
+class Renderer(nn.Module):
+    def __init__(self):
+        super(Renderer, self).__init__()
 
-    # Ray-object intersections
-    scene_objects = scene['objects']
-    obj_intersections, ray_dist, normals, material_idx = ray_object_intersections(eye, ray_dir, scene_objects)
+    def render(self, scene):
+        """
+        :param scene: Scene description
+        :return: [H, W, 3] image
+        """
+        # Construct rays from the camera's eye position through the screen coordinates
+        camera = scene['camera']
+        eye, ray_dir, H, W = generate_rays(camera)
 
-    # Valid distances
-    pixel_dist = ray_dist
-    valid_pixels = (camera['near'] <= ray_dist) & (ray_dist <= camera['far'])
-    pixel_dist[~valid_pixels] = np.inf  # Will have to use gather operation for TF and pytorch
+        # Ray-object intersections
+        scene_objects = scene['objects']
+        obj_intersections, ray_dist, normals, material_idx = ray_object_intersections(eye, ray_dir, scene_objects)
 
-    # Nearest object needs to be compared for valid regions only
-    nearest_obj = np.argmin(pixel_dist, axis=0)
-    C = np.arange(0, nearest_obj.size)  # pixel idx
+        # Valid distances
+        pixel_dist = ray_dist
+        valid_pixels = (camera['near'] <= ray_dist) & (ray_dist <= camera['far'])
+        pixel_dist[~valid_pixels] = np.inf  # Will have to use gather operation for TF and pytorch
 
-    # Create depth image for visualization
-    # use nearest_obj for gather/select the pixel color
-    im_depth = pixel_dist[nearest_obj, C].reshape(H, W)
+        # Nearest object needs to be compared for valid regions only
+        nearest_obj = np.argmin(pixel_dist, axis=0)
+        C = np.arange(0, nearest_obj.size)  # pixel idx
 
-    ##############################
-    # Fragment processing
-    ##############################
-    # Lighting
-    color_table = scene['colors']
-    light_pos = scene['lights']['pos']
-    light_clr_idx = scene['lights']['color_idx']
-    light_colors = color_table[light_clr_idx]
+        # Create depth image for visualization
+        # use nearest_obj for gather/select the pixel color
+        im_depth = pixel_dist[nearest_obj, C].reshape(H, W)
 
-    # Generate the fragments
-    """
-    Get the normal and material for the visible objects.
-    """
-    frag_normals = normals[nearest_obj, C]
-    frag_pos = obj_intersections[nearest_obj, C]
-    frag_albedo = scene['materials']['albedo'][material_idx[nearest_obj]]
+        ##############################
+        # Fragment processing
+        ##############################
+        # Lighting
+        color_table = scene['colors']
+        light_pos = scene['lights']['pos']
+        light_clr_idx = scene['lights']['color_idx']
+        light_colors = color_table[light_clr_idx]
 
-    # Fragment shading
-    light_dir = light_pos[np.newaxis, :] - frag_pos[:, np.newaxis, :]
-    light_dir_norm = np.sqrt(np.sum(light_dir ** 2, axis=-1))[..., np.newaxis]
-    #light_dir_norm[light_dir_norm <= 0 | np.isinf(light_dir_norm)] = 1
-    light_dir /= light_dir_norm
-    im_color = np.sum(frag_normals[:, np.newaxis, :] * light_dir, axis=-1)[..., np.newaxis] * \
-               light_colors[np.newaxis, ...] * frag_albedo[:, np.newaxis, :]
+        # Generate the fragments
+        """
+        Get the normal and material for the visible objects.
+        """
+        frag_normals = normals[nearest_obj, C]
+        frag_pos = obj_intersections[nearest_obj, C]
+        frag_albedo = scene['materials']['albedo'][material_idx[nearest_obj]]
 
-    im = np.sum(im_color, axis=1).reshape(H, W, 3)
-    im[(im_depth < camera['near']) | (im_depth > camera['far'])] = 0
+        # Fragment shading
+        light_dir = light_pos[np.newaxis, :] - frag_pos[:, np.newaxis, :]
+        light_dir_norm = np.sqrt(np.sum(light_dir ** 2, axis=-1))[..., np.newaxis]
+        # light_dir_norm[light_dir_norm <= 0 | np.isinf(light_dir_norm)] = 1
+        light_dir /= light_dir_norm
+        im_color = np.sum(frag_normals[:, np.newaxis, :] * light_dir, axis=-1)[..., np.newaxis] * \
+                   light_colors[np.newaxis, ...] * frag_albedo[:, np.newaxis, :]
 
-    # clip negative values
-    im[im < 0] = 0
+        im = np.sum(im_color, axis=1).reshape(H, W, 3)
+        im[(im_depth < camera['near']) | (im_depth > camera['far'])] = 0
 
-    # Tonemapping
-    if 'tonemap' in scene:
-        im = tonemap(im, **scene['tonemap'])
+        # clip negative values
+        im[im < 0] = 0
 
-    return {'image': im,
-            'depth': im_depth,
-            'ray_dist': ray_dist,
-            'obj_dist': pixel_dist,
-            'nearest': nearest_obj.reshape(H, W),
-            'ray_dir': ray_dir,
-            'valid_pixels': valid_pixels
-            }
+        # Tonemapping
+        if 'tonemap' in scene:
+            im = tonemap(im, **scene['tonemap'])
+
+        return {'image': im,
+                'depth': im_depth,
+                'ray_dist': ray_dist,
+                'obj_dist': pixel_dist,
+                'nearest': nearest_obj.reshape(H, W),
+                'ray_dir': ray_dir,
+                'valid_pixels': valid_pixels
+                }
+
+    def forward(self, scene):
+        self.render(scene)
 
 
 ################
-def render_example_scene():
+def render_scene(scene):
+    res = Renderer().render(scene)
+    im = res['image']
+
+    import matplotlib.pyplot as plt
+    plt.ion()
+    plt.figure()
+    plt.imshow(im)
+    plt.title('Final Rendered Image')
+    plt.savefig('img_np.png')
+
+    depth = res['depth']
+    plt.figure()
+    plt.imshow(depth)
+    plt.title('Depth Image')
+    plt.savefig('img_depth_np.png')
+
+    plt.ioff()
+    plt.show()
+    return res
+
+
+if __name__ == '__main__':
     scene_basic = {'camera': {'viewport': [0, 0, 320, 240],
                               'fovy': np.deg2rad(90.),
                               'focal_length': 1.,
@@ -379,7 +412,7 @@ def render_example_scene():
                                   'radius': np.array([3.0, 2.0]),
                                   'material_idx': np.array([3, 3])
                                   },
-                       'triangle': {'faces': np.array([[[-20.0, -18.0, -10.0, 1.0],
+                       'triangle': {'face': np.array([[[-20.0, -18.0, -10.0, 1.0],
                                                         [10.0, -18.0, -10.0, 1.],
                                                         [-2.5, 18.0, -10.0, 1.]],
                                                        [[15.0, -18.0, -10.0, 1.0],
@@ -393,25 +426,14 @@ def render_example_scene():
                    },
                    'tonemap': {'type': 'gamma', 'gamma': 0.8},
                    }
-    res = render(scene_basic)
-    im = res['image']
+    scene = scene_basic
+    # from diffrend.numpy.scene import load_scene, load_mesh_from_file, obj_to_triangle_spec, mesh_to_scene
+    #
+    # mesh = load_mesh_from_file('../../data/bunny.obj')
+    # tri_mesh = obj_to_triangle_spec(mesh)
+    #
+    # scene = mesh_to_scene(mesh)
 
-    import matplotlib.pyplot as plt
-    plt.ion()
-    plt.figure()
-    plt.imshow(im)
-    plt.title('Final Rendered Image')
-    plt.savefig('img_np.png')
-
-    depth = res['depth']
-    plt.figure()
-    plt.imshow(depth)
-    plt.title('Depth Image')
-    plt.savefig('img_depth_np.png')
-    plt.show()
-    plt.ioff()
-    return res
+    res = render_scene(scene)
 
 
-if __name__ == '__main__':
-    res = render_example_scene()

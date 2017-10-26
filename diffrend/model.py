@@ -164,22 +164,22 @@ def load_off(filename):
     return {'v': np.array(v), 'f': np.array(f), 'e': np.array(e)}
 
 
-def obj_to_triangle_spec(obj, material):
+def obj_to_triangle_spec(obj):
     faces = obj['v'][obj['f']]
     normals = compute_face_normal(obj)
     faces = np.concatenate((faces, np.ones_like(faces[..., 0])[..., np.newaxis]), axis=-1)
     normals = np.concatenate((normals, np.zeros_like(normals[..., 0])[..., np.newaxis]), axis=-1)
 
-    return {'face': faces, 'normal': normals, 'material': np.array(material)}
+    return {'face': faces, 'normal': normals}
 
 
 def test_run():
-    filename = './data/bunny.obj'
+    filename = '../data/bunny.obj'
     obj_data = load_obj(filename)
 
     cc = compute_circum_circle(obj_data)
 
-    filename = './data/desk_0007.off'
+    filename = '../data/desk_0007.off'
     off_data = load_off(filename)
 
     return obj_data, off_data
