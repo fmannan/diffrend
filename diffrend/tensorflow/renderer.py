@@ -1,6 +1,20 @@
 import numpy as np
 import tensorflow as tf
 
+"""
+#TODO:
+1. Add constraints on the up and view direction vectors so that dot prod is 0 and the norm of the two vectors are 1
+2. Use Quaternion representation and only enforce the unit norm constraint.
+"""
+
+
+def norm_p(u, p):
+    return tf.pow(tf.reduce_sum(tf.abs(u) ** p), 1./p)
+
+
+def unit_norm_loss(u, p=2, alpha=10, expK=2):
+    return tf.reduce_sum((alpha * (1 - norm_p(u, p))) ** expK)
+
 
 def tensor_cross_prod(u, M):
     """
@@ -17,7 +31,7 @@ def tensor_cross_prod(u, M):
 
 def point_along_ray(eye, ray_dir, ray_dist):
     print(ray_dist)
-    return eye[tf.newaxis, tf.newaxis, :] + ray_dist[..., tf.newaxis] * ray_dir.T[np.newaxis, ...]
+    return eye[tf.newaxis, tf.newaxis, :] + ray_dist[..., tf.newaxis] * tf.transpose(ray_dir, (1, 0))[np.newaxis, ...]
 
 
 def ray_sphere_intersection(eye, ray_dir, sphere):
@@ -176,6 +190,7 @@ intersection_fn = {'disk': ray_disk_intersection,
                    'triangle': ray_triangle_intersection,
                    }
 
+
 def lookat(eye, at, up):
     """Returns a lookat matrix
 
@@ -184,57 +199,36 @@ def lookat(eye, at, up):
     :param up:
     :return:
     """
-    if type(eye) is list:
-        eye = np.array(eye, dtype=np.float32)
-    if type(at) is list:
-        at = np.array(at, dtype=np.float32)
-    if type(up) is list:
-        up = np.array(up, dtype=np.float32)
-
-    if up.size == 4:
-        assert up[3] == 0
-        up = up[:3]
-
     z = (eye - at)
-    z = (z / np.linalg.norm(z, 2))[:3]
+    z = (z / tf.sqrt(tf.reduce_sum(z ** 2)))[:3]
 
-    y = up / np.linalg.norm(up, 2)
-    x = np.cross(y, z)
+    y = (up / tf.sqrt(tf.reduce_sum(up ** 2)))[:3]
+    x = tf.cross(y, z)[:3]
 
-    matrix = np.eye(4)
-    matrix[:3, :3] = np.stack((x, y, z), axis=1).T
-    matrix[:3, 3] = -eye[:3] / eye[3]
-    return matrix
+    rot_matrix = tf.transpose(tf.stack((x, y, z), axis=1), (1, 0))
+    rot_translate = tf.concat((rot_matrix, (-eye[:3] / eye[3])[:, tf.newaxis]), axis=1)
+    return tf.concat((rot_translate, tf.constant(np.array([0, 0, 0, 1]), dtype=rot_matrix.dtype)[tf.newaxis, :]), axis=0)
 
 
-def lookat_inv(eye, at, up):
+def lookat_inv(eye, at, up, view_dir=None):
     """Returns the inverse lookat matrix
     :param eye: camera location
     :param at: lookat point
     :param up: up direction
     :return: 4x4 inverse lookat matrix
     """
-    if type(eye) is list:
-        eye = np.array(eye, dtype=np.float32)
-    if type(at) is list:
-        at = np.array(at, dtype=np.float32)
-    if type(up) is list:
-        up = np.array(up, dtype=np.float32)
+    if view_dir is not None:
+        z = view_dir[:3]
+    else:
+        z = (at - eye)
+        z = (z / tf.sqrt(tf.reduce_sum(z ** 2)))[:3]
 
-    if up.size == 4:
-        assert up[3] == 0
-        up = up[:3]
+    y = (up / tf.sqrt(tf.reduce_sum(up ** 2)))[:3]
+    x = tf.cross(y, -z)[:3]
 
-    z = (eye - at)
-    z = (z / np.linalg.norm(z, 2))[:3]
-
-    y = up / np.linalg.norm(up, 2)
-    x = np.cross(y, z)
-
-    matrix = np.eye(4)
-    matrix[:3, :3] = np.stack((x, y, z), axis=1)
-    matrix[:3, 3] = eye[:3] / eye[3]
-    return matrix
+    rot_matrix = tf.stack((x, y, -z), axis=1)
+    rot_translate = tf.concat((rot_matrix, (eye[:3] / eye[3])[:, tf.newaxis]), axis=1)
+    return tf.concat((rot_translate, tf.constant(np.array([0, 0, 0, 1]), dtype=rot_matrix.dtype)[tf.newaxis, :]), axis=0)
 
 
 def tonemap(im, **kwargs):
@@ -247,6 +241,7 @@ def generate_rays(camera):
     W, H = viewport[2] - viewport[0], viewport[3] - viewport[1]
     aspect_ratio = W / float(H)
 
+    # TODO: make fovy and focal_length variable and trainable
     fovy = camera['fovy']
     focal_length = camera['focal_length']
     h = np.tan(fovy / 2) * 2 * focal_length
@@ -256,17 +251,36 @@ def generate_rays(camera):
     x *= w / 2
     y *= h / 2
 
-    eye = np.array(camera['eye'])
+    trainable = camera['trainable']
+    eye_init = np.array(camera['eye'])
+    eye = tf.Variable(eye_init, trainable=trainable)
+    up = tf.Variable(np.array(camera['up']), trainable=trainable)
+    up /= tf.sqrt(tf.reduce_sum(up ** 2))
+
+    view_dir_init = np.array(camera['at']) - eye_init
+    view_dir_init /= np.sqrt(np.sum(view_dir_init ** 2))
+    view_dir = tf.Variable(view_dir_init, trainable=trainable)
+    view_dir /= tf.sqrt(tf.reduce_sum(view_dir ** 2))
+
+    up_dot_viewdir = tf.reduce_sum(tf.abs(up * view_dir))
+    tf.summary.scalar('up_dot_viewdir', up_dot_viewdir)
+
+    view_loss = (100 * up_dot_viewdir) ** 2 + unit_norm_loss(view_dir, p=2, alpha=100, expK=2) + \
+                unit_norm_loss(up, p=2, alpha=100, expK=2)
+    tf.summary.scalar('view_loss', view_loss)
+    tf.losses.add_loss(view_loss)
+
     ray_dir = np.stack((x.ravel(), y.ravel(), -np.ones(x.size) * focal_length, np.zeros(x.size)), axis=0)
     # view_matrix = lookat(eye=eye, at=camera['at'], up=camera['up'])
-    inv_view_matrix = lookat_inv(eye=eye, at=camera['at'], up=camera['up'])
-    print(inv_view_matrix, np.linalg.inv(inv_view_matrix))
-    ray_dir = np.dot(inv_view_matrix, ray_dir)
+    inv_view_matrix = lookat_inv(eye=eye, at=None, up=up, view_dir=view_dir)
+    print(inv_view_matrix)
+    ray_dir = tf.matmul(inv_view_matrix, ray_dir)
 
     # normalize ray direction
-    ray_dir /= np.sqrt(np.sum(ray_dir ** 2, axis=0))
+    ray_dir /= tf.sqrt(tf.reduce_sum(ray_dir ** 2, axis=0))
 
-    return eye, ray_dir, H, W
+    return eye, ray_dir, H, W, {'eye': eye, 'view_dir': view_dir, 'up': up,
+                                'up_dot_viewdir': up_dot_viewdir, 'view_loss': view_loss}
 
 
 def ray_object_intersections(eye, ray_dir, scene_objects):
@@ -308,7 +322,7 @@ def render(scene):
     """
     # Construct rays from the camera's eye position through the screen coordinates
     camera = scene['camera']
-    eye, ray_dir, H, W = generate_rays(camera)
+    eye, ray_dir, H, W, camera_config = generate_rays(camera)
 
     # Ray-object intersections
     scene_objects = scene['objects']
@@ -381,7 +395,8 @@ def render(scene):
             'nearest': tf.reshape(nearest_obj, (H, W)),
             'ray_dir': ray_dir,
             'valid_pixels': valid_pixels,
-            'materials': materials
+            'materials': materials,
+            'camera': camera_config
             }
 
 
@@ -399,11 +414,13 @@ def optimize_scene(out_dir, max_iter=1000, learning_rate=1e-3, print_interval=10
     scene_basic = {'camera': {'viewport': [0, 0, 320, 240],
                               'fovy': np.deg2rad(90.),
                               'focal_length': 1.,
-                              'eye': [0.0, 0.0, 10.0, 1.0],
+                              'eye': [0.0, 1.0, 10.0, 1.0],
                               'up': [0.0, 1.0, 0.0, 0.0],
                               'at': [0.0, 0.0, 0.0, 1.0],
                               'near': 1.0,
                               'far': 1000.0,
+                              'use_quaternion': False,
+                              'trainable': True
                               },
                    'lights': {
                        'pos': np.array([[20., 20., 20., 1.0],
@@ -426,7 +443,7 @@ def optimize_scene(out_dir, max_iter=1000, learning_rate=1e-3, print_interval=10
                                                      [0.9, 0.1, 0.1],
                                                      [0.1, 0.1, 0.8],
                                                      ]),
-                                 'trainable': True
+                                 'trainable': False
                                  },
                    'objects': {
                        'disk': {
@@ -477,16 +494,17 @@ def optimize_scene(out_dir, max_iter=1000, learning_rate=1e-3, print_interval=10
     # optimize
     loss_per_iter = []
     materials_final = None
+    camera_final = None
     if b_optimize:
         scene_test = scene_basic
-        scene_test['materials']['albedo'][3] = np.array([0.1, 0.8, 0.9])
-        scene_test['materials']['albedo'][4] = np.array([0.1, 0.8, 0.9])
-        scene_test['materials']['albedo'][5] = np.array([0.9, 0.1, 0.1])
-
+        # scene_test['materials']['albedo'][3] = np.array([0.1, 0.8, 0.9])
+        # scene_test['materials']['albedo'][4] = np.array([0.1, 0.8, 0.9])
+        # scene_test['materials']['albedo'][5] = np.array([0.9, 0.1, 0.1])
+        scene_test['camera']['eye'] = np.array([0.0, 0.0, 8.0, 1.0])
         graph = tf.Graph()
         with graph.as_default():
             res = render(scene_test)
-            loss = tf.reduce_mean((res['image'] - im_target) ** 2)
+            loss = tf.reduce_mean((res['image'] - im_target) ** 2) + tf.losses.get_total_loss()
             opt = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(loss)
 
         with tf.Session(graph=graph) as sess:
@@ -495,10 +513,11 @@ def optimize_scene(out_dir, max_iter=1000, learning_rate=1e-3, print_interval=10
             for iter in range(max_iter + 1):
                 if iter > 0:
                     sess.run(opt)
-                loss_ = sess.run(loss)
+                loss_, camera_config = sess.run([loss, res['camera']])
                 loss_per_iter.append(loss_)
                 if iter % print_interval == 0 or iter == max_iter:
                     print('%d. Loss: %.6f' % (iter, loss_))
+                    print(camera_config)
                 if iter % imsave_interval == 0 or iter == max_iter:
                     im_optimized = sess.run(res['image'])
                     out_filename = out_dir + '/im_{:05d}.png'.format(iter)
@@ -511,6 +530,7 @@ def optimize_scene(out_dir, max_iter=1000, learning_rate=1e-3, print_interval=10
                     plt.savefig(out_dir + '/fig_{:05d}.png'.format(iter))
 
             materials_final = sess.run(res['materials'])
+            camera_final = sess.run(res['camera'])
 
     plt.ion()
     plt.figure()
@@ -540,12 +560,17 @@ def optimize_scene(out_dir, max_iter=1000, learning_rate=1e-3, print_interval=10
 
     plt.show()
 
-    return materials_final, materials_target, loss_per_iter
+    return materials_final, materials_target, loss_per_iter, camera_final
 
 
 if __name__ == '__main__':
-    mat_final, mat_target, loss_per_iter = optimize_scene(out_dir='./opt_res_3', max_iter=2000,
-                                                          imsave_interval=20, print_interval=20,
-                                                          b_optimize=True)
+    mat_final, mat_target, loss_per_iter, camera_final = optimize_scene(out_dir='./opt_res_cam5',
+                                                                        learning_rate=1e-3,
+                                                                        max_iter=2000,
+                                                                        imsave_interval=20,
+                                                                        print_interval=20,
+                                                                        b_optimize=True)
     print('final', mat_final)
     print('target', mat_target)
+    print('camera', camera_final)
+

@@ -1,7 +1,7 @@
 import numpy as np
 from diffrend.numpy.vector import Vector
 from diffrend.numpy.quaternion import Quaternion
-
+import diffrend.numpy.ops as ops
 
 def lookat(eye, at, up):
     """Returns a lookat matrix
@@ -51,7 +51,7 @@ class Camera(object):
 
     @property
     def M(self):
-        return np.eye(4)
+        return self.view_matrix
 
     def rotate(self, axis, angle):
         self.orientation = self.orientation.rotate(angle_rad=angle, axis=axis)
@@ -112,11 +112,11 @@ class TrackBallCamera(PinholeCamera):
         super(TrackBallCamera, self).__init__(pos, orientation, fov, focal_length, viewport)
 
     def mouse_press(self, coords):
-        self.src = Vector([coords[0], coords[1], self.pos[2] - self.focal_length]).normalize()
+        self.src = ops.normalize([coords[0], coords[1], self.pos[2] - self.focal_length])
 
     def mouse_move(self, coords):
-        self.dst = Vector([coords[0], coords[1], self.pos[2] - self.focal_length]).normalize()
-
+        self.dst = ops.normalize([coords[0], coords[1], self.pos[2] - self.focal_length])
+        print('src', self.src, 'dst:', self.dst)
         # compute object rotation
         axis = np.cross(self.src, self.dst)
         theta = np.arccos(np.dot(self.src, self.dst))
