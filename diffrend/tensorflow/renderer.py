@@ -560,15 +560,17 @@ def optimize_scene(out_dir, max_iter=1000, learning_rate=1e-3, print_interval=10
 
     plt.show()
 
+    input("press enter")
+
     return materials_final, materials_target, loss_per_iter, camera_final
 
 
 if __name__ == '__main__':
-    mat_final, mat_target, loss_per_iter, camera_final = optimize_scene(out_dir='./opt_res_cam5',
+    mat_final, mat_target, loss_per_iter, camera_final = optimize_scene(out_dir='./output',
                                                                         learning_rate=1e-3,
-                                                                        max_iter=2000,
-                                                                        imsave_interval=20,
-                                                                        print_interval=20,
+                                                                        max_iter=50,
+                                                                        imsave_interval=10,
+                                                                        print_interval=10,
                                                                         b_optimize=True)
     print('final', mat_final)
     print('target', mat_target)
