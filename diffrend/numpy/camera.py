@@ -3,51 +3,36 @@ from diffrend.numpy.vector import Vector
 from diffrend.numpy.quaternion import Quaternion
 import diffrend.numpy.ops as ops
 
-def lookat(eye, at, up):
-    """Returns a lookat matrix
-
-    :param eye:
-    :param at:
-    :param up:
-    :return:
-    """
-    if type(eye) is list:
-        eye = np.array(eye, dtype=np.float32)
-    if type(at) is list:
-        at = np.array(at, dtype=np.float32)
-    if type(up) is list:
-        up = np.array(up, dtype=np.float32)
-
-    if up.size == 4:
-        assert up[3] == 0
-        up = up[:3]
-
-    z = (eye - at)
-    z = (z / np.linalg.norm(z, 2))[:3]
-
-    y = up / np.linalg.norm(up, 2)
-    x = np.cross(y, z)
-
-    matrix = np.eye(4)
-    matrix[:3, :3] = np.stack((x, y, z), axis=1).T
-
-    return matrix
-
 
 class Camera(object):
-    def __init__(self, pos, orientation, viewport):
-        assert isinstance(orientation, Quaternion)
+    def __init__(self, pos, at, up, viewport):
+        #assert isinstance(orientation, Quaternion)
         self.pos = np.array(pos, dtype=np.float32)
 
         if self.pos.size == 3:
             self.pos = np.append(self.pos, 1.0)
 
-        self.orientation = orientation
+        #self.orientation = orientation
+        self.at = np.array(at, dtype=np.float32)
+
+        if self.at.size == 3:
+            self.at = np.append(self.eye, 1.0)
+
+        self.up = ops.normalize(np.array(up))
         self.viewport = viewport
-        self.view_matrix = np.eye(4)
+        self.view_matrix = ops.lookat(eye=self.pos, at=self.at, up=self.up)
 
     def __str__(self):
-        return 'Camera: pos {}, orientation: {}'.format(self.pos, self.orientation)
+        #return 'Camera: pos {}, orientation: {}'.format(self.pos, self.orientation)
+        return 'Camera: pos {}, at: {}, up: {}'.format(self.pos, self.at, self.up)
+
+    @property
+    def eye(self):
+        return self.pos
+
+    @property
+    def aspect_ratio(self):
+        return self.viewport[2] / self.viewport[3]
 
     @property
     def M(self):
@@ -71,28 +56,45 @@ class Camera(object):
         if eye.size == 3:
             eye = np.append(eye, 1.0)
         self.pos = eye
-        self.view_matrix = lookat(self.pos, at, up)
+        self.view_matrix = ops.lookat(self.pos, at, up)
 
     def generate_rays(self):
         pass
 
 
 class PinholeCamera(Camera):
-    def __init__(self, pos, orientation, fov, focal_length, viewport):
-        super(PinholeCamera, self).__init__(pos, orientation, viewport)
-        self.fov = float(fov)
+    def __init__(self, pos, at, up, fovy, focal_length, viewport):
+        """
+        :param pos:
+        :param at:
+        :param up:
+        :param fovy: Vertical field of view in radians
+        :param focal_length:
+        :param viewport:
+        """
+        super(PinholeCamera, self).__init__(pos, at, up, viewport)
+        self.fovy = float(fovy)
         self.focal_length = float(focal_length)
+        self.viewport = viewport
+        height = 2 * self.focal_length * np.tan(self.fovy / 2.)
+        aspect_ratio = float(viewport[2]) / viewport[3]
+        width = height * aspect_ratio
+
         self.proj_matrix = np.array([[self.focal_length, 0, 0, 0],
                                     [0, self.focal_length, 0, 0],
-                                    [0, 0, 1, 0],
-                                    [0, 0, 0, 1]])
+                                    [0, 0, self.focal_length, 0],
+                                    [0, 0, 1, 0]])
 
     @property
     def M(self):
         return np.dot(self.proj_matrix, self.model_view)
 
     @property
-    def perspective(self):
+    def viewport_matrix(self):
+        return None
+
+    @property
+    def projection(self):
         return self.proj_matrix
 
     @property
@@ -108,8 +110,8 @@ class PinholeCamera(Camera):
 
 
 class TrackBallCamera(PinholeCamera):
-    def __init__(self, pos, orientation, fov, focal_length, viewport):
-        super(TrackBallCamera, self).__init__(pos, orientation, fov, focal_length, viewport)
+    def __init__(self, pos, at, up, fovy, focal_length, viewport):
+        super(TrackBallCamera, self).__init__(pos, at, up, fovy, focal_length, viewport)
 
     def mouse_press(self, coords):
         self.src = ops.normalize([coords[0], coords[1], self.pos[2] - self.focal_length])
@@ -126,9 +128,10 @@ class TrackBallCamera(PinholeCamera):
         self.view_matrix = self.orientation.R
 
     def zoom(self, amount):
-        self.translate(np.array([0, 0, amount]))
+        delta = ops.normalize(self.pos) * amount
+        self.translate(delta)
 
 
 if __name__ == '__main__':
-    cam = TrackBallCamera([0.0, 0.0, 0.0, 1.0], Quaternion(coeffs=[0, 0, 0, 1]), fov=45, focal_length=2,
+    cam = TrackBallCamera([0.0, 0.0, 1.0, 1.0], at=[0, 0, 0, 1], up=[0, 1, 0], fov=45, focal_length=2,
                           viewport=[0, 0, 640, 480])

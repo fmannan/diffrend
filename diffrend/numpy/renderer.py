@@ -1,3 +1,4 @@
+import diffrend.numpy.ops as ops
 import numpy as np
 
 
@@ -135,66 +136,6 @@ intersection_fn = {'disk': ray_disk_intersection,
                    'triangle': ray_triangle_intersection,
                    }
 
-def lookat(eye, at, up):
-    """Returns a lookat matrix
-
-    :param eye:
-    :param at:
-    :param up:
-    :return:
-    """
-    if type(eye) is list:
-        eye = np.array(eye, dtype=np.float32)
-    if type(at) is list:
-        at = np.array(at, dtype=np.float32)
-    if type(up) is list:
-        up = np.array(up, dtype=np.float32)
-
-    if up.size == 4:
-        assert up[3] == 0
-        up = up[:3]
-
-    z = (eye - at)
-    z = (z / np.linalg.norm(z, 2))[:3]
-
-    y = up / np.linalg.norm(up, 2)
-    x = np.cross(y, z)
-
-    matrix = np.eye(4)
-    matrix[:3, :3] = np.stack((x, y, z), axis=1).T
-    matrix[:3, 3] = -eye[:3] / eye[3]
-    return matrix
-
-
-def lookat_inv(eye, at, up):
-    """Returns the inverse lookat matrix
-    :param eye: camera location
-    :param at: lookat point
-    :param up: up direction
-    :return: 4x4 inverse lookat matrix
-    """
-    if type(eye) is list:
-        eye = np.array(eye, dtype=np.float32)
-    if type(at) is list:
-        at = np.array(at, dtype=np.float32)
-    if type(up) is list:
-        up = np.array(up, dtype=np.float32)
-
-    if up.size == 4:
-        assert up[3] == 0
-        up = up[:3]
-
-    z = (eye - at)
-    z = (z / np.linalg.norm(z, 2))[:3]
-
-    y = up / np.linalg.norm(up, 2)
-    x = np.cross(y, z)
-
-    matrix = np.eye(4)
-    matrix[:3, :3] = np.stack((x, y, z), axis=1)
-    matrix[:3, 3] = eye[:3] / eye[3]
-    return matrix
-
 
 def tonemap(im, **kwargs):
     if kwargs['type'] == 'gamma':
@@ -218,7 +159,7 @@ def generate_rays(camera):
     eye = np.array(camera['eye'])
     ray_dir = np.stack((x.ravel(), y.ravel(), -np.ones(x.size) * focal_length, np.zeros(x.size)), axis=0)
     # view_matrix = lookat(eye=eye, at=camera['at'], up=camera['up'])
-    inv_view_matrix = lookat_inv(eye=eye, at=camera['at'], up=camera['up'])
+    inv_view_matrix = ops.lookat_inv(eye=eye, at=camera['at'], up=camera['up'])
     print(inv_view_matrix, np.linalg.inv(inv_view_matrix))
     ray_dir = np.dot(inv_view_matrix, ray_dir)
 
