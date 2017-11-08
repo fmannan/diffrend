@@ -52,7 +52,7 @@ class Ray(object):
     def point(self, t):
         return self.direction * t + self.origin
 
-r = Ray([0, 0, 0], [1, 0, 0])
-print(r)
-#a = r.point(10)
-#print(a)
+# r = Ray([0, 0, 0], [1, 0, 0])
+# print(r)
+# a = r.point(10)
+# print(a)
