@@ -2,6 +2,8 @@ import numpy as np
 
 OUTPUT_FOLDER = "output/"
 
+
+# everything in here has to be differentiated for
 SCENE_BASIC = {
     'camera': {
         'viewport': [0, 0, 320, 240],
@@ -53,31 +55,6 @@ SCENE_BASIC = {
             ],
             'radius': [4, 7, 4],
             'material_idx': [4, 3, 5]
-        },
-        'sphere': {'pos': [
-            [-8.0, 4.0, -8.0, 1.0],
-            [10.0, 0.0, -4.0, 1.0]
-        ],
-            'radius': [3.0, 2.0],
-            'material_idx': [3, 3]
-        },
-        'triangle': {
-            'face': [
-                [
-                    [-20.0, -18.0, -10.0, 1.0],
-                    [10.0, -18.0, -10.0, 1.],
-                    [-2.5, 18.0, -10.0, 1.]
-                ], [
-                    [15.0, -18.0, -10.0, 1.0],
-                    [25, -18.0, -10.0, 1.],
-                    [20, 18.0, -10.0, 1.]
-                ]
-            ],
-            'normal': [
-                [0., 0., 1., 0.],
-                [0., 0., 1., 0.]
-            ],
-            'material_idx': [5, 4]
         }
     },
     'tonemap': {
