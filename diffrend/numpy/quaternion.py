@@ -1,5 +1,5 @@
 import numpy as np
-from vector import Vector
+from diffrend.numpy.vector import Vector
 
 class Quaternion(object):
     """
