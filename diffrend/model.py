@@ -96,7 +96,7 @@ def load_splat(filename):
     print('Vertex Normal count: {}'.format(len(vn)))
     print('Splat Radius count: {}'.format(len(r)))
 
-    return {'v': np.array(v), 'vn': np.array(vn), 'r': np.array(r)}
+    return {'v': np.array(v), 'vn': np.array(vn), 'r': np.array(r), 'type': 'splat'}
 
 
 def load_obj(filename):

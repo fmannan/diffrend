@@ -6,19 +6,27 @@ import tensorflow as tf
 from diffrend.model import load_obj, compute_circum_circle, compute_face_normal
 
 import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 
 # Number of splats
 num_splats = 1000
 
+b_normalize = False
+
 obj = load_obj('../../data/bunny.obj')
 
 P = obj['v']
+if b_normalize:
+    P = (P - np.mean(P, axis=0)) / np.max(np.max(P, axis=0) - np.min(P, axis=0))
 
 cc = compute_circum_circle(obj)
 fn = compute_face_normal(obj)
 rand_idx = np.random.randint(0, P.shape[0], num_splats)
 
-C = tf.Variable(cc['center'][rand_idx], name='center')
+cc_c = cc['center']
+init_c = cc['center'][rand_idx]
+
+C = tf.Variable(init_c, name='center')
 R = tf.Variable(cc['radius'][rand_idx], name='radius')
 N = tf.Variable(fn[rand_idx])
 N = tf.identity(N / tf.reduce_sum(N ** 2, axis=-1)[..., tf.newaxis], name='normal')
@@ -71,4 +79,21 @@ plt.plot(loss_per_iter)
 
 plt.figure()
 plt.scatter(C_[:, 0], C_[:, 1])
-plt.scatter(cc['center'][rand_idx][:, 0], cc['center'][rand_idx][:, 1])
+plt.scatter(init_c[:, 0], init_c[:, 1])
+
+
+fig1 = plt.figure()
+ax = fig1.add_subplot(111, projection='3d')
+ax.scatter(P[:, 0], P[:, 1], P[:, 2], zdir='y', s=1)
+plt.title('Original vertices')
+
+
+fig2 = plt.figure()
+ax = fig2.add_subplot(111, projection='3d')
+ax.scatter(init_c[:, 0], init_c[:, 1], init_c[:, 2], zdir='y', s=1)
+plt.title('Initial splats')
+
+fig3 = plt.figure()
+ax = fig3.add_subplot(111, projection='3d')
+ax.scatter(C_[:, 0], C_[:, 1], C_[:, 2], zdir='y', s=1)
+plt.title('Final splats')
