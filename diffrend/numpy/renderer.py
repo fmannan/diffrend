@@ -365,5 +365,3 @@ if __name__ == '__main__':
     # scene = mesh_to_scene(mesh)
 
     res = render_scene(scene)
-
-

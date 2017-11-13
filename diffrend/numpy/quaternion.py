@@ -7,8 +7,8 @@ class Quaternion(object):
     1. Rotate a vector p about an axis q by angle theta:
         Quaternion(angle=theta, axis=q).R * p  [Here p is in homogeneous coordinates and can be 4 x N matrix]
     2.
-
     """
+
     def __init__(self, coeffs=None, angle=None, axis=None, vector=None):
         assert (coeffs is not None) or (angle is not None and axis is not None) or vector is not None
         if coeffs is not None:
@@ -122,4 +122,4 @@ if __name__ == '__main__':
     test()
 
 
-a = Quaternion(angle=0, axis=[0, 0, -1])
+# a = Quaternion(angle=0, axis=[0, 0, -1])
