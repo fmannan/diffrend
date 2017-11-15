@@ -12,7 +12,7 @@ def main():
                                                  '--obj object-filename' +
                                                  '--renderer gl21')
     parser.add_argument('--obj', type=str, help='Wavefront OBJ file path', default='../data/bunny.obj')
-    parser.add_argument('--renderer', type=str, help='Renderer to use', default='gl')
+    parser.add_argument('--renderer', type=str, help='Renderer to use', default='gl21')
 
     argcomplete.autocomplete(parser)
     args = parser.parse_args()

@@ -97,7 +97,7 @@ def load_splat(filename):
     print('Vertex Normal count: {}'.format(len(vn)))
     print('Splat Radius count: {}'.format(len(r)))
 
-    return {'v': np.array(v), 'vn': np.array(vn), 'r': np.array(r)}
+    return {'v': np.array(v), 'vn': np.array(vn), 'r': np.array(r), 'type': 'splat'}
 
 
 def load_obj(filename):
@@ -163,6 +163,17 @@ def load_off(filename):
     print('Edge count: {}'.format(len(e)))
 
     return {'v': np.array(v), 'f': np.array(f), 'e': np.array(e)}
+
+
+def load_model(filename):
+    import os
+    prefix, ext = os.path.splitext(filename)
+    model_loader_fn = {'off': load_off,
+                       'obj': load_obj,
+                       'splat': load_splat,
+                      }
+
+    return model_loader_fn[ext[1:]](filename)
 
 
 def obj_to_triangle_spec(obj):
