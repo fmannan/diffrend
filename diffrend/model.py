@@ -165,6 +165,17 @@ def load_off(filename):
     return {'v': np.array(v), 'f': np.array(f), 'e': np.array(e)}
 
 
+def load_model(filename):
+    import os
+    prefix, ext = os.path.splitext(filename)
+    model_loader_fn = {'off': load_off,
+                       'obj': load_obj,
+                       'splat': load_splat,
+                      }
+
+    return model_loader_fn[ext[1:]](filename)
+
+
 def obj_to_triangle_spec(obj):
     faces = obj['v'][obj['f']]
     normals = compute_face_normal(obj)
