@@ -1,7 +1,7 @@
 """Splats module."""
 import numpy as np
 import random
-from numpy_.renderer import render_scene
+from diffrend.numpy.renderer import render_scene
 
 
 class Scene(object):
@@ -280,7 +280,7 @@ def main():
     # Create Scene
     # scene = create_random_scene(10, 3)
     scene = create_random_scene()
-    print (scene)
+    print(scene)
 
     # Render Scene
     render_scene(scene.scene)

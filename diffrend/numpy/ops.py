@@ -1,5 +1,5 @@
 import numpy as np
-from quaternion import Quaternion
+from diffrend.numpy.quaternion import Quaternion
 
 
 def norm_p(u, p=2):
