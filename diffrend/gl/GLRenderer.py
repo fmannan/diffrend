@@ -29,11 +29,61 @@ def get_val(dict_var, key, default_val):
 def glLookat(eye, at, up):
     gluLookAt(eye[0], eye[1], eye[2], at[0], at[1], at[2], up[0], up[1], up[2])
 
-def draw_triangle(vertices):
-    pass
 
-def draw_obj(obj):
-    glBegin(GL_TRIANGLES)
+def generate_disk_mesh(radius, samples=36):
+    vertices = []
+    faces = []
+    vertices.append([0, 0, 0])
+    for idx in range(samples):
+        theta = 2 * np.pi * idx / samples
+        vertices.append(np.array([np.cos(theta), np.sin(theta), 0]) * radius)
+        if idx > 0:
+            faces.append(np.array([0, idx, idx + 1]))
+    faces.append(np.array([0, samples, 1]))
+    vertices = np.array(vertices)
+    faces = np.array(faces)
+    return vertices, faces
+
+
+def draw_circular_splats(obj, disp_list_idx=None, show_points=False):
+    #glBegin(GL_POINTS)
+    z_axis = np.array([0, 0, 1.])
+    for idx in range(obj['v'].shape[0]):
+        vn = obj['vn'][idx]
+        v = np.array(obj['v'][idx])
+        glNormal3f(vn[0], vn[1], vn[2])
+        glVertex3f(v[0], v[1], v[2])
+
+        # draw disks
+        axis = np.cross(z_axis, vn)
+        angle = np.arccos(np.dot(vn, z_axis))
+
+        M = ops.axis_angle_matrix(axis, angle)
+        M[:, :3] = v
+        #M = np.concatenate((R, v[:, np.newaxis]), axis=1)
+        #M = np.concatenate((M, np.array([0, 0, 0, 1])[np.newaxis, :]), axis=0)
+        #M = np.eye(4)
+        glPushMatrix()
+        glMultMatrixd(M.T)
+        glScalef(.5, .5, .5)
+        if disp_list_idx is None:
+            draw_disk(obj['r'][idx])
+        else:
+            glCallList(disp_list_idx)
+        glPopMatrix()
+
+    #glEnd()
+
+
+def draw_obj(obj, disp_list_idx=None, show_points=False):
+    if 'type' in obj:
+        if obj['type'] == 'disk_splat' or obj['type'] == 'splat':
+            return draw_circular_splats(obj, disp_list_idx, show_points)
+
+    if show_points:
+        glBegin(GL_POINTS)
+    else:
+        glBegin(GL_TRIANGLES)
     # render each face
     for face_idx in range(obj['f'].shape[0]):
         # gl.glColor3f(0.25, 0.25, 0.25)
@@ -60,6 +110,7 @@ def draw_disk(radius):
     quadric = gluNewQuadric()
     gluDisk(quadric, 0.0, radius, 32, 18)
     gluDeleteQuadric(quadric)
+
 
 def draw_quad_xy():
     glBegin(GL_QUADS)
@@ -143,13 +194,14 @@ def draw_axes(height=1.):
     glPopAttrib()
 
 
-
 class GL21Widget(QOpenGLWidget):
     def __init__(self, version_profile=None, parent=None, **kwargs):
         super(GL21Widget, self).__init__(parent)
         self.version_profile = version_profile
         self.obj = kwargs['obj']
-        self.obj['fn'] = ops.compute_face_normal(self.obj)
+        print(self.obj.keys())
+        if 'vn' not in self.obj:
+            self.obj['fn'] = ops.compute_face_normal(self.obj)
 
         self.scene = kwargs['scene'] if 'scene' in kwargs else None
         self.clear_color = get_val(kwargs, 'clear_color', [0.1, 0.1, 0.1, 1.0])
@@ -160,6 +212,12 @@ class GL21Widget(QOpenGLWidget):
     def initializeGL(self):
         self.gl = self.context().versionFunctions(self.version_profile)
         self.gl.initializeOpenGLFunctions()
+
+        self.draw_disk_idx = glGenLists(1)
+        print('draw_disk_idx ', self.draw_disk_idx)
+        glNewList(self.draw_disk_idx, GL_COMPILE)
+        draw_disk(1.0)
+        glEndList()
 
         self.gl.glClearColor(self.clear_color[0], self.clear_color[1], self.clear_color[2], self.clear_color[3])
         self.gl.glClear(self.gl.GL_COLOR_BUFFER_BIT)
@@ -231,8 +289,8 @@ class GL21Widget(QOpenGLWidget):
             gl.glVertex3f(0, 1, 0.5)
             gl.glEnd()
         else:
-            pass
-            #draw_obj(self.obj)
+            #pass
+            draw_obj(self.obj, disp_list_idx=self.draw_disk_idx, show_points=True)
 
 
     def resizeGL(self, w, h):
@@ -330,6 +388,11 @@ class GLRenderer(QGLWidget):
             0.5, -0.5, 0.0,
             -0.5, -0.5, 0.0
         ]
+        v, _ = generate_disk_mesh(0.5, 36)
+        v = np.concatenate((v, v[1][np.newaxis, :]), axis=0)
+        print(v.shape)
+        self.disk_len = v.shape[0]
+        vertices = list(v.ravel())
 
         vbo = glGenBuffers(1)
         glBindBuffer(GL_ARRAY_BUFFER, vbo)
@@ -363,10 +426,22 @@ class GLRenderer(QGLWidget):
 
         # set the updated transformation matrices
         mvMatrix = np.eye(4)  # self.camera.model_view
+        mvMatrix[0, 0] = 0.5
+        mvMatrix[1, 1] = 0.5 * self.camera.aspect_ratio
+        #mvMatrix[0, 3] = 2
         self.shader_program.setUniformValue('model_view', mvMatrix)
 
         glBindVertexArray(self.vao)
-        glDrawArrays(GL_TRIANGLES, 0, 3)
+        #glDrawArrays(GL_TRIANGLES, 0, 3)
+        glDrawArrays(GL_TRIANGLE_FAN, 0, self.disk_len)
+
+        # mvMatrix = np.eye(4)  # self.camera.model_view
+        # mvMatrix[0, 0] = 0.5
+        # mvMatrix[1, 1] = 0.5 * self.camera.aspect_ratio
+        # mvMatrix[0, 3] = 2
+        # self.shader_program.setUniformValue('model_view', mvMatrix)
+        # glDrawArrays(GL_TRIANGLE_FAN, 0, self.disk_len - 1)
+
         glBindVertexArray(0)
 
         glUseProgram(0)
@@ -424,12 +499,12 @@ def create_OGL_window(major, minor, obj, samples=4, clear_color=[0.0, 0.0, 0.0, 
 if __name__ == '__main__':
     import sys
     from PyQt5.Qt import QApplication
-    from diffrend.model import load_obj
-    
+    from diffrend.model import load_obj, load_splat
+
     app = QApplication(sys.argv)
 
-    obj = load_obj('../../data/bunny.obj')
-    window = create_OGL_window(2, 1, obj=obj, title='OpenGL 2.1 Renderer')
+    obj = load_splat('../../data/bunny.splat')
+    window = create_OGL_window(None, None, obj=obj, title='OpenGL 2.1 Renderer')
 
     # if args.renderer == 'gl21':
     #     window = create_OGL_window(2, 1, obj=obj, title='OpenGL 2.1 Renderer')
@@ -441,3 +516,4 @@ if __name__ == '__main__':
     window.show()
 
     sys.exit(app.exec())
+

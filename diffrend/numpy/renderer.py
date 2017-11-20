@@ -1,4 +1,4 @@
-import ops
+import diffrend.numpy.ops as ops
 import numpy as np
 
 

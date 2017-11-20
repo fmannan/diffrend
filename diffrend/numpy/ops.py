@@ -1,5 +1,5 @@
 import numpy as np
-from quaternion import Quaternion
+from diffrend.numpy.quaternion import Quaternion
 
 
 def norm_p(u, p=2):
@@ -19,7 +19,11 @@ def normalize(u):
     return u / norm(u)
 
 
-def rotate_angle_axis(angle, axis, vec):
+def axis_angle_matrix(axis, angle):
+    return Quaternion(axis=axis, angle=angle).rotation_matrix
+
+
+def rotate_axis_angle(axis, angle, vec):
     pass
 
 
