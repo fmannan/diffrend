@@ -6,7 +6,6 @@ from diffrend.gl.GLRenderer import create_OGL_window
 def main():
     import sys
     import argparse
-    import argcomplete
 
     parser = argparse.ArgumentParser(description='Renderer.\n Usage: ' + sys.argv[0] +
                                                  '--obj object-filename' +
@@ -14,7 +13,6 @@ def main():
     parser.add_argument('--obj', type=str, help='Wavefront OBJ file path', default='../data/bunny.obj')
     parser.add_argument('--renderer', type=str, help='Renderer to use', default='gl21')
 
-    argcomplete.autocomplete(parser)
     args = parser.parse_args()
 
     app = QApplication(sys.argv)
