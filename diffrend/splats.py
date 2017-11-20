@@ -1,7 +1,7 @@
 """Splats module."""
 import numpy as np
 import random
-from numpy_.renderer import render_scene
+from diffrend.numpy_.renderer import render_scene
 
 
 class Scene(object):
