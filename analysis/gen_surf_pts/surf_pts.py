@@ -12,14 +12,37 @@ import os
 
 
 def point_on_sphere_loss(pt, radius, scale=1.0):
-    assert pt.shape[1] == 3
-    return (scale * (radius ** 2 - tf.reduce_sum(pt ** 2, axis=-1))) ** 2
+    assert pt.shape[-1] == 3
+    m, v = tf.nn.moments(pts, axes=1)
+    return (scale * (radius ** 2 - tf.reduce_sum(pt ** 2, axis=-1))) ** 2 + tf.reduce_sum(tf.abs(m)) + \
+           1. / (tf.reduce_sum(v) + 1e-10)
 
 
 def point_on_circle_xy_loss(pt, radius, scale=1.0):
-    assert pt.shape[1] == 3
+    assert pt.shape[-1] == 3
     #circle_xy = tf.constant(np.array([radius, radius, 0]), dtype=pt.dtype)[tf.newaxis, :]
-    return (scale * (radius ** 2 - tf.reduce_sum(pt[:, :2] ** 2, axis=-1))) ** 2 + (scale * pt[:, 2]) ** 2
+    m, v = tf.nn.moments(pts, axes=1)
+    return (scale * (radius ** 2 - tf.reduce_sum(pt[..., :2] ** 2, axis=-1))) ** 2 + (scale * pt[..., 2]) ** 2 + \
+        tf.reduce_sum(tf.abs(m)) + 1. / (tf.reduce_sum(v) + 1e-10)
+
+
+def point_on_disk_xy_loss(pt, radius, scale=1.0):
+    assert pt.shape[-1] == 3
+
+    # x^2 + y^2 <= r^2 => x^2 + y^2 - r^2 <= 0
+    xy_dist_sqr = tf.reduce_sum(pt[..., :2] ** 2, axis=-1)
+
+    m, _ = tf.nn.moments(pts, axes=1)
+    _, v = tf.nn.moments(pts[..., :2], axes=1)
+
+    return (scale * tf.maximum(0.0,  xy_dist_sqr - radius ** 2)) ** 2 + \
+           (scale * pt[..., 2]) ** 2 + \
+           scale / (tf.pow(xy_dist_sqr, 0.25) + 1e-10) + \
+           tf.reduce_sum(tf.abs(m)) + 1. / (tf.reduce_sum(v) + 1e-10)
+
+
+def point_on_cube_loss(pt, side, scale=1.0):
+    pass
 
 
 def random_sample_generator(shape):
@@ -46,36 +69,46 @@ def fc_net(x, is_training, **params):
 
     return net
 
-input_size = 1000
-rand_noise_size = 2
+input_size = 1000  # batch of inputs
+rand_noise_size = 100  # dimension of the input space
+output_size = 1000 * 3  # generate 1000 points
+
 lr = 1e-4
 
 net_0_spec = [4096, 100]
 net_1_spec = [4096, 100, 4096]
 net_2_spec = [1024, 8192, 4096, 100]
 
-obj_fn = point_on_sphere_loss  #point_on_circle_xy
+net_spec = net_2_spec
+
+obj_fn = point_on_circle_xy_loss  #point_on_sphere_loss  #point_on_disk_xy_loss #
 
 graph = tf.Graph()
 with graph.as_default():
     X = tf.placeholder(dtype=tf.float32, shape=[input_size, rand_noise_size])
-    pts = fc_net(X, layers=net_2_spec, is_training=True, output_size=3)
+
+    pts = fc_net(X, layers=net_spec, is_training=True, output_size=output_size)
+    pts = tf.reshape(pts, (input_size, -1, 3))
 
     loss = tf.reduce_mean(obj_fn(pts, radius=1., scale=10))
 
     opt = tf.train.AdamOptimizer(learning_rate=lr).minimize(loss)
 
-max_iter = 10000
+max_iter = 4000
 print_interval = 100
 loss_per_iter = []
 err_per_iter = []
 best_loss = np.inf
 best_config = dict()
 
-IMG_DIR = './sphere_out'
+IMG_DIR = './circle_res'
 if not os.path.exists(IMG_DIR):
     os.mkdir(IMG_DIR)
 
+fig0 = plt.figure(figsize=(9, 3))
+ax0 = fig0.add_subplot(131)
+ax1 = fig0.add_subplot(132)
+ax2 = fig0.add_subplot(133)
 fig = plt.figure()
 ax = fig.add_subplot(111, projection='3d')
 
@@ -86,26 +119,39 @@ with tf.Session(graph=graph) as sess:
         rand_input = random_sample_generator([input_size, rand_noise_size])
         _, loss_ = sess.run([opt, loss], feed_dict={X: rand_input})
 
-        if idx % print_interval == 0:
+        if idx % print_interval == 0 or idx == max_iter - 1:
             print('%d. Loss: %.4f' % (idx, loss_))
             pts_ = sess.run(pts, feed_dict={X: rand_input})
             ax.clear()
-            ax.scatter(pts_[:, 0], pts_[:, 1], pts_[:, 2], s=1)
-            plt.title('Generated output {}'.format(idx))
+            ax.scatter(pts_[0, :, 0], pts_[0, :, 1], pts_[0, :, 2], s=1)
+            ax.view_init(20, idx % 360)
+            ax.set_aspect('equal')
+            plt.title('Generated output {}, loss: {:.4f}'.format(idx, loss_))
+            plt.xlabel('x')
+            plt.ylabel('y')
             fig.savefig(IMG_DIR + '/fig_{:06d}.png'.format(idx))
 
-# fig = plt.figure()
-# ax = fig.add_subplot(111, projection='3d')
-# ax.scatter(pts_[:, 0], pts_[:, 1], pts_[:, 2], s=1.2)
-#
-# fig = plt.figure()
-# ax = fig.add_subplot(111, projection='3d')
-# rand_points = np.random.rand(1000, 3)
-# ax.scatter(rand_points[:, 0], rand_points[:, 1], rand_points[:, 2])
-#
+            # 2D projections
+            ax0.clear()
+            ax0.scatter(pts_[0, :, 0], pts_[0, :, 1], s=1)
+            ax0.set_xlim(-1, 1)
+            ax0.set_ylim(-1, 1)
+            ax0.title.set_text('XY')
+            ax0.set_aspect('equal')
 
-#
-# ax.clear()
-# ax.scatter(pts_[:, 0], pts_[:, 1], pts_[:, 2], s=1)
-# plt.title('Generated output {}'.format(idx))
-# fig.savefig(IMG_DIR + '/fig_{:06d}.png'.format(idx))
+            ax1.clear()
+            ax1.scatter(pts_[0, :, 1], pts_[0, :, 2], s=1)
+            ax1.set_xlim(-1, 1)
+            ax1.set_ylim(-1, 1)
+            ax1.title.set_text('YZ')
+            ax1.set_aspect('equal')
+
+            ax2.clear()
+            ax2.scatter(pts_[0, :, 0], pts_[0, :, 2], s=1)
+            ax2.set_xlim(-1, 1)
+            ax2.set_ylim(-1, 1)
+            ax2.title.set_text('XZ')
+            ax2.set_aspect('equal')
+            fig0.savefig(IMG_DIR + '/fig_proj_{:06d}.png'.format(idx))
+
+
