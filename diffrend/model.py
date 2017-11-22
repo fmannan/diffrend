@@ -1,5 +1,6 @@
 from __future__ import absolute_import
 import numpy as np
+import re
 
 
 def norm_sqr(v):
@@ -84,7 +85,7 @@ def load_splat(filename, verbose=True):
     r = []   # list of splat radii single value means disk, pair ellipse, triple ellipsoid/sphere
 
     for line in obj_file:
-        line = line.split(' ')
+        line = re.sub(r'\s+', ' ', line).lstrip().rstrip().split(' ')
         if line[0] == '#':
             continue
         if line[0] == 'v':
@@ -113,8 +114,8 @@ def load_obj(filename, verbose=True):
     f = []  # list of faces
 
     for line in obj_file:
-        line = line.split(' ')
-        # print (line)
+        # line = line.split(' ')
+        line = re.sub(r'\s+', ' ', line).lstrip().rstrip().split(' ')
         if line[0] == '#':
             continue
         if line[0] == 'v':
@@ -146,7 +147,7 @@ def load_off(filename, verbose=True):
     check_num_vertex_face = False
 
     for line in obj_file:
-        line = line.split(' ')
+        line = re.sub(r'\s+', ' ', line).lstrip().rstrip().split(' ')
         if line[0] == 'OFF':
             check_num_vertex_face = True
             if len(line) > 1:
@@ -214,5 +215,5 @@ if __name__ == '__main__':
     obj_splat = obj_to_splat(obj_data)
     write_splat('test.splat', obj_splat)
     splat_obj = load_splat('test.splat')
-    tri_bunny = obj_to_triangle_spec(obj_data, material=[0.8, 0.8, 0.8])
-    tri_desk = obj_to_triangle_spec(off_data, material=[0.5, 0.5, 0.8])
+    tri_bunny = obj_to_triangle_spec(obj_data)
+    tri_desk = obj_to_triangle_spec(off_data)
