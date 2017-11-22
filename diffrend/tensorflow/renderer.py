@@ -1,5 +1,6 @@
 import numpy as np
 import tensorflow as tf
+from diffrend.tensorflow import ops
 
 """
 #TODO:
@@ -30,7 +31,6 @@ def tensor_cross_prod(u, M):
 
 
 def point_along_ray(eye, ray_dir, ray_dist):
-    print(ray_dist)
     return eye[tf.newaxis, tf.newaxis, :] + ray_dist[..., tf.newaxis] * tf.transpose(ray_dir, (1, 0))[np.newaxis, ...]
 
 
@@ -90,8 +90,11 @@ def ray_plane_intersection(eye, ray_dir, plane):
     :param plane: Plane specification
     :return:
     """
+    # pos is any point on the plane
     pos = plane['pos']
-    normal = plane['normal']
+    normal = ops.normalize(plane['normal'])
+
+    # Distance of the plane from the origin along the normal
     dist = tf.reduce_sum(pos * normal, axis=1)
 
     denom = tf.matmul(normal, ray_dir)
@@ -420,7 +423,7 @@ def optimize_scene(out_dir, max_iter=1000, learning_rate=1e-3, print_interval=10
                               'near': 1.0,
                               'far': 1000.0,
                               'use_quaternion': False,
-                              'trainable': True
+                              'trainable': False
                               },
                    'lights': {
                        'pos': np.array([[20., 20., 20., 1.0],
@@ -443,7 +446,7 @@ def optimize_scene(out_dir, max_iter=1000, learning_rate=1e-3, print_interval=10
                                                      [0.9, 0.1, 0.1],
                                                      [0.1, 0.1, 0.8],
                                                      ]),
-                                 'trainable': False
+                                 'trainable': True
                                  },
                    'objects': {
                        'disk': {
@@ -497,10 +500,10 @@ def optimize_scene(out_dir, max_iter=1000, learning_rate=1e-3, print_interval=10
     camera_final = None
     if b_optimize:
         scene_test = scene_basic
-        # scene_test['materials']['albedo'][3] = np.array([0.1, 0.8, 0.9])
-        # scene_test['materials']['albedo'][4] = np.array([0.1, 0.8, 0.9])
-        # scene_test['materials']['albedo'][5] = np.array([0.9, 0.1, 0.1])
-        scene_test['camera']['eye'] = np.array([0.0, 0.0, 8.0, 1.0])
+        scene_test['materials']['albedo'][3] = np.array([0.1, 0.8, 0.9])
+        scene_test['materials']['albedo'][4] = np.array([0.1, 0.8, 0.9])
+        scene_test['materials']['albedo'][5] = np.array([0.9, 0.1, 0.1])
+        #scene_test['camera']['eye'] = np.array([0.0, 0.0, 8.0, 1.0])
         graph = tf.Graph()
         with graph.as_default():
             res = render(scene_test)
@@ -558,9 +561,8 @@ def optimize_scene(out_dir, max_iter=1000, learning_rate=1e-3, print_interval=10
         plt.grid(True)
         plt.savefig(out_dir + '/loss.png')
 
+    plt.ioff()
     plt.show()
-
-    input("press enter")
 
     return materials_final, materials_target, loss_per_iter, camera_final
 
@@ -568,9 +570,9 @@ def optimize_scene(out_dir, max_iter=1000, learning_rate=1e-3, print_interval=10
 if __name__ == '__main__':
     mat_final, mat_target, loss_per_iter, camera_final = optimize_scene(out_dir='./output',
                                                                         learning_rate=1e-3,
-                                                                        max_iter=50,
-                                                                        imsave_interval=10,
-                                                                        print_interval=10,
+                                                                        max_iter=2000,
+                                                                        imsave_interval=100,
+                                                                        print_interval=50,
                                                                         b_optimize=True)
     print('final', mat_final)
     print('target', mat_target)

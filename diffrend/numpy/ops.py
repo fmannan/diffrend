@@ -14,9 +14,15 @@ def norm(u):
     return np.sqrt(norm_sqr(u))
 
 
+def nonzero_divide(x, y):
+    denom = np.where(abs(y) > 0, y, np.ones_like(y))
+    return x / denom
+
+
 def normalize(u):
     u = np.array(u)
-    return u / norm(u)
+    norm_u = norm(u)
+    return nonzero_divide(u, norm_u[..., np.newaxis])
 
 
 def axis_angle_matrix(axis, angle):
