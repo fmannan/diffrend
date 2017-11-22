@@ -49,8 +49,12 @@ def lookat(eye, at, up):
     :return:
     """
     if type(eye) is list:
+        if len(eye) == 3:
+            eye.append(1)
         eye = np.array(eye, dtype=np.float32)
     if type(at) is list:
+        if len(at) == 3:
+            at.append(1)
         at = np.array(at, dtype=np.float32)
     if type(up) is list:
         up = np.array(up, dtype=np.float32)
@@ -59,6 +63,10 @@ def lookat(eye, at, up):
         assert up[3] == 0
         up = up[:3]
 
+    assert abs(eye[3]) > 0 and abs(at[3]) > 0
+
+    eye = eye[:3] / eye[3]
+    at = at[:3] / at[3]
     z = (eye - at)
     z = (z / np.linalg.norm(z, 2))[:3]
 
@@ -67,7 +75,7 @@ def lookat(eye, at, up):
 
     matrix = np.eye(4)
     matrix[:3, :3] = np.stack((x, y, z), axis=1).T
-    matrix[:3, 3] = -eye[:3] / eye[3]
+    matrix[:3, 3] = -eye[:3]
     return matrix
 
 

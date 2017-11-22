@@ -190,12 +190,12 @@ class GLRenderer(QGLWidget):
 
         # set the updated transformation matrices
         model = np.eye(4)
-        view = ops.lookat(eye=[1., 1., 1.], at=[0., 0., 0.], up=[0, 1., 0.])
-        proj = ops.perspective(np.deg2rad(45.), 4/3., .1, 100.)
+        view = ops.lookat(eye=[0., 0., 1., 1.], at=[0., 0., 0.], up=[0, 1., 0.])
+        proj = ops.perspective(np.deg2rad(45.), self.camera.aspect_ratio, .01, 100.)
 
-        self.shader_program.setUniformValue('model', model)
-        self.shader_program.setUniformValue('view', view)
-        self.shader_program.setUniformValue('projection', proj)
+        self.shader_program.setUniformValue('model', model.T)
+        self.shader_program.setUniformValue('view', view.T)
+        self.shader_program.setUniformValue('projection', proj.T)
         #self.disk.render()
         self.mesh.render()
 
