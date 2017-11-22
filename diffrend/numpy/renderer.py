@@ -58,7 +58,7 @@ def ray_plane_intersection(eye, ray_dir, plane):
     :return:
     """
     pos = plane['pos']
-    normal = plane['normal']
+    normal = ops.normalize(plane['normal'])
     dist = np.sum(pos * normal, axis=1)
 
     denom = np.dot(normal, ray_dir)
@@ -247,8 +247,8 @@ def render(scene):
     # Fragment shading
     light_dir = light_pos[np.newaxis, :] - frag_pos[:, np.newaxis, :]
     light_dir_norm = np.sqrt(np.sum(light_dir ** 2, axis=-1))[..., np.newaxis]
-    #light_dir_norm[light_dir_norm <= 0 | np.isinf(light_dir_norm)] = 1
-    light_dir /= light_dir_norm
+    light_dir_norm[light_dir_norm <= 0 | np.isinf(light_dir_norm)] = 1
+    light_dir = ops.nonzero_divide(light_dir, light_dir_norm)
     im_color = np.sum(frag_normals[:, np.newaxis, :] * light_dir, axis=-1)[..., np.newaxis] * \
                light_colors[np.newaxis, ...] * frag_albedo[:, np.newaxis, :]
 
