@@ -118,8 +118,8 @@ class GLRenderer(QGLWidget):
         self.scene = kwargs['scene'] if 'scene' in kwargs else None
         self.clear_color = get_param_value('clear_color', kwargs, [0.1, 0.1, 0.1, 1.0])
         self.model_view = np.eye(4)
-        self.camera = TrackBallCamera([0, 10, 10, 1], at=[0, 0, 0, 1], up=[0, 1, 0, 0], fovy=np.deg2rad(45),
-                                      focal_length=1., viewport=[0, 0, 640, 480])
+        self.camera = TrackBallCamera([0, 0, 2, 1], at=[0, 0, 0, 1], up=[0, 1, 0, 0], fovy=np.deg2rad(45),
+                                      focal_length=0.01, viewport=[0, 0, 640, 480])
 
         self.vs_src = os.path.join(shaders.DIR_SHADERS, 'vs.vert')  #kwargs['vs_src']
         self.fs_src = os.path.join(shaders.DIR_SHADERS, 'fs.frag')  #kwargs['fs_src']
@@ -160,10 +160,6 @@ class GLRenderer(QGLWidget):
         shader_program.addShaderFromFile(GL_FRAGMENT_SHADER, self.fs_src)
         shader_program.link()
         self.shader_program = shader_program
-        #shader_program.use()
-        # shader_program.setValue('uniform', 'mvpMatrix', mvpMatrix)
-        # shader_program.setValue('uniform', 'lightPos', lightPos)
-        # shader_program.setValue('attribute', 'normal', normal)  # per vertex attribute
 
         position = glGetAttribLocation(self.shader_program.id, 'position')
 
@@ -181,6 +177,7 @@ class GLRenderer(QGLWidget):
 
     def resizeGL(self, w: int, h: int):
         self.camera.viewport = [0, 0, w, h]
+        glViewport(0, 0, w, h)
 
     def paintGL(self):
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
@@ -190,8 +187,8 @@ class GLRenderer(QGLWidget):
 
         # set the updated transformation matrices
         model = np.eye(4)
-        view = ops.lookat(eye=[0., 0., 1., 1.], at=[0., 0., 0.], up=[0, 1., 0.])
-        proj = ops.perspective(np.deg2rad(45.), self.camera.aspect_ratio, .01, 100.)
+        view = ops.lookat(eye=self.camera.pos, at=self.camera.at, up=self.camera.up)
+        proj = ops.perspective(self.camera.fovy, self.camera.aspect_ratio, .01, 100.)
 
         self.shader_program.setUniformValue('model', model.T)
         self.shader_program.setUniformValue('view', view.T)
