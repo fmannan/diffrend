@@ -74,7 +74,8 @@ def write_splat(filename, obj):
                 f.write('r {}\n'.format(r))
 
 
-def load_splat(filename):
+def load_splat(filename, verbose=True):
+    """Load 3D model in splats format."""
     with open(filename, 'r') as f:
         obj_file = f.read().splitlines()
 
@@ -93,37 +94,45 @@ def load_splat(filename):
         if line[0] == 'r':
             r.append([float(x) for x in line[1:]])
 
-    print('Vertex count: {}'.format(len(v)))
-    print('Vertex Normal count: {}'.format(len(vn)))
-    print('Splat Radius count: {}'.format(len(r)))
+    if verbose:
+        print('Vertex count: {}'.format(len(v)))
+        print('Vertex Normal count: {}'.format(len(vn)))
+        print('Splat Radius count: {}'.format(len(r)))
 
-    return {'v': np.array(v), 'vn': np.array(vn), 'r': np.array(r), 'type': 'splat'}
+    return {'v': np.array(v), 'vn': np.array(vn), 'r': np.array(r),
+            'type': 'splat'}
 
 
-def load_obj(filename):
+def load_obj(filename, verbose=True):
+    """Read .obj file."""
     with open(filename, 'r') as f:
         obj_file = f.read().splitlines()
+    # print(obj_file)
 
-    #print(obj_file)
     v = []  # list of vertices
     f = []  # list of faces
 
     for line in obj_file:
         line = line.split(' ')
+        # print (line)
         if line[0] == '#':
             continue
         if line[0] == 'v':
             v.append([float(x) for x in line[1:]])
-        if line[0] == 'f':  # Note the conversion from 1-based to 0-based index
-            f.append([(int(x) - 1) for x in line[1:]])
+        if line[0] == 'f':
+            # Note the conversion from 1-based to 0-based index
+            # Note skyping normals and texture index and avoiding extra spaces
+            f.append([(int(x.split('/')[0]) - 1) for x in line[1:] if x])
 
-    print('Vertex count: {}'.format(len(v)))
-    print('Face count: {}'.format(len(f)))
+    if verbose:
+        print('Vertex count: {}'.format(len(v)))
+        print('Face count: {}'.format(len(f)))
 
     return {'v': np.array(v), 'f': np.array(f)}
 
 
-def load_off(filename):
+def load_off(filename, verbose=True):
+    """Load 3D model in .off format."""
     with open(filename, 'r') as f:
         obj_file = f.read().splitlines()
 
@@ -141,11 +150,13 @@ def load_off(filename):
         if line[0] == 'OFF':
             check_num_vertex_face = True
             if len(line) > 1:
-                num_vertices, num_faces, num_edges = int(line[1]), int(line[2]), int(line[3])
+                num_vertices, num_faces, num_edges = int(line[1]),
+                int(line[2]), int(line[3])
                 check_num_vertex_face = False
             continue
         elif check_num_vertex_face:
-            num_vertices, num_faces, num_edges = int(line[0]), int(line[1]), int(line[2])
+            num_vertices, num_faces, num_edges = int(line[0]), int(line[1]),
+            int(line[2])
             check_num_vertex_face = False
             continue
 
@@ -156,24 +167,25 @@ def load_off(filename):
         elif len(e) < num_edges:
             e.append([int(x) for x in line])
 
-    print('#V: {}, #F: {}, #E: {}'.format(num_vertices, num_faces, num_edges))
-
-    print('Vertex count: {}'.format(len(v)))
-    print('Face count: {}'.format(len(f)))
-    print('Edge count: {}'.format(len(e)))
+    if verbose:
+        print('#V: {}, #F: {}, #E: {}'.format(num_vertices, num_faces,
+                                              num_edges))
+        print('Vertex count: {}'.format(len(v)))
+        print('Face count: {}'.format(len(f)))
+        print('Edge count: {}'.format(len(e)))
 
     return {'v': np.array(v), 'f': np.array(f), 'e': np.array(e)}
 
 
-def load_model(filename):
+def load_model(filename, verbose=True):
+    """Load 3D model. Accepts .off .obj .splat."""
     import os
     prefix, ext = os.path.splitext(filename)
     model_loader_fn = {'off': load_off,
                        'obj': load_obj,
-                       'splat': load_splat,
-                      }
+                       'splat': load_splat}
 
-    return model_loader_fn[ext[1:]](filename)
+    return model_loader_fn[ext[1:]](filename, verbose)
 
 
 def obj_to_triangle_spec(obj):
@@ -204,4 +216,3 @@ if __name__ == '__main__':
     splat_obj = load_splat('test.splat')
     tri_bunny = obj_to_triangle_spec(obj_data, material=[0.8, 0.8, 0.8])
     tri_desk = obj_to_triangle_spec(off_data, material=[0.5, 0.5, 0.8])
-

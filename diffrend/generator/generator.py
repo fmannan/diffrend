@@ -1,5 +1,4 @@
 """Generator."""
-# from __future__ import print_function
 import torch
 import torch.nn as nn
 import torch.nn.parallel
@@ -32,7 +31,7 @@ real_label = 1
 fake_label = 0
 
 # Move everything to the GPU
-if opt.cuda:
+if not opt.no_cuda:
     netD.cuda()
     netG.cuda()
     criterion.cuda()
@@ -54,7 +53,7 @@ for epoch in range(opt.niter):
         netD.zero_grad()
         real_cpu, _ = data
         batch_size = real_cpu.size(0)
-        if opt.cuda:
+        if not opt.no_cuda:
             real_cpu = real_cpu.cuda()
         input.resize_as_(real_cpu).copy_(real_cpu)
         label.resize_(batch_size).fill_(real_label)
@@ -71,7 +70,7 @@ for epoch in range(opt.niter):
         noisev = Variable(noise)
         fake = netG(noisev)
         labelv = Variable(label.fill_(fake_label))
-        output = netD(fake.detach())
+        output = netD(fake.detach())  # Do not backpropagate through generator
         errD_fake = criterion(output, labelv)
         errD_fake.backward()
         D_G_z1 = output.data.mean()
@@ -82,7 +81,8 @@ for epoch in range(opt.niter):
         # (2) Update G network: maximize log(D(G(z)))
         ###########################
         netG.zero_grad()
-        labelv = Variable(label.fill_(real_label))  # fake labels are real for generator cost
+        # Fake labels are real for generator cost
+        labelv = Variable(label.fill_(real_label))
         output = netD(fake)
         errG = criterion(output, labelv)
         errG.backward()
@@ -96,14 +96,15 @@ for epoch in range(opt.niter):
                                              errD.data[0], errG.data[0], D_x,
                                              D_G_z1, D_G_z2), end="\r")
         if i % 100 == 0:
-            vutils.save_image(real_cpu,
-                    '%s/real_samples.png' % opt.outf,
-                    normalize=True)
+            vutils.save_image(real_cpu, '%s/real_samples.png' % opt.outf,
+                              normalize=True)
             fake = netG(fixed_noise)
-            vutils.save_image(fake.data,
-                    '%s/fake_samples_epoch_%03d.png' % (opt.outf, epoch),
-                    normalize=True)
+            vutils.save_image(
+                fake.data,
+                '%s/fake_samples_epoch_%03d.png' % (opt.outf, epoch),
+                normalize=True)
 
-    # do checkpointing
+    # Do checkpointing
     torch.save(netG.state_dict(), '%s/netG_epoch_%d.pth' % (opt.outf, epoch))
     torch.save(netD.state_dict(), '%s/netD_epoch_%d.pth' % (opt.outf, epoch))
+    print ("Epoch ", epoch, "finished")

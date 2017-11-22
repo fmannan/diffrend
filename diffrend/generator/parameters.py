@@ -29,7 +29,7 @@ class Parameters():
         self.parser.add_argument('--niter', type=int, default=25, help='number of epochs to train for')
         self.parser.add_argument('--lr', type=float, default=0.0002, help='learning rate, default=0.0002')
         self.parser.add_argument('--beta1', type=float, default=0.5, help='beta1 for adam. default=0.5')
-        self.parser.add_argument('--cuda', action='store_true', help='enables cuda')
+        self.parser.add_argument('--no_cuda', action='store_true', default=False, help='enables cuda')
         self.parser.add_argument('--ngpu', type=int, default=1, help='number of GPUs to use')
         self.parser.add_argument('--netG', default='', help="path to netG (to continue training)")
         self.parser.add_argument('--netD', default='', help="path to netD (to continue training)")
@@ -55,12 +55,12 @@ class Parameters():
         print("Random Seed: ", self.opt.manualSeed)
         random.seed(self.opt.manualSeed)
         torch.manual_seed(self.opt.manualSeed)
-        if self.opt.cuda:
+        if not self.opt.no_cuda:
             torch.cuda.manual_seed_all(self.opt.manualSeed)
 
         # Check CUDA is selected
         cudnn.benchmark = True
-        if torch.cuda.is_available() and not self.opt.cuda:
+        if torch.cuda.is_available() and self.opt.no_cuda:
             print("WARNING: You have a CUDA device, so you should "
                   "probably run with --cuda")
 
