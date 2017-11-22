@@ -6,11 +6,11 @@ CUDA = False
 if torch.cuda.is_available():
     CUDA = True
 
+print('CUDA support ', CUDA)
 
 def point_along_ray(eye, ray_dir, ray_dist):
-    #TODO: continue here
-
-    return eye[np.newaxis, np.newaxis, :] + ray_dist[..., np.newaxis] * ray_dir.T[np.newaxis, ...]
+    # Why doesn't ray_dist[..., np.newaxis] not work!? Advanced slicing not supported?
+    return eye[np.newaxis, np.newaxis, :] + ray_dist[:, :, np.newaxis] * ray_dir.transpose(1, 0)[np.newaxis, ...]
 
 
 # def ray_sphere_intersection(eye, ray_dir, sphere):
