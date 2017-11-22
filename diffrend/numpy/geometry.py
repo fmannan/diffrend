@@ -13,15 +13,15 @@ class SceneObject(object):
     def intersection(self, ray):
         pass
     
-    @abc.abstractmethod
-    @property
-    def vertices(self):
-        pass
-
-    @abc.abstractmethod
-    @property
-    def indices(self):
-        pass
+    # @abc.abstractmethod
+    # @property
+    # def vertices(self):
+    #     pass
+    #
+    # @abc.abstractmethod
+    # @property
+    # def indices(self):
+    #     pass
 
     def vertex_index_list(self):
         return self.vertices, self.indices

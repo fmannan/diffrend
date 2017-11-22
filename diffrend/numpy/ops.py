@@ -33,6 +33,7 @@ def crossprod_matrix(v):
                      [z, 0, -x],
                      [-y, x, 0]])
 
+
 def lookat(eye, at, up):
     """Returns a lookat matrix
 
@@ -92,6 +93,53 @@ def lookat_inv(eye, at, up):
     matrix[:3, :3] = np.stack((x, y, z), axis=1)
     matrix[:3, 3] = eye[:3] / eye[3]
     return matrix
+
+
+def perspective_LH_NO(fovy, aspect, near, far):
+    """Left-handed camera with all coords mapped to [-1, 1]
+    :param fovy:
+    :param aspect:
+    :param near:
+    :param far:
+    :return:
+    """
+    tanHalfFovy = np.tan(fovy / 2.)
+    mat_00 = 1 / (aspect * tanHalfFovy)
+    mat_11 = 1 / tanHalfFovy
+    mat_22 = (near + far) / (far - near)
+    mat_23 = -2 * near * far / (far - near)
+
+    return np.array([[mat_00, 0, 0, 0],
+                     [0, mat_11, 0, 0],
+                     [0, 0, mat_22, mat_23],
+                     [0, 0, 1, 0]])
+
+
+def perspective_RH_NO(fovy, aspect, near, far):
+    """Right-handed camera with all coords mapped to [-1, 1]
+    :param fovy:
+    :param aspect:
+    :param near:
+    :param far:
+    :return:
+    """
+    tanHalfFovy = np.tan(fovy / 2.)
+    mat_00 = 1 / (aspect * tanHalfFovy)
+    mat_11 = 1 / tanHalfFovy
+    mat_22 = (near + far) / (far - near)
+    mat_23 = -2 * near * far / (far - near)
+
+    return np.array([[mat_00, 0, 0, 0],
+                     [0, mat_11, 0, 0],
+                     [0, 0, -mat_22, mat_23],
+                     [0, 0, -1, 0]])
+
+
+def perspective(fovy, aspect, near, far, type='RH_NO'):
+    perspective_fn = {'LH_NO': perspective_LH_NO,
+                      'RH_NO': perspective_RH_NO
+                      }
+    return perspective_fn[type](fovy, aspect, near, far)
 
 
 def compute_face_normal(obj, unnormalized=False):

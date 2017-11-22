@@ -132,6 +132,47 @@ class TrackBallCamera(PinholeCamera):
         self.translate(delta)
 
 
+class VirtualSphereCamera(PinholeCamera):
+    def __init__(self, pos, up, fovy, focal_length, viewport):
+        from diffrend.numpy.geometry import Sphere
+        super(VirtualSphereCamera, self).__init__(pos, np.array([0., 0., 0., 1.]), up, fovy, focal_length, viewport)
+        self.cam_dir = ops.normalize(self.pos[:3])
+        self.radius = ops.norm(self.pos[:3])
+        self.phi = np.arccos(ops.normalize(np.array([self.cam_dir[0], 0., self.cam_dir[2]])), np.array([1., 0., 0.]))
+        self.theta = np.arccos(self.cam_dir[:3], np.array([0., 1., 0.]))
+        self.sphere = Sphere(center=np.array([0., 0., 0.]), radius=self.radius)
+
+    def mouse_press(self, coords):
+        self.src = ops.normalize([coords[0], coords[1], self.pos[2] - self.focal_length])
+        # pick point on sphere
+        # ...
+
+    def mouse_move(self, coords):
+        self.dst = ops.normalize([coords[0], coords[1], self.pos[2] - self.focal_length])
+        print('src', self.src, 'dst:', self.dst)
+        # compute object rotation
+        axis = np.cross(self.src, self.dst)
+        theta = np.arccos(np.dot(self.src, self.dst))
+        print(axis, theta)
+        self.cam_dir = ops.rotate_axis_angle(axis=axis, angle=theta, vec=self.cam_dir)
+        # self.rotate(axis=axis, angle=theta)
+        #
+        # self.src = self.dst
+        # self.view_matrix = self.orientation.R
+
+    def zoom(self, amount):
+        delta = ops.normalize(self.pos) * amount
+        self.translate(delta)
+
+
 if __name__ == '__main__':
-    cam = TrackBallCamera([0.0, 0.0, 1.0, 1.0], at=[0, 0, 0, 1], up=[0, 1, 0], fov=45, focal_length=2,
+    cam = TrackBallCamera([0.0, 0.0, 1.0, 1.0], at=[0, 0, 0, 1], up=[0, 1, 0], fovy=45, focal_length=2,
                           viewport=[0, 0, 640, 480])
+
+    cam = VirtualSphereCamera([0., 0., 1., 1.], up=[0, 1, 0], fovy=45, focal_length=1.,
+                              viewport=[0, 0, 640, 480])
+
+
+    cam.mouse_press([0, 0])
+    cam.mouse_move([1, 0])
+    print(cam)
