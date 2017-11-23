@@ -11,7 +11,7 @@ def norm_sqr(u):
 
 
 def norm(u):
-    return np.sqrt(norm_sqr(u))
+    return norm_p(u, 2)
 
 
 def nonzero_divide(x, y):
@@ -30,7 +30,7 @@ def axis_angle_matrix(axis, angle):
 
 
 def rotate_axis_angle(axis, angle, vec):
-    pass
+    return np.matmul(axis_angle_matrix(axis, angle), vec)
 
 
 def crossprod_matrix(v):
@@ -49,12 +49,8 @@ def lookat(eye, at, up):
     :return:
     """
     if type(eye) is list:
-        if len(eye) == 3:
-            eye.append(1)
         eye = np.array(eye, dtype=np.float32)
     if type(at) is list:
-        if len(at) == 3:
-            at.append(1)
         at = np.array(at, dtype=np.float32)
     if type(up) is list:
         up = np.array(up, dtype=np.float32)
@@ -63,10 +59,14 @@ def lookat(eye, at, up):
         assert up[3] == 0
         up = up[:3]
 
-    assert abs(eye[3]) > 0 and abs(at[3]) > 0
+    if eye.size == 4:
+        assert abs(eye[3]) > 0
+        eye = eye[:3] / eye[3]
 
-    eye = eye[:3] / eye[3]
-    at = at[:3] / at[3]
+    if at.size == 4:
+        assert abs(at[3]) > 0
+        at = at[:3] / at[3]
+
     z = (eye - at)
     z = (z / np.linalg.norm(z, 2))[:3]
 
@@ -170,3 +170,51 @@ def compute_face_normal(obj, unnormalized=False):
     denom = norm(n)[..., np.newaxis]
     denom[denom == 0] = 1
     return n / denom
+
+
+def sph2cart(radius, phi, theta):
+    """
+    :param radius:
+    :param phi: azimuth, i.e., angle between x-axis and xy proj of vector r * sin(theta)
+    :param theta:  inclination, i.e., angle between vector and z-axis
+    :return: [x, y, z]
+    """
+    sinth = np.sin(theta)
+    x = sinth * np.cos(phi) * radius
+    y = sinth * np.sin(phi) * radius
+    z = np.cos(theta) * radius
+    return x, y, z
+
+
+def cart2sph(x, y, z):
+    r = norm(np.array([x, y, z]))
+    if r == 0.0:
+        theta = 0.0
+        phi = 0.0
+    else:
+        theta = np.arccos(z / r)
+        phi = np.arctan2(y, x)
+    return r, phi, theta
+
+
+def sph2cart_vec(u):
+    """
+    :param u: N x 3 in [radius, azimuth, inclination]
+    :return:
+    """
+    """
+    :param radius:
+    :param phi: azimuth, i.e., angle between x-axis and xy proj of vector r * sin(theta)
+    :param theta:  inclination, i.e., angle between vector and z-axis
+    :return: [x, y, z]
+    """
+    radius, phi, theta = u[..., 0], u[..., 1], u[..., 2]
+    sinth = np.sin(theta)
+    x = sinth * np.cos(phi) * radius
+    y = sinth * np.sin(phi) * radius
+    z = np.cos(theta) * radius
+    return np.concatenate((x, y, z), axis=-1)
+
+
+def cart2sph_vec(u):
+    pass

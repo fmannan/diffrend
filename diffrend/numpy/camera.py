@@ -110,22 +110,49 @@ class PinholeCamera(Camera):
 
 
 class TrackBallCamera(PinholeCamera):
-    def __init__(self, pos, at, up, fovy, focal_length, viewport):
-        super(TrackBallCamera, self).__init__(pos, at, up, fovy, focal_length, viewport)
+    def __init__(self, pos, up, fovy, focal_length, viewport):
+        super(TrackBallCamera, self).__init__(pos, np.array([0., 0., 0., 1.]), up, fovy, focal_length, viewport)
+        self.model_matrix = np.eye(4)
+
+    def screen_to_sphere(self, coords):
+        w, h = self.viewport[2] - self.viewport[0], self.viewport[3] - self.viewport[1]
+        cx, cy = w/2, h/2
+        radius = min(cx, cy)
+        #print(cx, cy, radius)
+        x = (coords[0] - cx) / radius
+        y = -(coords[1] - cy) / radius
+        r_sqr = x ** 2 + y ** 2
+        if r_sqr > 1:
+            s = 1 / np.sqrt(r_sqr)
+            x *= s
+            y *= s
+            z = 0
+        else:
+            z = np.sqrt(1 - r_sqr)
+        return np.array([x, y, z])
 
     def mouse_press(self, coords):
-        self.src = ops.normalize([coords[0], coords[1], self.pos[2] - self.focal_length])
+        self.src = self.screen_to_sphere(coords)
 
     def mouse_move(self, coords):
-        self.dst = ops.normalize([coords[0], coords[1], self.pos[2] - self.focal_length])
-        print('src', self.src, 'dst:', self.dst)
+        self.dst = self.screen_to_sphere(coords)
+        #print('src', self.src, 'dst:', self.dst)
         # compute object rotation
-        axis = np.cross(self.src, self.dst)
+        axis = ops.normalize(np.cross(self.src, self.dst))
         theta = np.arccos(np.dot(self.src, self.dst))
-        self.rotate(axis=axis, angle=theta)
+        #print('axis of rotation ', axis)
+        #print('rotation amount ', theta)
+        #self.rotate(axis=axis, angle=theta)
+        # cam_pos = ops.rotate_axis_angle(axis=axis, angle=theta, vec=self.pos)
+        # cam_up = ops.rotate_axis_angle(axis=axis, angle=theta, vec=self.up)
+        # print('cam_pos ', cam_pos)
+        # print('cam_up ', cam_up)
+        self.model_matrix = np.matmul(self.model_matrix, ops.axis_angle_matrix(axis=axis, angle=theta))
+        #self.pos = cam_pos
+        #self.up = cam_up
 
         self.src = self.dst
-        self.view_matrix = self.orientation.R
+        #self.view_matrix = self.orientation.R
 
     def zoom(self, amount):
         delta = ops.normalize(self.pos) * amount
@@ -137,9 +164,7 @@ class VirtualSphereCamera(PinholeCamera):
         from diffrend.numpy.geometry import Sphere
         super(VirtualSphereCamera, self).__init__(pos, np.array([0., 0., 0., 1.]), up, fovy, focal_length, viewport)
         self.cam_dir = ops.normalize(self.pos[:3])
-        self.radius = ops.norm(self.pos[:3])
-        self.phi = np.arccos(ops.normalize(np.array([self.cam_dir[0], 0., self.cam_dir[2]])), np.array([1., 0., 0.]))
-        self.theta = np.arccos(self.cam_dir[:3], np.array([0., 1., 0.]))
+        self.radius, self.phi, self.theta = ops.cart2sph(self.cam_dir[0], self.cam_dir[1], self.cam_dir[2])
         self.sphere = Sphere(center=np.array([0., 0., 0.]), radius=self.radius)
 
     def mouse_press(self, coords):
@@ -149,15 +174,29 @@ class VirtualSphereCamera(PinholeCamera):
 
     def mouse_move(self, coords):
         self.dst = ops.normalize([coords[0], coords[1], self.pos[2] - self.focal_length])
+        delta_step = self.dst - self.src
+
+        if ops.norm(delta_step) == 0:
+            return
+
         print('src', self.src, 'dst:', self.dst)
+
         # compute object rotation
-        axis = np.cross(self.src, self.dst)
+        axis = ops.normalize(np.cross(self.src, self.dst))
         theta = np.arccos(np.dot(self.src, self.dst))
         print(axis, theta)
         self.cam_dir = ops.rotate_axis_angle(axis=axis, angle=theta, vec=self.cam_dir)
+        print('cam_dir', self.cam_dir)
+
+        self.phi += delta_step[0] * 0.1
+        self.theta += delta_step[1] * 0.1
+        print('delta ', delta_step)
+        cam_pos = ops.sph2cart(radius=self.radius, phi=self.phi, theta=self.theta)
+        print('cam_pos', cam_pos)
+        #self.pos = cam_pos
         # self.rotate(axis=axis, angle=theta)
         #
-        # self.src = self.dst
+        self.src = self.dst
         # self.view_matrix = self.orientation.R
 
     def zoom(self, amount):
@@ -166,13 +205,14 @@ class VirtualSphereCamera(PinholeCamera):
 
 
 if __name__ == '__main__':
-    cam = TrackBallCamera([0.0, 0.0, 1.0, 1.0], at=[0, 0, 0, 1], up=[0, 1, 0], fovy=45, focal_length=2,
-                          viewport=[0, 0, 640, 480])
-
     cam = VirtualSphereCamera([0., 0., 1., 1.], up=[0, 1, 0], fovy=45, focal_length=1.,
                               viewport=[0, 0, 640, 480])
-
 
     cam.mouse_press([0, 0])
     cam.mouse_move([1, 0])
     print(cam)
+
+    cam = TrackBallCamera([0.0, 0.0, 1.0, 1.0], up=[0, 1, 0], fovy=45, focal_length=0.01,
+                          viewport=[0, 0, 640, 480])
+    cam.mouse_press([640/2, 480/2])
+    cam.mouse_move([640/2 + 2, 480/2])

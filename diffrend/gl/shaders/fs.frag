@@ -1,5 +1,10 @@
 #version 120
+
+in vec3 v_albedo;
+in vec3 v_normal;
+in vec3 v_pos;
+
 void main()
 {
-   gl_FragColor = vec4(1.0f, 0.0f, 0.0f, 1.0f);
+   gl_FragColor = vec4(v_pos.xyz, 1.0f);
 }
