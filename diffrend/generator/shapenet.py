@@ -7,7 +7,7 @@ import numpy as np
 # import matplotlib.pyplot as plt
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms, utils
-from diffrend.model import load_model
+from diffrend.model import load_model, obj_to_splat
 import json
 
 # Ignore warnings
@@ -54,18 +54,21 @@ class ShapeNetDataset(Dataset):
 
     def __getitem__(self, idx):
         """Get item."""
+        # Get object path
         synset, obj = self.samples[idx]
         obj_path = os.path.join(self.root_dir, synset, obj, 'models',
                                 'model_normalized.obj')
-        print (obj_path)
-        model = load_model(obj_path)
-        # image = io.imread(img_name)
-        # landmarks = self.landmarks_frame.ix[idx, 1:].as_matrix().astype('float')
-        # landmarks = landmarks.reshape(-1, 2)
-        # sample = {'image': image, 'landmarks': landmarks}
+        import analysis.gen_surf_pts
+        from analysis.gen_surf_pts.generator_anim import animate_sample_generation
+        animate_sample_generation(obj_path, num_samples=1000, out_dir=None)
 
-        sample = {'path': obj_path, 'synset': synset}
-
+        # Load obj model
+        obj_model = load_model(obj_path)
+        # Convert model to splats
+        splats_model = obj_to_splat(obj_model, use_circum_circle=True)
+        # Add model and synset to the output dictionary
+        sample = {'splats': splats_model, 'synset': synset}
+        # Transform
         if self.transform:
             sample = self.transform(sample)
 

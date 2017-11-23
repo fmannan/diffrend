@@ -57,8 +57,9 @@ def compute_circum_circle(obj):
 
 
 def obj_to_splat(obj, use_circum_circle=True):
+    """Convert meshes to splats."""
     if not use_circum_circle:
-        raise ValueError('obj_to_splat only support circumscribed circle for now.')
+        raise ValueError('obj_to_splat only support circumscribed circle.')
     cc = compute_circum_circle(obj)
     normals = compute_face_normal(obj)
     return {'v': cc['center'], 'r': cc['radius'], 'vn': normals}
