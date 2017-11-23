@@ -151,13 +151,11 @@ def load_off(filename, verbose=True):
         if line[0] == 'OFF':
             check_num_vertex_face = True
             if len(line) > 1:
-                num_vertices, num_faces, num_edges = int(line[1]),
-                int(line[2]), int(line[3])
+                num_vertices, num_faces, num_edges = int(line[1]), int(line[2]), int(line[3])
                 check_num_vertex_face = False
             continue
         elif check_num_vertex_face:
-            num_vertices, num_faces, num_edges = int(line[0]), int(line[1]),
-            int(line[2])
+            num_vertices, num_faces, num_edges = int(line[0]), int(line[1]), int(line[2])
             check_num_vertex_face = False
             continue
 

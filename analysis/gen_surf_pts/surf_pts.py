@@ -69,89 +69,91 @@ def fc_net(x, is_training, **params):
 
     return net
 
-input_size = 1000  # batch of inputs
-rand_noise_size = 100  # dimension of the input space
-output_size = 1000 * 3  # generate 1000 points
 
-lr = 1e-4
+if __name__ == '__main__':
+    input_size = 1000  # batch of inputs
+    rand_noise_size = 100  # dimension of the input space
+    output_size = 1000 * 3  # generate 1000 points
 
-net_0_spec = [4096, 100]
-net_1_spec = [4096, 100, 4096]
-net_2_spec = [1024, 8192, 4096, 100]
+    lr = 1e-4
 
-net_spec = net_2_spec
+    net_0_spec = [4096, 100]
+    net_1_spec = [4096, 100, 4096]
+    net_2_spec = [1024, 8192, 4096, 100]
 
-obj_fn = point_on_circle_xy_loss  #point_on_sphere_loss  #point_on_disk_xy_loss #
+    net_spec = net_2_spec
 
-graph = tf.Graph()
-with graph.as_default():
-    X = tf.placeholder(dtype=tf.float32, shape=[input_size, rand_noise_size])
+    obj_fn = point_on_circle_xy_loss  #point_on_sphere_loss  #point_on_disk_xy_loss #
 
-    pts = fc_net(X, layers=net_spec, is_training=True, output_size=output_size)
-    pts = tf.reshape(pts, (input_size, -1, 3))
+    graph = tf.Graph()
+    with graph.as_default():
+        X = tf.placeholder(dtype=tf.float32, shape=[input_size, rand_noise_size])
 
-    loss = tf.reduce_mean(obj_fn(pts, radius=1., scale=10))
+        pts = fc_net(X, layers=net_spec, is_training=True, output_size=output_size)
+        pts = tf.reshape(pts, (input_size, -1, 3))
 
-    opt = tf.train.AdamOptimizer(learning_rate=lr).minimize(loss)
+        loss = tf.reduce_mean(obj_fn(pts, radius=1., scale=10))
 
-max_iter = 4000
-print_interval = 100
-loss_per_iter = []
-err_per_iter = []
-best_loss = np.inf
-best_config = dict()
+        opt = tf.train.AdamOptimizer(learning_rate=lr).minimize(loss)
 
-IMG_DIR = './circle_res'
-if not os.path.exists(IMG_DIR):
-    os.mkdir(IMG_DIR)
+    max_iter = 4000
+    print_interval = 100
+    loss_per_iter = []
+    err_per_iter = []
+    best_loss = np.inf
+    best_config = dict()
 
-fig0 = plt.figure(figsize=(9, 3))
-ax0 = fig0.add_subplot(131)
-ax1 = fig0.add_subplot(132)
-ax2 = fig0.add_subplot(133)
-fig = plt.figure()
-ax = fig.add_subplot(111, projection='3d')
+    IMG_DIR = './circle_res'
+    if not os.path.exists(IMG_DIR):
+        os.mkdir(IMG_DIR)
 
-with tf.Session(graph=graph) as sess:
-    tf.global_variables_initializer().run()
+    fig0 = plt.figure(figsize=(9, 3))
+    ax0 = fig0.add_subplot(131)
+    ax1 = fig0.add_subplot(132)
+    ax2 = fig0.add_subplot(133)
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
 
-    for idx in range(max_iter):
-        rand_input = random_sample_generator([input_size, rand_noise_size])
-        _, loss_ = sess.run([opt, loss], feed_dict={X: rand_input})
+    with tf.Session(graph=graph) as sess:
+        tf.global_variables_initializer().run()
 
-        if idx % print_interval == 0 or idx == max_iter - 1:
-            print('%d. Loss: %.4f' % (idx, loss_))
-            pts_ = sess.run(pts, feed_dict={X: rand_input})
-            ax.clear()
-            ax.scatter(pts_[0, :, 0], pts_[0, :, 1], pts_[0, :, 2], s=1)
-            ax.view_init(20, idx % 360)
-            ax.set_aspect('equal')
-            plt.title('Generated output {}, loss: {:.4f}'.format(idx, loss_))
-            plt.xlabel('x')
-            plt.ylabel('y')
-            fig.savefig(IMG_DIR + '/fig_{:06d}.png'.format(idx))
+        for idx in range(max_iter):
+            rand_input = random_sample_generator([input_size, rand_noise_size])
+            _, loss_ = sess.run([opt, loss], feed_dict={X: rand_input})
 
-            # 2D projections
-            ax0.clear()
-            ax0.scatter(pts_[0, :, 0], pts_[0, :, 1], s=1)
-            ax0.set_xlim(-1, 1)
-            ax0.set_ylim(-1, 1)
-            ax0.title.set_text('XY')
-            ax0.set_aspect('equal')
+            if idx % print_interval == 0 or idx == max_iter - 1:
+                print('%d. Loss: %.4f' % (idx, loss_))
+                pts_ = sess.run(pts, feed_dict={X: rand_input})
+                ax.clear()
+                ax.scatter(pts_[0, :, 0], pts_[0, :, 1], pts_[0, :, 2], s=1)
+                ax.view_init(20, idx % 360)
+                ax.set_aspect('equal')
+                plt.title('Generated output {}, loss: {:.4f}'.format(idx, loss_))
+                plt.xlabel('x')
+                plt.ylabel('y')
+                fig.savefig(IMG_DIR + '/fig_{:06d}.png'.format(idx))
 
-            ax1.clear()
-            ax1.scatter(pts_[0, :, 1], pts_[0, :, 2], s=1)
-            ax1.set_xlim(-1, 1)
-            ax1.set_ylim(-1, 1)
-            ax1.title.set_text('YZ')
-            ax1.set_aspect('equal')
+                # 2D projections
+                ax0.clear()
+                ax0.scatter(pts_[0, :, 0], pts_[0, :, 1], s=1)
+                ax0.set_xlim(-1, 1)
+                ax0.set_ylim(-1, 1)
+                ax0.title.set_text('XY')
+                ax0.set_aspect('equal')
 
-            ax2.clear()
-            ax2.scatter(pts_[0, :, 0], pts_[0, :, 2], s=1)
-            ax2.set_xlim(-1, 1)
-            ax2.set_ylim(-1, 1)
-            ax2.title.set_text('XZ')
-            ax2.set_aspect('equal')
-            fig0.savefig(IMG_DIR + '/fig_proj_{:06d}.png'.format(idx))
+                ax1.clear()
+                ax1.scatter(pts_[0, :, 1], pts_[0, :, 2], s=1)
+                ax1.set_xlim(-1, 1)
+                ax1.set_ylim(-1, 1)
+                ax1.title.set_text('YZ')
+                ax1.set_aspect('equal')
+
+                ax2.clear()
+                ax2.scatter(pts_[0, :, 0], pts_[0, :, 2], s=1)
+                ax2.set_xlim(-1, 1)
+                ax2.set_ylim(-1, 1)
+                ax2.title.set_text('XZ')
+                ax2.set_aspect('equal')
+                fig0.savefig(IMG_DIR + '/fig_proj_{:06d}.png'.format(idx))
 
 
