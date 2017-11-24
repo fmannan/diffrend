@@ -1,18 +1,25 @@
+"""Animation generator."""
 from diffrend.utils.sample_generator import uniform_sample_mesh
 from diffrend.model import load_model
 from mpl_toolkits.mplot3d import axes3d
 import matplotlib.pyplot as plt
-
 import numpy as np
 
 
-def animate_sample_generation(model_name, num_samples, out_dir=None):
+def animate_sample_generation(model_name, obj=None, num_samples=1000,
+                              out_dir=None, resample=True, rotate_angle=2):
+    """Animation generator."""
+    # Create the output folder
     if out_dir is not None:
         import os
         if not os.path.exists(out_dir):
             os.mkdir(out_dir)
 
-    obj = load_model(model_name)
+    # Load the model
+    if obj is None:
+        obj = load_model(model_name)
+
+    # Create the window
     if out_dir is None:
         fig = plt.figure(figsize=(8.3, 8.3), dpi=72)
         ax = fig.add_subplot(111, projection='3d')
@@ -22,12 +29,20 @@ def animate_sample_generation(model_name, num_samples, out_dir=None):
     # Find bounding box
     min_val = np.min(obj['v'])
     max_val = np.max(obj['v'])
-    print(min_val, max_val)
     scale_dims = [min_val, max_val]
+    # print(scale_dims)
 
-    for angle in range(0, 360, 2):
+    # Sample points from the mesh
+    if not resample:
+        pts_obj = uniform_sample_mesh(obj, num_samples=num_samples)
+
+    # Rotate the camera
+    for angle in range(0, 360, rotate_angle):
+
+        # Clean the window
         if out_dir is not None:
-            # redrawing with plt.save changes aspect ratio so had to recreate everytime
+            # Redrawing with plt.save changes aspect ratio so had to recreate
+            # everytime
             fig = plt.figure(figsize=(8.3, 8.3), dpi=72)
             ax = fig.add_subplot(111, projection='3d')
             plt.xlabel('x')
@@ -35,7 +50,11 @@ def animate_sample_generation(model_name, num_samples, out_dir=None):
         else:
             ax.clear()
 
-        pts_obj = uniform_sample_mesh(obj, num_samples=num_samples)
+        # Sample points from the mesh
+        if resample:
+            pts_obj = uniform_sample_mesh(obj, num_samples=num_samples)
+
+        # Draw points
         ax.scatter(pts_obj[:, 0], pts_obj[:, 1], pts_obj[:, 2], s=1.3)
         ax.view_init(20, angle)
         ax.set_aspect('equal')
@@ -45,6 +64,7 @@ def animate_sample_generation(model_name, num_samples, out_dir=None):
         plt.tight_layout()
         plt.pause(.00001)
 
+        # Save results
         if out_dir is not None:
             plt.savefig(out_dir + '/fig_%03d.png' % angle)
             plt.close(fig.number)

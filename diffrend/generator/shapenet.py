@@ -1,19 +1,17 @@
-from __future__ import print_function, division
+# from __future__ import print_function, division
 import os
-import torch
-# import pandas as pd
-# from skimage import io, transform
-import numpy as np
-# import matplotlib.pyplot as plt
-from torch.utils.data import Dataset, DataLoader
-from torchvision import transforms, utils
-from diffrend.model import load_model, obj_to_splat
+# import torch
+# import numpy as np
 import json
+from torch.utils.data import Dataset, DataLoader
+# from torchvision import transforms, utils
+from diffrend.model import load_model, obj_to_splat
+from analysis.gen_surf_pts.generator_anim import animate_sample_generation
+
 
 # Ignore warnings
-import warnings
-warnings.filterwarnings("ignore")
-
+# import warnings
+# warnings.filterwarnings("ignore")
 # plt.ion()   # interactive mode
 
 
@@ -58,16 +56,21 @@ class ShapeNetDataset(Dataset):
         synset, obj = self.samples[idx]
         obj_path = os.path.join(self.root_dir, synset, obj, 'models',
                                 'model_normalized.obj')
-        import analysis.gen_surf_pts
-        from analysis.gen_surf_pts.generator_anim import animate_sample_generation
-        animate_sample_generation(obj_path, num_samples=1000, out_dir=None)
 
         # Load obj model
         obj_model = load_model(obj_path)
+
+        # Show loaded model
+        animate_sample_generation(model_name=None, obj=obj_model,
+                                  num_samples=1000, out_dir=None,
+                                  resample=False, rotate_angle=360)
+
         # Convert model to splats
         splats_model = obj_to_splat(obj_model, use_circum_circle=True)
+
         # Add model and synset to the output dictionary
         sample = {'splats': splats_model, 'synset': synset}
+
         # Transform
         if self.transform:
             sample = self.transform(sample)
@@ -133,7 +136,8 @@ class ShapeNetDataset(Dataset):
 def main():
     """Test function."""
     dataset = ShapeNetDataset(
-        root_dir='/mnt/AIDATA/home/dvazquez/datasets/shapenet/ShapeNetCore.v2',
+        # root_dir='/mnt/AIDATA/home/dvazquez/datasets/shapenet/ShapeNetCore.v2',
+        root_dir='/home/dvazquez/datasets/shapenet/ShapeNetCore.v2',
         synsets=None, classes=["airplane", "microphone"], transform=None)
     print (len(dataset))
 
