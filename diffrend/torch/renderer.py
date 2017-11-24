@@ -1,80 +1,81 @@
 import numpy as np
 import torch
+from torch.autograd import Variable
+from diffrend.torch.utils import tonemap, ray_object_intersections, generate_rays, where
 
-from diffrend.torch.utils import tonemap, ray_object_intersections, generate_rays
+
+def render(scene):
+    """
+    :param scene: Scene description
+    :return: [H, W, 3] image
+    """
+    # Construct rays from the camera's eye position through the screen coordinates
+    camera = scene['camera']
+    eye, ray_dir, H, W = generate_rays(camera)
+    H = int(H)
+    W = int(W)
+
+    # Ray-object intersections
+    scene_objects = scene['objects']
+    obj_intersections, ray_dist, normals, material_idx = ray_object_intersections(eye, ray_dir, scene_objects)
+
+    # Valid distances
+    pixel_dist = ray_dist
+    valid_pixels = (camera['near'] <= ray_dist) * (ray_dist <= camera['far'])
+    pixel_dist = pixel_dist * valid_pixels.float() + (camera['far'] + 1) * (1 - valid_pixels.float())
+
+    # Nearest object needs to be compared for valid regions only
+    nearest_dist, nearest_obj = pixel_dist.min(0)
+
+    # Create depth image for visualization
+    # use nearest_obj for gather/select the pixel color
+    im_depth = torch.gather(pixel_dist, 0, nearest_obj[np.newaxis, :]).view(H, W)
+
+    ##############################
+    # Fragment processing
+    ##############################
+    # Lighting
+    color_table = scene['colors']
+    light_pos = scene['lights']['pos']
+    light_clr_idx = scene['lights']['color_idx']
+    light_colors = color_table[light_clr_idx]
+
+    materials = scene['materials']['albedo']
+
+    # Generate the fragments
+    """
+    Get the normal and material for the visible objects.
+    """
+    frag_normals = torch.gather(normals, 0, nearest_obj[np.newaxis, :, np.newaxis].repeat(1, 1, 4))
+    frag_pos = torch.gather(obj_intersections, 0, nearest_obj[np.newaxis, :, np.newaxis].repeat(1, 1, 4))
+    tmp_idx = torch.gather(material_idx, 0, nearest_obj)
+    frag_albedo = torch.index_select(materials, 0, tmp_idx)
 
 
-class Renderer():
-    def __init__(self):
-        super(Renderer, self).__init__()
+    # Fragment shading
+    light_dir = light_pos[:, np.newaxis, :] - frag_pos
+    light_dir_norm = torch.sqrt(torch.sum(light_dir ** 2, dim=-1))[:, :, np.newaxis]
+    light_dir /= light_dir_norm  # TODO: nonzero_divide
 
-    def render(self, scene):
-        """
-        :param scene: Scene description
-        :return: [H, W, 3] image
-        """
-        # Construct rays from the camera's eye position through the screen coordinates
-        camera = scene['camera']
-        eye, ray_dir, H, W = generate_rays(camera)
+    im_color = torch.sum(frag_normals * light_dir, dim=-1)[:, :, np.newaxis] * \
+               light_colors[:, np.newaxis, :] * frag_albedo[np.newaxis, :, :]
 
-        # Ray-object intersections
-        scene_objects = scene['objects']
-        obj_intersections, ray_dist, normals, material_idx = ray_object_intersections(eye, ray_dir, scene_objects)
+    im = torch.sum(im_color, dim=0).view(int(H), int(W), 3)
 
-        # Valid distances
-        pixel_dist = ray_dist
-        valid_pixels = (camera['near'] <= ray_dist) & (ray_dist <= camera['far'])
-        pixel_dist[~valid_pixels] = np.inf  # Will have to use gather operation for TF and pytorch
+    valid_pixels = (camera['near'] <= im_depth) * (im_depth <= camera['far'])
+    im = valid_pixels[:, :, np.newaxis].float() * im
 
-        # Nearest object needs to be compared for valid regions only
-        nearest_obj = np.argmin(pixel_dist, axis=0)
-        C = np.arange(0, nearest_obj.size)  # pixel idx
 
-        # Create depth image for visualization
-        # use nearest_obj for gather/select the pixel color
-        im_depth = pixel_dist[nearest_obj, C].reshape(H, W)
+    # Tonemapping
+    if 'tonemap' in scene:
+        im = tonemap(im, **scene['tonemap'])
 
-        ##############################
-        # Fragment processing
-        ##############################
-        # Lighting
-        color_table = scene['colors']
-        light_pos = scene['lights']['pos']
-        light_clr_idx = scene['lights']['color_idx']
-        light_colors = color_table[light_clr_idx]
-
-        # Generate the fragments
-        """
-        Get the normal and material for the visible objects.
-        """
-        frag_normals = normals[nearest_obj, C]
-        frag_pos = obj_intersections[nearest_obj, C]
-        frag_albedo = scene['materials']['albedo'][material_idx[nearest_obj]]
-
-        # Fragment shading
-        light_dir = light_pos[np.newaxis, :] - frag_pos[:, np.newaxis, :]
-        light_dir_norm = np.sqrt(np.sum(light_dir ** 2, axis=-1))[..., np.newaxis]
-        # light_dir_norm[light_dir_norm <= 0 | np.isinf(light_dir_norm)] = 1
-        light_dir /= light_dir_norm
-        im_color = np.sum(frag_normals[:, np.newaxis, :] * light_dir, axis=-1)[..., np.newaxis] * \
-                   light_colors[np.newaxis, ...] * frag_albedo[:, np.newaxis, :]
-
-        im = np.sum(im_color, axis=1).reshape(H, W, 3)
-        im[(im_depth < camera['near']) | (im_depth > camera['far'])] = 0
-
-        # clip negative values
-        im[im < 0] = 0
-
-        # Tonemapping
-        if 'tonemap' in scene:
-            im = tonemap(im, **scene['tonemap'])
-
-        return {
-            'image': im,
-            'depth': im_depth,
-            'ray_dist': ray_dist,
-            'obj_dist': pixel_dist,
-            'nearest': nearest_obj.reshape(H, W),
-            'ray_dir': ray_dir,
-            'valid_pixels': valid_pixels
-        }
+    return {
+        'image': im,
+        'depth': im_depth,
+        'ray_dist': ray_dist,
+        'obj_dist': pixel_dist,
+        'nearest': nearest_obj.view(H, W),
+        'ray_dir': ray_dir,
+        'valid_pixels': valid_pixels
+    }
