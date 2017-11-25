@@ -86,10 +86,14 @@ class Mesh:
         glBindVertexArray(0)
         print('Mesh::load_model (LOADED)')
 
-    def render(self):
+    def render(self, render_point_cloud=False):
         glBindVertexArray(self.vao)
-        glDrawElements(GL_TRIANGLES, self.faces.size, GL_UNSIGNED_INT, ctypes.c_void_p(0))
-        #glDrawArrays(GL_TRIANGLES, 0, self.vertices.size)
+        if not render_point_cloud:
+            glDrawElements(GL_TRIANGLES, self.faces.size, GL_UNSIGNED_INT, ctypes.c_void_p(0))
+            # glDrawArrays(GL_TRIANGLES, 0, self.vertices.size)
+        else:
+            glDrawArrays(GL_POINTS, 0, self.vertices.size)
+
         glBindVertexArray(0)
 
 
@@ -130,7 +134,7 @@ class GLRenderer(QOpenGLWidget):
         self.model_view = np.eye(4)
         self.camera = TrackBallCamera([0, 0, 2, 1], up=[0, 1, 0, 0], fovy=np.deg2rad(45),
                                       focal_length=0.01, viewport=[0, 0, self.width(), self.height()])
-
+        self.render_point_cloud = False
         self.vs_src = os.path.join(shaders.DIR_SHADERS, 'vs.vert')  #kwargs['vs_src']
         self.fs_src = os.path.join(shaders.DIR_SHADERS, 'fs.frag')  #kwargs['fs_src']
 
@@ -209,7 +213,7 @@ class GLRenderer(QOpenGLWidget):
         self.shader_program.setUniformValue('view', view.T)
         self.shader_program.setUniformValue('projection', proj.T)
         #self.disk.render()
-        self.mesh.render()
+        self.mesh.render(self.render_point_cloud)
 
         glBindVertexArray(0)
         glUseProgram(0)
@@ -217,12 +221,15 @@ class GLRenderer(QOpenGLWidget):
     def keyPressEvent(self, e: QtGui.QKeyEvent):
         if e.key() == Qt.Key_Escape:
             self.close()
-        if e.key() == Qt.Key_L:
+        elif e.key() == Qt.Key_L:
             filename, _ = QFileDialog.getOpenFileName(self, "Load Model", DIR_DATA)
             if self.mesh is None:
                 self.mesh = Mesh(filename=filename, position=self.pos_loc, bbox=self.bbox)
             self.mesh.load_model(filename)
             self.repaint()
+        elif e.key() == Qt.Key_P:
+            # toggle point cloud rendering
+            self.render_point_cloud = not self.render_point_cloud
 
     def mousePressEvent(self, e: QtGui.QMouseEvent):
         self.mouse_pos = [e.x(), e.y()]
