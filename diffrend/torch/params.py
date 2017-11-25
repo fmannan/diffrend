@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-from diffrend.torch.utils import tch_var_f, tch_var_l
+from diffrend.torch.utils import tch_var_f, tch_var_l_ng
 
 OUTPUT_FOLDER = "output/"
 
@@ -22,7 +22,7 @@ SCENE_BASIC = {
             [20., 20., 20., 1.0],
             [-15, 3., 15., 1.0]
         ]),
-        'color_idx': tch_var_l([2, 1]),
+        'color_idx': tch_var_l_ng([2, 1]),
         # Light attenuation factors have the form (kc, kl, kq) and eq: 1/(kc + kl * d + kq * d^2)
         'attenuation': [
             [0., 1., 0.],
@@ -56,7 +56,7 @@ SCENE_BASIC = {
                 [10., 5., -5, 1.0]
             ]),
             'radius': tch_var_f([4, 7, 4]),
-            'material_idx': tch_var_l([4, 3, 5])
+            'material_idx': tch_var_l_ng([4, 3, 5])
         }
     },
     'tonemap': {

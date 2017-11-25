@@ -36,7 +36,7 @@ def render(scene):
     ##############################
     # Lighting
     color_table = scene['colors']
-    light_pos = scene['lights']['pos']
+    light_pos = scene['lights']['pos'][:, :3]
     light_clr_idx = scene['lights']['color_idx']
     light_colors = color_table[light_clr_idx]
 
@@ -46,8 +46,8 @@ def render(scene):
     """
     Get the normal and material for the visible objects.
     """
-    frag_normals = torch.gather(normals, 0, nearest_obj[np.newaxis, :, np.newaxis].repeat(1, 1, 4))
-    frag_pos = torch.gather(obj_intersections, 0, nearest_obj[np.newaxis, :, np.newaxis].repeat(1, 1, 4))
+    frag_normals = torch.gather(normals, 0, nearest_obj[np.newaxis, :, np.newaxis].repeat(1, 1, 3))
+    frag_pos = torch.gather(obj_intersections, 0, nearest_obj[np.newaxis, :, np.newaxis].repeat(1, 1, 3))
     tmp_idx = torch.gather(material_idx, 0, nearest_obj)
     frag_albedo = torch.index_select(materials, 0, tmp_idx)
 

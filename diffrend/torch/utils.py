@@ -2,15 +2,24 @@ import numpy as np
 import torch
 from torch.autograd import Variable
 
+CPU_ONLY = False
 CUDA = False
-if torch.cuda.is_available():
+if torch.cuda.is_available() and not CPU_ONLY:
     CUDA = True
+    FloatTensor = torch.cuda.FloatTensor
+    LongTensor = torch.cuda.LongTensor
+else:
+    FloatTensor = torch.FloatTensor
+    LongTensor = torch.LongTensor
 
 print('CUDA support ', CUDA)
 
-tch_var = lambda x, fn_type: Variable(fn_type(x))
-tch_var_f = lambda x: tch_var(x, torch.FloatTensor)
-tch_var_l = lambda x: tch_var(x, torch.LongTensor)
+tch_var = lambda x, fn_type, req_grad: Variable(fn_type(x), requires_grad=req_grad)
+tch_var_f = lambda x: tch_var(x, FloatTensor, True)
+tch_var_l = lambda x: tch_var(x, LongTensor, True)
+tch_var_f_ng = lambda x: tch_var(x, FloatTensor, False)
+tch_var_l_ng = lambda x: tch_var(x, LongTensor, False)
+
 
 def where(cond, x, y):
     return cond.float() * x + (1 - cond.float()) * y
@@ -20,15 +29,33 @@ def norm_p(u, p=2):
     return torch.pow(torch.sum(torch.pow(u, p), dim=-1), 1./p)
 
 
+def nonzero_divide(x, y):
+    """ x and y need to have the same dimensions
+    :param x:
+    :param y:
+    :return:
+    """
+    assert list(x.size()) == list(y.size())
+
+    mask = torch.abs(y) > 0
+    return x.masked_scatter(mask, x.masked_select(mask) / y.masked_select(mask))
+
+
 def normalize(u):
     denom = norm_p(u, 2)
     if u.dim() > 1:
         denom = denom[:, np.newaxis]
+    # TODO: nonzero_divide for rows with norm = 0
     return u / denom
 
 
 def point_along_ray(eye, ray_dir, ray_dist):
-    # Why doesn't ray_dist[..., np.newaxis] not work!? Advanced slicing not supported?
+    """Find the point along the ray_dir at distance ray_dist
+    :param eye: 4-element vector or 3-element vector
+    :param ray_dir: [4 x N] matrix with N rays and each ray being [x, y, z, 0] direction or [3 x N]
+    :param ray_dist: [M x N] matrix with M objects and N rays
+    :return: [M x N x 4] intersection points or [M x N x 3]
+    """
     return eye[np.newaxis, np.newaxis, :] + ray_dist[:, :, np.newaxis] * ray_dir.transpose(1, 0)[np.newaxis, ...]
 
 
@@ -83,8 +110,8 @@ def ray_plane_intersection(eye, ray_dir, plane):
     :param plane: Plane specification
     :return:
     """
-    pos = plane['pos']
-    normal = normalize(plane['normal'])
+    pos = plane['pos'][:, :3]
+    normal = normalize(plane['normal'][:, :3])
     dist = torch.sum(pos * normal, dim=1)
 
     denom = torch.mm(normal, ray_dir)
@@ -108,7 +135,7 @@ def ray_disk_intersection(eye, ray_dir, disks):
     normals = result['normal']
     ray_dist = result['ray_distance']
 
-    centers = disks['pos']
+    centers = disks['pos'][:, :3]
     radius = disks['radius']
     dist_sqr = torch.sum((intersection_pts - centers[:, np.newaxis, :]) ** 2, dim=-1)
 
@@ -191,10 +218,40 @@ def lookat(eye, at, up):
 
     rot_matrix = torch.stack((x, y, z), dim=1).transpose(1, 0)
     rot_translate = torch.cat((rot_matrix, -eye[:3][:, np.newaxis]), dim=1)
-    return torch.cat((rot_translate, torch.FloatTensor(np.array([0, 0, 0, 1])[np.newaxis, :])), dim=0)
+    return torch.cat((rot_translate, tch_var_f([0, 0, 0, 1])[np.newaxis, :]), dim=0)
 
 
 def lookat_inv(eye, at, up):
+    """Returns the inverse lookat matrix
+    :param eye: camera location
+    :param at: lookat point
+    :param up: up direction
+    :return: 4x4 inverse lookat matrix
+    """
+    # if up.size()[-1] == 4:
+    #     assert up.data.numpy()[3] == 0
+    #     up = up[:3]
+    #
+    # if eye.size()[-1] == 4:
+    #     assert abs(eye.data.numpy()[3]) > 0
+    #     eye = eye[:3] / eye[3]
+    #
+    # if at.size()[-1] == 4:
+    #     assert abs(at.data.numpy()[3]) > 0
+    #     at = at[:3] / at[3]
+    #
+    # z = (eye - at)
+    # z = normalize(z)
+    #
+    # y = normalize(up)
+    # x = torch.cross(y, z)
+
+    rot_matrix = lookat_rot_inv(eye, at, up)  #torch.stack((x, y, z), dim=1)
+    rot_translate = torch.cat((rot_matrix, eye.view(-1, 1)), dim=1)
+    return torch.cat((rot_translate, tch_var_f([0, 0, 0, 1.])[np.newaxis, :]), dim=0)
+
+
+def lookat_rot_inv(eye, at, up):
     """Returns the inverse lookat matrix
     :param eye: camera location
     :param at: lookat point
@@ -219,9 +276,7 @@ def lookat_inv(eye, at, up):
     y = normalize(up)
     x = torch.cross(y, z)
 
-    rot_matrix = torch.stack((x, y, z), dim=1)
-    rot_translate = torch.cat((rot_matrix, eye.view(-1, 1)), dim=1)
-    return torch.cat((rot_translate, torch.FloatTensor(np.array([0, 0, 0, 1.])[np.newaxis, :])), dim=0)
+    return torch.stack((x, y, z), dim=1)
 
 
 def tonemap(im, **kwargs):
@@ -246,16 +301,15 @@ def generate_rays(camera):
 
     n_pixels = x.size
 
-    x = Variable(torch.FloatTensor(x.ravel()))
-    y = Variable(torch.FloatTensor(y.ravel()))
+    x = tch_var_f(x.ravel())
+    y = tch_var_f(y.ravel())
 
-    eye = camera['eye']
-    at = camera['at']
-    up = camera['up']
+    eye = camera['eye'][:3]
+    at = camera['at'][:3]
+    up = camera['up'][:3]
 
-    ray_dir = torch.stack((x, y, Variable(torch.FloatTensor(-np.ones(n_pixels) * focal_length)),
-                           Variable(torch.zeros(n_pixels))), dim=0)
-    inv_view_matrix = lookat_inv(eye=eye, at=at, up=up)
+    ray_dir = torch.stack((x, y, tch_var_f(-np.ones(n_pixels) * focal_length)), dim=0)
+    inv_view_matrix = lookat_rot_inv(eye=eye, at=at, up=up)
 
     ray_dir = torch.mm(inv_view_matrix, ray_dir)
 
