@@ -1,3 +1,4 @@
+from diffrend.model import compute_face_normal
 import numpy as np
 
 
@@ -90,14 +91,20 @@ def uniform_sample_mesh(obj, num_samples):
     else:
         area = triangle_double_area(obj)
 
+    if 'fn' in obj:
+        fn = obj['fn']
+    else:
+        fn = compute_face_normal(obj)
+
     prob_area = area / np.sum(area)
 
-    # First choose triangle based on their size
+    # First choose triangles based on their size
     idx = np.random.choice(f.shape[0], num_samples, p=prob_area)
     # Construct batch of triangles
     tri = np.concatenate((v[f[idx, 0]][:, np.newaxis, :], v[f[idx, 1]][:, np.newaxis, :], v[f[idx, 2]][:, np.newaxis]),
                          axis=1)
-    return uniform_sample_triangle(tri, num_samples)
+    vn = fn[idx]
+    return uniform_sample_triangle(tri, num_samples), vn
 
 
 if __name__ == '__main__':
@@ -133,25 +140,25 @@ if __name__ == '__main__':
 
     v = np.array([[0., 0., 0.], [1., 0., 0.], [0.5, 1.0, 0.], [2., 2., 1.]])
     f = np.array([[0, 1, 2], [2, 1, 3]], dtype=np.int32)
-    pts = uniform_sample_mesh({'v': v, 'f': f}, num_samples=1000)
+    pts, vn = uniform_sample_mesh({'v': v, 'f': f}, num_samples=1000)
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
     ax.scatter(pts[:, 0], pts[:, 1], pts[:, 2])
     plt.xlabel('x')
     plt.ylabel('y')
 
-    from diffrend.model import load_off, load_obj
+    from diffrend.model import load_model
 
-    obj = load_off('../../data/chair_0001.off')
-    pts = uniform_sample_mesh(obj, num_samples=1000)
+    obj = load_model('../../data/chair_0001.off')
+    pts, vn = uniform_sample_mesh(obj, num_samples=1000)
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
     ax.scatter(pts[:, 0], pts[:, 1], pts[:, 2], s=1.6)
     plt.xlabel('x')
     plt.ylabel('y')
 
-    obj = load_obj('../../data/bunny.obj')
-    pts_obj = uniform_sample_mesh(obj, num_samples=800)
+    obj = load_model('../../data/bunny.obj')
+    pts_obj, vn = uniform_sample_mesh(obj, num_samples=800)
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
     ax.scatter(pts_obj[:, 0], pts_obj[:, 1], pts_obj[:, 2])
@@ -160,8 +167,8 @@ if __name__ == '__main__':
     plt.ylabel('y')
 
 
-    obj = load_off('../../data/desk_0007.off')
-    pts_obj = uniform_sample_mesh(obj, num_samples=1000)
+    obj = load_model('../../data/desk_0007.off')
+    pts_obj, vn = uniform_sample_mesh(obj, num_samples=1000)
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
     ax.scatter(pts_obj[:, 0], pts_obj[:, 1], pts_obj[:, 2])
@@ -170,5 +177,3 @@ if __name__ == '__main__':
 
     plt.ioff()
     plt.show()
-
-
