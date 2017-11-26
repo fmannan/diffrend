@@ -15,10 +15,8 @@ else:
 print('CUDA support ', CUDA)
 
 tch_var = lambda x, fn_type, req_grad: Variable(fn_type(x), requires_grad=req_grad)
-tch_var_f = lambda x: tch_var(x, FloatTensor, True)
-tch_var_l = lambda x: tch_var(x, LongTensor, True)
-tch_var_f_ng = lambda x: tch_var(x, FloatTensor, False)
-tch_var_l_ng = lambda x: tch_var(x, LongTensor, False)
+tch_var_f = lambda x: tch_var(x, FloatTensor, False)
+tch_var_l = lambda x: tch_var(x, LongTensor, False)
 
 
 def where(cond, x, y):
@@ -281,7 +279,7 @@ def lookat_rot_inv(eye, at, up):
 
 def tonemap(im, **kwargs):
     if kwargs['type'] == 'gamma':
-        return im ** kwargs['gamma']
+        return torch.pow(im, kwargs['gamma'])
 
 
 # only required for meta computation, no tensor req

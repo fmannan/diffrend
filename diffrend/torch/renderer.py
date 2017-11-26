@@ -1,8 +1,16 @@
 import numpy as np
 import torch
-from torch.autograd import Variable
-from diffrend.torch.utils import tonemap, ray_object_intersections, generate_rays, where
+from diffrend.torch.utils import tonemap, ray_object_intersections, generate_rays, where, tch_var_f
 
+"""
+Scalable Rendering TODO:
+1. Backface culling. Cull splats for which dot((eye - pos), normal) <= 0 
+2. Frustum culling
+3. Ray culling: Low-res image and per-pixel frustum culling to determine the valid rays
+4. Bound sphere for splats 
+5. OpenGL pass to determine visible splats. I.e. every pixel in the output image will have the splat index, the 
+intersection point  
+"""
 
 def render(scene):
     """
@@ -65,6 +73,8 @@ def render(scene):
     valid_pixels = (camera['near'] <= im_depth) * (im_depth <= camera['far'])
     im = valid_pixels[:, :, np.newaxis].float() * im
 
+    # clip non-negative
+    im = torch.nn.functional.relu(im)
 
     # Tonemapping
     if 'tonemap' in scene:
@@ -77,5 +87,5 @@ def render(scene):
         'obj_dist': pixel_dist,
         'nearest': nearest_obj.view(H, W),
         'ray_dir': ray_dir,
-        'valid_pixels': valid_pixels
+        'valid_pixels': valid_pixels,
     }
