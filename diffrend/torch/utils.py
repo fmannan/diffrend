@@ -2,15 +2,59 @@ import numpy as np
 import torch
 from torch.autograd import Variable
 
+CPU_ONLY = False
 CUDA = False
-if torch.cuda.is_available():
+if torch.cuda.is_available() and not CPU_ONLY:
     CUDA = True
+    FloatTensor = torch.cuda.FloatTensor
+    LongTensor = torch.cuda.LongTensor
+else:
+    FloatTensor = torch.FloatTensor
+    LongTensor = torch.LongTensor
+
+print('CUDA support ', CUDA)
+
+tch_var = lambda x, fn_type, req_grad: Variable(fn_type(x), requires_grad=req_grad)
+tch_var_f = lambda x: tch_var(x, FloatTensor, False)
+tch_var_l = lambda x: tch_var(x, LongTensor, False)
+
+
+def where(cond, x, y):
+    return cond.float() * x + (1 - cond.float()) * y
+
+
+def norm_p(u, p=2):
+    return torch.pow(torch.sum(torch.pow(u, p), dim=-1), 1./p)
+
+
+def nonzero_divide(x, y):
+    """ x and y need to have the same dimensions
+    :param x:
+    :param y:
+    :return:
+    """
+    assert list(x.size()) == list(y.size())
+
+    mask = torch.abs(y) > 0
+    return x.masked_scatter(mask, x.masked_select(mask) / y.masked_select(mask))
+
+
+def normalize(u):
+    denom = norm_p(u, 2)
+    if u.dim() > 1:
+        denom = denom[:, np.newaxis]
+    # TODO: nonzero_divide for rows with norm = 0
+    return u / denom
 
 
 def point_along_ray(eye, ray_dir, ray_dist):
-    #TODO: continue here
-
-    return eye[np.newaxis, np.newaxis, :] + ray_dist[..., np.newaxis] * ray_dir.T[np.newaxis, ...]
+    """Find the point along the ray_dir at distance ray_dist
+    :param eye: 4-element vector or 3-element vector
+    :param ray_dir: [4 x N] matrix with N rays and each ray being [x, y, z, 0] direction or [3 x N]
+    :param ray_dist: [M x N] matrix with M objects and N rays
+    :return: [M x N x 4] intersection points or [M x N x 3]
+    """
+    return eye[np.newaxis, np.newaxis, :] + ray_dist[:, :, np.newaxis] * ray_dir.transpose(1, 0)[np.newaxis, ...]
 
 
 # def ray_sphere_intersection(eye, ray_dir, sphere):
@@ -64,23 +108,20 @@ def ray_plane_intersection(eye, ray_dir, plane):
     :param plane: Plane specification
     :return:
     """
-    pos = Variable(torch.FloatTensor(plane['pos']))
-    normal = Variable(torch.FloatTensor(plane['normal']))
-    dist = torch.sum(pos * normal, 1)
+    pos = plane['pos'][:, :3]
+    normal = normalize(plane['normal'][:, :3])
+    dist = torch.sum(pos * normal, dim=1)
 
-    rd = Variable(torch.FloatTensor(ray_dir))
-    denom = torch.mm(normal, rd)
+    denom = torch.mm(normal, ray_dir)
 
     # check for denom = 0
     intersection_mask = torch.abs(denom) > 0
 
-    eye_ = Variable(torch.FloatTensor(eye))
+    ray_dist = (dist.unsqueeze(-1) - torch.mm(normal, eye.unsqueeze(-1))) / denom
 
-    ray_dist = (dist.unsqueeze(-1) - torch.mm(normal, eye_.unsqueeze(-1))) / denom
+    intersection_pts = point_along_ray(eye, ray_dir, ray_dist)
 
-    intersection_pts = point_along_ray(eye_, rd, ray_dist)
-
-    normals = np.ones_like(intersection_pts) * normal[:, np.newaxis, :]
+    normals = normal[:, np.newaxis, :].repeat(1, intersection_pts.size()[1], 1)
 
     return {'intersect': intersection_pts, 'normal': normals, 'ray_distance': ray_dist,
             'intersection_mask': intersection_mask}
@@ -92,17 +133,16 @@ def ray_disk_intersection(eye, ray_dir, disks):
     normals = result['normal']
     ray_dist = result['ray_distance']
 
-    centers = disks['pos']
-
-    dist_sqr = np.sum((intersection_pts - centers[:, np.newaxis, :]) ** 2, axis=-1)
+    centers = disks['pos'][:, :3]
+    radius = disks['radius']
+    dist_sqr = torch.sum((intersection_pts - centers[:, np.newaxis, :]) ** 2, dim=-1)
 
     # Intersection mask
-    mask_intersect = (dist_sqr <= disks['radius'][:, np.newaxis] ** 2)
-    intersection_pts[~mask_intersect] = np.inf
-    ray_dist[~mask_intersect] = np.inf
+    intersection_mask = (dist_sqr <= radius[:, np.newaxis] ** 2)
+    ray_dist = where(intersection_mask, ray_dist, 1001)
 
     return {'intersect': intersection_pts, 'normal': normals, 'ray_distance': ray_dist,
-            'intersection_mask': mask_intersect}
+            'intersection_mask': intersection_mask}
 
 
 # def ray_triangle_intersection(eye, ray_dir, triangles):
@@ -151,33 +191,32 @@ intersection_fn = {'disk': ray_disk_intersection,
 
 def lookat(eye, at, up):
     """Returns a lookat matrix
-
     :param eye:
     :param at:
     :param up:
     :return:
     """
-    if type(eye) is list:
-        eye = np.array(eye, dtype=np.float32)
-    if type(at) is list:
-        at = np.array(at, dtype=np.float32)
-    if type(up) is list:
-        up = np.array(up, dtype=np.float32)
-
-    if up.size == 4:
-        assert up[3] == 0
+    if up.size()[-1] == 4:
+        assert up.data.numpy()[3] == 0
         up = up[:3]
 
+    if eye.size()[-1] == 4:
+        assert abs(eye.data.numpy()[3]) > 0
+        eye = eye[:3] / eye[3]
+
+    if at.size()[-1] == 4:
+        assert abs(at.data.numpy()[3]) > 0
+        at = at[:3] / at[3]
+
     z = (eye - at)
-    z = (z / np.linalg.norm(z, 2))[:3]
+    z = normalize(z)
 
-    y = up / np.linalg.norm(up, 2)
-    x = np.cross(y, z)
+    y = normalize(up)
+    x = torch.cross(y, z)
 
-    matrix = np.eye(4)
-    matrix[:3, :3] = np.stack((x, y, z), axis=1).T
-    matrix[:3, 3] = -eye[:3] / eye[3]
-    return matrix
+    rot_matrix = torch.stack((x, y, z), dim=1).transpose(1, 0)
+    rot_translate = torch.cat((rot_matrix, -eye[:3][:, np.newaxis]), dim=1)
+    return torch.cat((rot_translate, tch_var_f([0, 0, 0, 1])[np.newaxis, :]), dim=0)
 
 
 def lookat_inv(eye, at, up):
@@ -187,32 +226,60 @@ def lookat_inv(eye, at, up):
     :param up: up direction
     :return: 4x4 inverse lookat matrix
     """
-    if type(eye) is list:
-        eye = np.array(eye, dtype=np.float32)
-    if type(at) is list:
-        at = np.array(at, dtype=np.float32)
-    if type(up) is list:
-        up = np.array(up, dtype=np.float32)
+    # if up.size()[-1] == 4:
+    #     assert up.data.numpy()[3] == 0
+    #     up = up[:3]
+    #
+    # if eye.size()[-1] == 4:
+    #     assert abs(eye.data.numpy()[3]) > 0
+    #     eye = eye[:3] / eye[3]
+    #
+    # if at.size()[-1] == 4:
+    #     assert abs(at.data.numpy()[3]) > 0
+    #     at = at[:3] / at[3]
+    #
+    # z = (eye - at)
+    # z = normalize(z)
+    #
+    # y = normalize(up)
+    # x = torch.cross(y, z)
 
-    if up.size == 4:
-        assert up[3] == 0
+    rot_matrix = lookat_rot_inv(eye, at, up)  #torch.stack((x, y, z), dim=1)
+    rot_translate = torch.cat((rot_matrix, eye.view(-1, 1)), dim=1)
+    return torch.cat((rot_translate, tch_var_f([0, 0, 0, 1.])[np.newaxis, :]), dim=0)
+
+
+def lookat_rot_inv(eye, at, up):
+    """Returns the inverse lookat matrix
+    :param eye: camera location
+    :param at: lookat point
+    :param up: up direction
+    :return: 4x4 inverse lookat matrix
+    """
+    if up.size()[-1] == 4:
+        assert up.data.numpy()[3] == 0
         up = up[:3]
 
+    if eye.size()[-1] == 4:
+        assert abs(eye.data.numpy()[3]) > 0
+        eye = eye[:3] / eye[3]
+
+    if at.size()[-1] == 4:
+        assert abs(at.data.numpy()[3]) > 0
+        at = at[:3] / at[3]
+
     z = (eye - at)
-    z = (z / np.linalg.norm(z, 2))[:3]
+    z = normalize(z)
 
-    y = up / np.linalg.norm(up, 2)
-    x = np.cross(y, z)
+    y = normalize(up)
+    x = torch.cross(y, z)
 
-    matrix = np.eye(4)
-    matrix[:3, :3] = np.stack((x, y, z), axis=1)
-    matrix[:3, 3] = eye[:3] / eye[3]
-    return matrix
+    return torch.stack((x, y, z), dim=1)
 
 
 def tonemap(im, **kwargs):
     if kwargs['type'] == 'gamma':
-        return im ** kwargs['gamma']
+        return torch.pow(im, kwargs['gamma'])
 
 
 # only required for meta computation, no tensor req
@@ -220,28 +287,32 @@ def generate_rays(camera):
     viewport = np.array(camera['viewport'])
     W, H = viewport[2] - viewport[0], viewport[3] - viewport[1]
     aspect_ratio = W / H
-
     fovy = np.array(camera['fovy'])
     focal_length = np.array(camera['focal_length'])
     h = np.tan(fovy / 2) * 2 * focal_length
     w = h * aspect_ratio
 
-    # TODO: linspace isn't differentiable,
-    # TODO: meshgrid isn't implemented in PyTorch
     x, y = np.meshgrid(np.linspace(-1, 1, W), np.linspace(1, -1, H))
 
     x *= w / 2
     y *= h / 2
 
-    eye = np.array(camera['eye'])
-    ray_dir = np.stack((x.ravel(), y.ravel(), -np.ones(x.size) * focal_length, np.zeros(x.size)), axis=0)
-    # view_matrix = lookat(eye=eye, at=camera['at'], up=camera['up'])
-    inv_view_matrix = lookat_inv(eye=eye, at=camera['at'], up=camera['up'])
-    print(inv_view_matrix, np.linalg.inv(inv_view_matrix))
-    ray_dir = np.dot(inv_view_matrix, ray_dir)
+    n_pixels = x.size
+
+    x = tch_var_f(x.ravel())
+    y = tch_var_f(y.ravel())
+
+    eye = camera['eye'][:3]
+    at = camera['at'][:3]
+    up = camera['up'][:3]
+
+    ray_dir = torch.stack((x, y, tch_var_f(-np.ones(n_pixels) * focal_length)), dim=0)
+    inv_view_matrix = lookat_rot_inv(eye=eye, at=at, up=up)
+
+    ray_dir = torch.mm(inv_view_matrix, ray_dir)
 
     # normalize ray direction
-    ray_dir /= np.sqrt(np.sum(ray_dir ** 2, axis=0))
+    ray_dir /= torch.sqrt(torch.sum(ray_dir ** 2, dim=0))
 
     return eye, ray_dir, H, W
 
@@ -256,11 +327,11 @@ def ray_object_intersections(eye, ray_dir, scene_objects):
         curr_intersects = result['intersect']
         curr_ray_dist = result['ray_distance']
         curr_normals = result['normal']
-        if curr_ray_dist.ndim == 1:
+        if curr_ray_dist.dim() == 1:
             curr_ray_dist = curr_ray_dist[np.newaxis, :]
-        if curr_intersects.ndim == 1:
+        if curr_intersects.dim() == 1:
             curr_intersects = curr_intersects[np.newaxis, :]
-        if curr_normals.ndim == 1:
+        if curr_normals.dim() == 1:
             curr_normals = curr_normals[np.newaxis, :]
 
         if obj_intersections is None:
@@ -270,9 +341,9 @@ def ray_object_intersections(eye, ray_dir, scene_objects):
             normals = curr_normals
             material_idx = scene_objects[obj_type]['material_idx']
         else:
-            obj_intersections = np.concatenate((obj_intersections, curr_intersects), axis=0)
-            ray_dist = np.concatenate((ray_dist, curr_ray_dist), axis=0)
-            normals = np.concatenate((normals, curr_normals), axis=0)
-            material_idx = np.concatenate((material_idx, scene_objects[obj_type]['material_idx']), axis=0)
+            obj_intersections = torch.cat((obj_intersections, curr_intersects), dim=0)
+            ray_dist = torch.cat((ray_dist, curr_ray_dist), dim=0)
+            normals = torch.cat((normals, curr_normals), dim=0)
+            material_idx = torch.cat((material_idx, scene_objects[obj_type]['material_idx']), dim=0)
 
     return obj_intersections, ray_dist, normals, material_idx
