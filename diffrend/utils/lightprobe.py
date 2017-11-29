@@ -1,7 +1,7 @@
 import numpy as np
 
 
-def load_lightprobe(filename, dim=None, endian='big', datatype='i4', flipud=True, clip_lb_thresh=0, normalize=True):
+def load_lightprobe(filename, dim=None, endian='big', datatype='f4', flipud=True, clip_lb_thresh=0, normalize=True):
     """
     :param filename:
     :param endian: 'big' or 'little'
