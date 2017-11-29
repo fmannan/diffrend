@@ -55,7 +55,6 @@ def animate_sample_generation(model_name, obj=None, num_samples=1000,
             pts_obj, vn = uniform_sample_mesh(obj, num_samples=num_samples)
 
         # Draw points
-        print (pts_obj)
         ax.scatter(pts_obj[:, 0], pts_obj[:, 1], pts_obj[:, 2], s=1.3)
         ax.view_init(20, angle)
         ax.set_aspect('equal')
