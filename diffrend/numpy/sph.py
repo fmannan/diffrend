@@ -165,7 +165,7 @@ def reconstruct_SH9(L, dim):
     return recon
 
 
-def irad_Z(L, dim):
+def irrad_Z(L, dim):
     H, W = dim
     i, j = np.mgrid[0:H, 0:W]
 
@@ -181,10 +181,41 @@ def irad_Z(L, dim):
     return irradiance_polar(M, theta, phi)
 
 
+def plot_RealSH9(dim):
+    H, W = dim
+    i, j = np.mgrid[0:H, 0:W]
+
+    v = (W / 2.0 - i) / (W / 2.0)
+    u = (j - H / 2.0) / (H / 2.0)
+    r = np.sqrt(u ** 2 + v ** 2)
+
+    valid_region = (r <= 1.0)
+
+    theta = np.pi * r
+    phi = np.arctan2(v, u)
+
+    Y = RealSH9_polar(theta, phi)
+    plt.figure()
+    for l in range(3):
+        for m in range(-l, l + 1):
+            idx = lm2idx(l, m)
+            plt_idx = l * 5 + (m + 3)
+            plt.subplot(3, 5, plt_idx)
+            plt.imshow(Y[..., idx] * valid_region)
+            plt.axis('off')
+
+
 if __name__ == '__main__':
+    import argparse
     import matplotlib.pyplot as plt
-    filename = '../../data/envmap/rnl_probe.float'  #'../../data/envmap/grace_probe.float' #'../../data/envmap/stpeters_probe.float'  #
-    envmap, _ = load_lightprobe(filename)
+    from data import DIR_DATA
+
+    parser = argparse.ArgumentParser(usage='sph.py --fname lightprobe_path')
+    parser.add_argument('--fname', type=str, default=DIR_DATA + '/envmap/rnl_probe.float')
+    args = parser.parse_args()
+
+    # rnl_probe.float, grace_probe.float, stpeters_probe.float
+    envmap, _ = load_lightprobe(args.fname)
     L = radiance_SH9(envmap)
 
     H, W, C = envmap.shape
@@ -195,14 +226,17 @@ if __name__ == '__main__':
     theta, phi = np.meshgrid(np.linspace(0, np.pi, 1000), np.linspace(0, 2 * np.pi, 1000))
     R = RealSH9_polar(theta, phi)
 
-    # TODO: plot 3 rows 5 cols of the first 9 SH
-    # ...
-
     # from mpl_toolkits.mplot3d import axes3d
     #
     # fig = plt.figure()
     # ax = fig.add_subplot(111, projection='3d')
-    im = irad_Z(L, (500, 500))
+    plt.ion()
+
+    plot_RealSH9((200, 200))
+    im = irrad_Z(L, (500, 500))
 
     plt.figure()
     plt.imshow(im - im.min())
+
+    plt.ioff()
+    plt.show()
