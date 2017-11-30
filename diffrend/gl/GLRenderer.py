@@ -4,7 +4,7 @@ from PyQt5.QtWidgets import QOpenGLWidget, QFileDialog
 from PyQt5.QtGui import QOpenGLVersionProfile, QSurfaceFormat
 
 import numpy as np
-from diffrend.model import load_model
+from diffrend.model import load_model, load_splat
 from diffrend.numpy.camera import TrackBallCamera
 import diffrend.numpy.ops as ops
 from diffrend.utils.utils import get_param_value
@@ -86,10 +86,14 @@ class Mesh:
         glBindVertexArray(0)
         print('Mesh::load_model (LOADED)')
 
-    def render(self):
+    def render(self, render_point_cloud=False):
         glBindVertexArray(self.vao)
-        glDrawElements(GL_TRIANGLES, self.faces.size, GL_UNSIGNED_INT, ctypes.c_void_p(0))
-        #glDrawArrays(GL_TRIANGLES, 0, self.vertices.size)
+        if not render_point_cloud:
+            glDrawElements(GL_TRIANGLES, self.faces.size, GL_UNSIGNED_INT, ctypes.c_void_p(0))
+            # glDrawArrays(GL_TRIANGLES, 0, self.vertices.size)
+        else:
+            glDrawArrays(GL_POINTS, 0, self.vertices.size)
+
         glBindVertexArray(0)
 
 
@@ -118,6 +122,70 @@ class Disk:
         glBindVertexArray(0)
 
 
+class Splat:
+    # TODO: REPLACE THE MESH STUFF AND ADD INSTANCED DISK RENDERING WITH THE MODEL TRANSFORM STORED FOR EACH INSTANCE
+    def __init__(self, filename, **kwargs):
+        print('Splat::__init__')
+        self.pos_loc = get_param_value('position', kwargs, None, required=True)
+        self.bbox = get_param_value('bbox', kwargs, False)
+        self.vao = None
+        self.vbo_pos = None
+        self.ibo = None
+        self.load_model(filename)
+
+    def cleanup(self):
+        if self.vao is not None:
+            glDeleteVertexArrays(1, self.vao)
+        if self.vbo_pos is not None:
+            glDeleteBuffers(self.vbo_pos)
+        if self.ibo is not None:
+            glDeleteBuffers(self.ibo)
+
+    def load_model(self, filename):
+        print("Splat::load_model Loading {}".format(filename))
+        self.obj = load_splat(filename)
+        """Create VAO and VBOs
+        """
+        self.vertices = self.obj['v']
+
+        if self.bbox is not None and self.bbox is not False:
+            P = self.vertices
+            P = (P - np.mean(P, axis=0)) / np.max(np.max(P, axis=0) - np.min(P, axis=0))
+            self.vertices = P
+
+        self.faces = self.obj['f']
+
+        # self.cleanup()
+
+        if self.vao is None:
+            self.vao = glGenVertexArrays(1)
+        glBindVertexArray(self.vao)
+
+        if self.vbo_pos is None:
+            self.vbo_pos = glGenBuffers(1)
+        glBindBuffer(GL_ARRAY_BUFFER, self.vbo_pos)
+        glEnableVertexAttribArray(self.pos_loc)
+        glVertexAttribPointer(self.pos_loc, 3, GL_FLOAT, False, 0, ctypes.c_void_p(0))
+        glBufferData(GL_ARRAY_BUFFER, array("f", self.vertices.ravel()).tobytes(), GL_STATIC_DRAW)
+
+        if self.ibo is None:
+            self.ibo = glGenBuffers(1)
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self.ibo)
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, array("I", self.faces.ravel()).tobytes(), GL_STATIC_DRAW)
+        glBindVertexArray(0)
+        print('Splat::load_model (LOADED)')
+
+    def render(self, render_point_cloud=False):
+        glBindVertexArray(self.vao)
+        if not render_point_cloud:
+            glDrawElements(GL_TRIANGLES, self.faces.size, GL_UNSIGNED_INT, ctypes.c_void_p(0))
+            # glDrawArrays(GL_TRIANGLES, 0, self.vertices.size)
+        else:
+            glDrawArrays(GL_POINTS, 0, self.vertices.size)
+
+        glBindVertexArray(0)
+
+
 class GLRenderer(QOpenGLWidget):
     def __init__(self, version_profile=None, parent=None, **kwargs):
         super(GLRenderer, self).__init__(parent)
@@ -130,7 +198,7 @@ class GLRenderer(QOpenGLWidget):
         self.model_view = np.eye(4)
         self.camera = TrackBallCamera([0, 0, 2, 1], up=[0, 1, 0, 0], fovy=np.deg2rad(45),
                                       focal_length=0.01, viewport=[0, 0, self.width(), self.height()])
-
+        self.render_point_cloud = False
         self.vs_src = os.path.join(shaders.DIR_SHADERS, 'vs.vert')  #kwargs['vs_src']
         self.fs_src = os.path.join(shaders.DIR_SHADERS, 'fs.frag')  #kwargs['fs_src']
 
@@ -164,6 +232,7 @@ class GLRenderer(QOpenGLWidget):
 
         glClearColor(self.clear_color[0], self.clear_color[1], self.clear_color[2], self.clear_color[3])
 
+        glPointSize(2.0)
         glEnable(GL_DEPTH_TEST)
         #glEnable(GL_LESS)
         shader_program = ShaderProgram()
@@ -209,7 +278,7 @@ class GLRenderer(QOpenGLWidget):
         self.shader_program.setUniformValue('view', view.T)
         self.shader_program.setUniformValue('projection', proj.T)
         #self.disk.render()
-        self.mesh.render()
+        self.mesh.render(self.render_point_cloud)
 
         glBindVertexArray(0)
         glUseProgram(0)
@@ -217,12 +286,15 @@ class GLRenderer(QOpenGLWidget):
     def keyPressEvent(self, e: QtGui.QKeyEvent):
         if e.key() == Qt.Key_Escape:
             self.close()
-        if e.key() == Qt.Key_L:
+        elif e.key() == Qt.Key_L:
             filename, _ = QFileDialog.getOpenFileName(self, "Load Model", DIR_DATA)
             if self.mesh is None:
                 self.mesh = Mesh(filename=filename, position=self.pos_loc, bbox=self.bbox)
             self.mesh.load_model(filename)
             self.repaint()
+        elif e.key() == Qt.Key_P:
+            # toggle point cloud rendering
+            self.render_point_cloud = not self.render_point_cloud
 
     def mousePressEvent(self, e: QtGui.QMouseEvent):
         self.mouse_pos = [e.x(), e.y()]
