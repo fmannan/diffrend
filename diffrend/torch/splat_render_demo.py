@@ -7,6 +7,7 @@ from data import DIR_DATA
 
 import copy
 import os
+from time import time
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.misc import imsave
@@ -18,6 +19,9 @@ def render_random_splat_camera(filename, out_dir, num_samples, radius, cam_dist,
     Randomly generate N samples on a surface and render them. The samples include position and normal, the radius is set
     to a constant.
     """
+    sampling_time = []
+    rendering_time = []
+
     obj = load_model(filename)
     if not os.path.exists(out_dir):
         os.mkdir(out_dir)
@@ -38,7 +42,9 @@ def render_random_splat_camera(filename, out_dir, num_samples, radius, cam_dist,
     cam_pos = uniform_sample_sphere(radius=cam_dist, num_samples=num_views)
     plt.figure()
     for idx in range(cam_pos.shape[0]):
+        start_time = time()
         v, vn = uniform_sample_mesh(obj, num_samples=num_samples)
+        sampling_time.append(time() - start_time)
 
         # normalize the vertices
         v = (v - np.mean(v, axis=0)) / (v.max() - v.min())
@@ -50,7 +56,10 @@ def render_random_splat_camera(filename, out_dir, num_samples, radius, cam_dist,
         suffix = '_{}'.format(idx)
 
         # main render run
+        start_time = time()
         res = render(large_scene)
+        rendering_time.append(time() - start_time)
+
         if CUDA:
             im = res['image'].cpu().data.numpy()
         else:
@@ -73,6 +82,10 @@ def render_random_splat_camera(filename, out_dir, num_samples, radius, cam_dist,
 
         imsave(out_dir + '/img' + suffix + '.png', im)
         imsave(out_dir + '/img_depth' + suffix + '.png', im_depth)
+
+    # Timing statistics
+    print('Sampling time mean: {}s, std: {}s'.format(np.mean(sampling_time), np.std(sampling_time)))
+    print('Rendering time mean: {}s, std: {}s'.format(np.mean(rendering_time), np.std(rendering_time)))
 
 
 if __name__ == '__main__':
