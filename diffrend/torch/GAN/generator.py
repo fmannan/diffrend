@@ -31,6 +31,7 @@ parser = argparse.ArgumentParser(usage="splat_gen_render_demo.py --model filenam
                                        "--n 5000 --width 128 --height 128 --r 0.025 --cam_dist 5 --nv 10")
 parser.add_argument('--model', type=str, default=DIR_DATA + '/chair_0001.off')
 parser.add_argument('--out_dir', type=str, default='./render_samples/')
+parser.add_argument('--gen_type', type=str, default='resnet')
 parser.add_argument('--width', type=int, default=128)
 parser.add_argument('--height', type=int, default=128)
 parser.add_argument('--n', type=int, default=2000)
@@ -230,7 +231,7 @@ for epoch in range(opt.niter):
     D_x = output.data.mean()
 
     # train with fake
-    noise.resize_(batch_size, int(opt.nz), 1, 1).normal_(0, 1)
+    noise.resize_(batch_size, int(opt.nz)).normal_(0, 1)
     noisev = Variable(noise)
     fake = netG(noisev)
     #######################
