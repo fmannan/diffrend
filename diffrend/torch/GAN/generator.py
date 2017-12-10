@@ -42,7 +42,7 @@ parser.add_argument('--f', type=float, default=0.1, help='focal length')
 
 args = parser.parse_args()
 
-def same(filename,  num_samples, radius, width, height,fovy, focal_length,cam_pos,batch_size):
+def same_view(filename,  num_samples, radius, width, height,fovy, focal_length,cam_pos,batch_size):
     """
     Randomly generate N samples on a surface and render them. The samples include position and normal, the radius is set
     to a constant.
@@ -139,6 +139,16 @@ fixed_noise = Variable(fixed_noise)
 optimizerD = optim.Adam(netD.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
 optimizerG = optim.Adam(netG.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
 cam_pos = uniform_sample_sphere(radius=args.cam_dist, num_samples=2)
+r = np.ones(args.n) * args.r
+large_scene = copy.deepcopy(SCENE_BASIC)
+large_scene['camera']['viewport'] = [0, 0, args.width,args.height]
+large_scene['camera']['fovy'] = np.deg2rad(args.fovy)
+large_scene['camera']['focal_length'] =args.f
+large_scene['objects']['disk']['radius'] = tch_var_f(r)
+large_scene['objects']['disk']['material_idx'] = tch_var_l(np.zeros(args.n, dtype=int).tolist())
+large_scene['materials']['albedo'] = tch_var_f([[0.6, 0.6, 0.6]])
+large_scene['tonemap']['gamma'] = tch_var_f([1.0])  # Linear output
+large_scene['camera']['eye'] = tch_var_f(cam_pos[0])
 for epoch in range(opt.niter):
 
     ############################
@@ -146,7 +156,7 @@ for epoch in range(opt.niter):
     ###########################
     # train with real
     netD.zero_grad()
-    real_cpu = same(args.model, args.n, args.r,  args.width, args.height, args.fovy, args.f,cam_pos[0],opt.batchSize)
+    real_cpu = same_view(args.model, args.n, args.r,  args.width, args.height, args.fovy, args.f,cam_pos[0],opt.batchSize)
 
 
     batch_size = real_cpu.size(0)
@@ -169,15 +179,7 @@ for epoch in range(opt.niter):
     #######################
     #processig generator output to get image
     ########################
-    r = np.ones(args.n) * args.r
-    large_scene = copy.deepcopy(SCENE_BASIC)
-    large_scene['camera']['viewport'] = [0, 0, args.width,args.height]
-    large_scene['camera']['fovy'] = np.deg2rad(args.fovy)
-    large_scene['camera']['focal_length'] =args.f
-    large_scene['objects']['disk']['radius'] = tch_var_f(r)
-    large_scene['objects']['disk']['material_idx'] = tch_var_l(np.zeros(args.n, dtype=int).tolist())
-    large_scene['materials']['albedo'] = tch_var_f([[0.6, 0.6, 0.6]])
-    large_scene['tonemap']['gamma'] = tch_var_f([1.0])  # Linear output
+
 
     # generate camera positions on a sphere
 
@@ -191,7 +193,7 @@ for epoch in range(opt.niter):
         large_scene['objects']['disk']['pos'] = temp
         large_scene['objects']['disk']['normal'] = fake[idx][:, 3:]
 
-        large_scene['camera']['eye'] = tch_var_f(cam_pos[0])
+
         suffix = '_{}'.format(idx)
 
         # main render run
