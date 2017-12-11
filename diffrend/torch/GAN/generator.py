@@ -1,6 +1,8 @@
+"""Genrator."""
 from __future__ import absolute_import
 
-import os, sys
+import os
+import sys
 sys.path.append('../..')
 import torch
 import torch.nn as nn
@@ -18,129 +20,110 @@ from diffrend.torch.utils import tch_var_f, tch_var_l, CUDA
 from diffrend.torch.renderer import render
 from diffrend.utils.sample_generator import uniform_sample_mesh, uniform_sample_sphere
 from diffrend.model import load_model
-from data import DIR_DATA
+# from data import DIR_DATA
 import argparse
 import copy
 import os
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.misc import imsave
+
+
 CRITIC_ITERS=4
-# Get parameters
-parser = argparse.ArgumentParser(usage="splat_gen_render_demo.py --model filename --out_dir output_dir "
-                                       "--n 5000 --width 128 --height 128 --r 0.025 --cam_dist 5 --nv 10")
-parser.add_argument('--model', type=str, default=DIR_DATA + '/bunny.obj')
-parser.add_argument('--out_dir', type=str, default='/data/lisa/data/sai/renderer_bunny_64_sameview_check_separatefake')
-parser.add_argument('--gen_type', type=str, default='resnet')
-parser.add_argument('--width', type=int, default=64)
-parser.add_argument('--height', type=int, default=64)
-parser.add_argument('--n', type=int, default=2000)
-parser.add_argument('--r', type=float, default=0.025)
-parser.add_argument('--cam_dist', type=float, default=5.0, help='Camera distance from the center of the object')
-parser.add_argument('--nv', type=int, default=10, help='Number of views to generate')
-parser.add_argument('--fovy', type=float, default=15.0, help='Field of view in the vertical direction')
-parser.add_argument('--f', type=float, default=0.1, help='focal length')
-parser.add_argument('--same_view', action='store_true', default=False, help='data with view fixed')
-parser.add_argument(
-    "--criterion",
-    help="GAN Training criterion",
-    choices=['GAN', 'WGAN'],
-    default='WGAN'
-)
-parser.add_argument(
-    "--gp",
-    help="Add gradient penalty",
-    choices=['None', 'original'],
-    default='original'
-)
-parser.add_argument(
-    "--gp_lambda",
-    help="GP lambda",
-    type=float,
-    default=10.
-)
-args = parser.parse_args()
 
-def same_view(filename,  num_samples, radius, width, height,fovy, focal_length,cam_pos,batch_size):
+
+def same_view(filename,  num_samples, radius, width, height, fovy,
+              focal_length, cam_pos, batch_size, verbose=False):
+    """Generate random samples of an object from the same camera position.
+
+    Randomly generate N samples on a surface and render them. The samples
+    include position and normal, the radius is set to a constant.
     """
-    Randomly generate N samples on a surface and render them. The samples include position and normal, the radius is set
-    to a constant.
-    """
-    obj = load_model(filename)
+    # Load model
+    obj = load_model(filename, verbose=verbose)
 
-
+    # Set the splats radius
     r = np.ones(num_samples) * radius
 
+    # Create a splats rendering scene
     large_scene = copy.deepcopy(SCENE_BASIC)
 
+    # Define the camera parameters
     large_scene['camera']['viewport'] = [0, 0, width, height]
     large_scene['camera']['fovy'] = np.deg2rad(fovy)
     large_scene['camera']['focal_length'] = focal_length
     large_scene['objects']['disk']['radius'] = tch_var_f(r)
-    large_scene['objects']['disk']['material_idx'] = tch_var_l(np.zeros(num_samples, dtype=int).tolist())
+    large_scene['objects']['disk']['material_idx'] = tch_var_l(
+        np.zeros(num_samples, dtype=int).tolist())
     large_scene['materials']['albedo'] = tch_var_f([[0.6, 0.6, 0.6]])
     large_scene['tonemap']['gamma'] = tch_var_f([1.0])  # Linear output
 
-    # generate camera positions on a sphere
-
-
-
-    data=[]
+    # Generate camera positions on a sphere
+    data = []
     for idx in range(batch_size):
+        # Sample points from the 3D mesh
         v, vn = uniform_sample_mesh(obj, num_samples=num_samples)
 
-        # normalize the vertices
+        # Normalize the vertices
         v = (v - np.mean(v, axis=0)) / (v.max() - v.min())
 
+        # Save the splats into the rendering scene
         large_scene['objects']['disk']['pos'] = tch_var_f(v)
         large_scene['objects']['disk']['normal'] = tch_var_f(vn)
 
+        # TODO: This should be outside?
         large_scene['camera']['eye'] = tch_var_f(cam_pos)
-        suffix = '_{}'.format(idx)
+        # suffix = '_{}'.format(idx)
 
-        # main render run
+        # Render scene
         res = render(large_scene)
-        if CUDA:
-            im = res['image']
-        else:
-            im = res['image']
 
-        if CUDA:
-            depth = res['depth']
-        else:
-            depth = res['depth']
-        #import ipdb; ipdb.set_trace()
+        # Get render image from render.
+        # im = res['image']
+
+        # Get depth image from render.
+        depth = res['depth']
+
+        # import ipdb; ipdb.set_trace()
+
+        # Normalize depth image
         cond = depth >= large_scene['camera']['far']
         depth = where(cond, torch.min(depth), depth)
-        #depth[depth >= large_scene['camera']['far']] = torch.min(depth)
-        im_depth =(depth - torch.min(depth)) / (torch.max(depth) - torch.min(depth))
+        # depth[depth >= large_scene['camera']['far']] = torch.min(depth)
+        im_depth = ((depth - torch.min(depth)) /
+                    (torch.max(depth) - torch.min(depth)))
 
+        # Add depth image to the output structure
         data.append(im_depth.unsqueeze(0))
+
     return torch.stack(data)
 
-def different_views(filename,  num_samples, radius, cam_dist,  width, height,fovy, focal_length,batch_size):
-    """
-    Randomly generate N samples on a surface and render them. The samples include position and normal, the radius is set
-    to a constant.
-    """
-    obj = load_model(filename)
 
+# TODO: This function is the same as the previous one except for one line. Can
+# we add a parameter and combine both?
+def different_views(filename, num_samples, radius, cam_dist,  width, height,
+                    fovy, focal_length, batch_size, verbose=False):
+    """Generate rendom samples of an object from different camera positions.
 
+    Randomly generate N samples on a surface and render them. The samples
+    include position and normal, the radius is set to a constant.
+    """
+    obj = load_model(filename, verbose=verbose)
     r = np.ones(num_samples) * radius
-
     large_scene = copy.deepcopy(SCENE_BASIC)
 
     large_scene['camera']['viewport'] = [0, 0, width, height]
     large_scene['camera']['fovy'] = np.deg2rad(fovy)
     large_scene['camera']['focal_length'] = focal_length
     large_scene['objects']['disk']['radius'] = tch_var_f(r)
-    large_scene['objects']['disk']['material_idx'] = tch_var_l(np.zeros(num_samples, dtype=int).tolist())
+    large_scene['objects']['disk']['material_idx'] = tch_var_l(
+        np.zeros(num_samples, dtype=int).tolist())
     large_scene['materials']['albedo'] = tch_var_f([[0.6, 0.6, 0.6]])
     large_scene['tonemap']['gamma'] = tch_var_f([1.0])  # Linear output
 
     # generate camera positions on a sphere
     cam_pos = uniform_sample_sphere(radius=cam_dist, num_samples=batch_size)
-    data=[]
+    data = []
     for idx in range(batch_size):
         v, vn = uniform_sample_mesh(obj, num_samples=num_samples)
 
@@ -151,33 +134,35 @@ def different_views(filename,  num_samples, radius, cam_dist,  width, height,fov
         large_scene['objects']['disk']['normal'] = tch_var_f(vn)
 
         large_scene['camera']['eye'] = tch_var_f(cam_pos[idx])
-        suffix = '_{}'.format(idx)
+        # suffix = '_{}'.format(idx)
 
-        # main render run
+        # Render scene
         res = render(large_scene)
-        if CUDA:
-            im = res['image']
-        else:
-            im = res['image']
 
-        if CUDA:
-            depth = res['depth']
-        else:
-            depth = res['depth']
+        # Get rendered image
+        # im = res['image']
 
+        # Get depth image
+        depth = res['depth']
+
+        # Normalize depth image.
+        # TODO: Used several times. Better move to a function
         cond = depth >= large_scene['camera']['far']
         depth = where(cond, torch.min(depth), depth)
-        #depth[depth >= large_scene['camera']['far']] = torch.min(depth)
-        im_depth =(depth - torch.min(depth)) / (torch.max(depth) - torch.min(depth))
+        # depth[depth >= large_scene['camera']['far']] = torch.min(depth)
+        im_depth = ((depth - torch.min(depth)) /
+                    (torch.max(depth) - torch.min(depth)))
 
         data.append(im_depth.unsqueeze(0))
     return torch.stack(data)
 
 
-print(args)
-if not os.path.exists(args.out_dir):
-    os.mkdir(args.out_dir)
+############################
+# MAIN
+###########################
+# TODO: Better move to a train function and create an entry point
 
+# Parse args
 opt = Parameters().parse()
 
 def calc_gradient_penalty(discriminator, real_data, fake_data):
@@ -206,14 +191,14 @@ def calc_gradient_penalty(discriminator, real_data, fake_data):
     gradients = gradients.view(gradients.size(0), -1)
 
     gradient_penalty = ((gradients.norm(2, dim=1) - 1) ** 2).mean() * \
-        args.gp_lambda
+        opt.gp_lambda
 
     return gradient_penalty
 # Load dataset
-#dataloader = Dataset_load(opt).get_dataloader()
+# dataloader = Dataset_load(opt).get_dataloader()
 
 # Create the networks
-netG, netD = create_networks(opt,args)
+netG, netD = create_networks(opt)
 
 # Create the criterion
 criterion = nn.BCELoss()
@@ -243,32 +228,40 @@ if not opt.no_cuda:
 # Setup optimizer
 optimizerD = optim.Adam(netD.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
 optimizerG = optim.Adam(netG.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
-if args.same_view:
-    cam_pos = uniform_sample_sphere(radius=args.cam_dist, num_samples=2)
-r = np.ones(args.n) * args.r
+
+# Create splats rendering scene
+if opt.same_view:
+    cam_pos = uniform_sample_sphere(radius=opt.cam_dist, num_samples=2)
+r = np.ones(opt.n) * opt.r
 large_scene = copy.deepcopy(SCENE_BASIC)
-large_scene['camera']['viewport'] = [0, 0, args.width,args.height]
-large_scene['camera']['fovy'] = np.deg2rad(args.fovy)
-large_scene['camera']['focal_length'] =args.f
+large_scene['camera']['viewport'] = [0, 0, opt.width, opt.height]
+large_scene['camera']['fovy'] = np.deg2rad(opt.fovy)
+large_scene['camera']['focal_length'] = opt.f
 large_scene['objects']['disk']['radius'] = tch_var_f(r)
-large_scene['objects']['disk']['material_idx'] = tch_var_l(np.zeros(args.n, dtype=int).tolist())
+large_scene['objects']['disk']['material_idx'] = tch_var_l(
+    np.zeros(opt.n, dtype=int).tolist())
 large_scene['materials']['albedo'] = tch_var_f([[0.6, 0.6, 0.6]])
 large_scene['tonemap']['gamma'] = tch_var_f([1.0])  # Linear output
-#large_scene['camera']['eye'] = tch_var_f(cam_pos[0])
+# large_scene['camera']['eye'] = tch_var_f(cam_pos[0])
+
+# Start training
 for epoch in range(opt.niter):
 
     ############################
     # (1) Update D network: maximize log(D(x)) + log(1 - D(G(z)))
     ###########################
     # train with real
-    for i in range(CRITIC_ITERS):
+    
+      for i in range(CRITIC_ITERS):
         netD.zero_grad()
-        if args.same_view:
-            print("same view/n")
-            real_cpu = same_view(args.model, args.n, args.r,  args.width, args.height, args.fovy, args.f,np.copy(cam_pos[0]),opt.batchSize)
+        if opt.same_view:
+            real_cpu = same_view(opt.model, opt.n, opt.r,  opt.width,
+                                 opt.height, opt.fovy, opt.f, np.copy(cam_pos[0]),
+                                 opt.batchSize)
         else:
-            real_cpu = different_views(args.model, args.n, args.r,  args.cam_dist,args.width, args.height, args.fovy, args.f,opt.batchSize)
-
+            real_cpu = different_views(opt.model, opt.n, opt.r, opt.cam_dist,
+                                       opt.width, opt.height, opt.fovy, opt.f,
+                                       opt.batchSize)
 
         batch_size = real_cpu.size(0)
         if not opt.no_cuda:
@@ -279,10 +272,10 @@ for epoch in range(opt.niter):
         labelv = Variable(label)
 
         real_output = netD(inputv)
-        if args.criterion == 'GAN':
+        if opt.criterion == 'GAN':
             errD_real = criterion(real_output, labelv)
             errD_real.backward()
-        if args.criterion == 'WGAN':
+        if opt.criterion == 'WGAN':
             errD_real = real_output.mean()
             errD_real.backward(mone)
 
@@ -301,8 +294,8 @@ for epoch in range(opt.niter):
 
         data=[]
         #cam_pos = uniform_sample_sphere(radius=args.cam_dist, num_samples=batch_size)
-        if not args.same_view:
-            cam_pos = uniform_sample_sphere(radius=args.cam_dist,
+        if not opt.same_view:
+            cam_pos = uniform_sample_sphere(radius=opt.cam_dist,
                                             num_samples=batch_size)
         #import ipdb; ipdb.set_trace()
         for idx in range(batch_size):
@@ -314,7 +307,7 @@ for epoch in range(opt.niter):
             large_scene['objects']['disk']['pos'] = temp
             large_scene['objects']['disk']['normal'] = fake[idx][:, 3:]
             #large_scene['camera']['eye'] = tch_var_f(cam_pos[idx])
-            if not args.same_view:
+            if not opt.same_view:
                 large_scene['camera']['eye'] = tch_var_f(cam_pos[idx])
             else:
                 large_scene['camera']['eye'] = tch_var_f(cam_pos[0])
@@ -324,15 +317,8 @@ for epoch in range(opt.niter):
 
             # main render run
             res = render(large_scene)
-            if CUDA:
-                im = res['image']
-            else:
-                im = res['image']
-
-            if CUDA:
-                depth = res['depth']
-            else:
-                depth = res['depth']
+            im = res['image']
+            depth = res['depth']
 
             cond = depth >= large_scene['camera']['far']
             depth = where(cond, torch.min(depth), depth)
@@ -343,7 +329,7 @@ for epoch in range(opt.niter):
         data=torch.stack(data)
         labelv = Variable(label.fill_(fake_label))
         fake_output = netD(data.detach())  # Do not backpropagate through generator
-        if args.criterion == 'WGAN':
+        if opt.criterion == 'WGAN':
             errD_fake = fake_output.mean()
 
             errD_fake.backward(one)
@@ -355,7 +341,7 @@ for epoch in range(opt.niter):
 
         D_G_z1 =fake_output.data.mean()
 
-        if args.gp != 'None':
+        if opt.gp != 'None':
 
             gradient_penalty = calc_gradient_penalty(
             netD, inputv.data, data.data
@@ -419,7 +405,7 @@ for epoch in range(opt.niter):
     #Fake labels are real for generator cost
     labelv = Variable(label.fill_(real_label))
     fake_output = netD(data)
-    if args.criterion == 'WGAN':
+    if opt.criterion == 'WGAN':
         errG = fake_output.mean()
         errG.backward(mone)
     else:
@@ -433,16 +419,22 @@ for epoch in range(opt.niter):
               ' D(G(z)): %.4f / %.4f' % (epoch, opt.niter,
 
                                          errD.data[0], errG.data[0], D_x,
-                                         D_G_z1, D_G_z2))
-    if epoch % 50 == 0:
-        imsave(args.out_dir + '/img' + suffix + '.png', np.uint8(255. *real_cpu[0].cpu().data.numpy().squeeze()))
-        imsave(args.out_dir + '/img_depth' + suffix + '.png', np.uint8(255. * data[0].cpu().data.numpy().squeeze()))
-        imsave(args.out_dir + '/img1' + suffix + '.png', np.uint8(255. *real_cpu[1].cpu().data.numpy().squeeze()))
-        imsave(args.out_dir + '/img_depth1' + suffix + '.png', np.uint8(255. * data[1].cpu().data.numpy().squeeze()))
-
+                                         D_G_z1, D_G_z2))    
+    
+    if epoch % 25 == 0:
+        imsave(opt.out_dir + '/img' + suffix + '.png',
+               np.uint8(255. * real_cpu[0].cpu().data.numpy().squeeze()))
+        imsave(opt.out_dir + '/img_depth' + suffix + '.png',
+               np.uint8(255. * data[0].cpu().data.numpy().squeeze()))
+        imsave(opt.out_dir + '/img1' + suffix + '.png',
+               np.uint8(255. * real_cpu[1].cpu().data.numpy().squeeze()))
+        imsave(opt.out_dir + '/img_depth1' + suffix + '.png',
+               np.uint8(255. * data[1].cpu().data.numpy().squeeze()))
 
     # Do checkpointing
     if epoch % 100 == 0:
-        torch.save(netG.state_dict(), '%s/netG_epoch_%d.pth' % (opt.outf, epoch))
-        torch.save(netD.state_dict(), '%s/netD_epoch_%d.pth' % (opt.outf, epoch))
+        torch.save(netG.state_dict(),
+                   '%s/netG_epoch_%d.pth' % (opt.out_dir, epoch))
+        torch.save(netD.state_dict(),
+                   '%s/netD_epoch_%d.pth' % (opt.out_dir, epoch))
         print ("iteration ", epoch, "finished")

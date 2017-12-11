@@ -1,17 +1,21 @@
+"""Load 3D model related functions."""
 from __future__ import absolute_import
 import numpy as np
 import re
 
 
 def norm_sqr(v):
+    """Compute the sqrtnorm of a vector."""
     return np.sum(v ** 2, axis=-1)
 
 
 def norm(v):
+    """Compute the norm of a vector."""
     return np.sqrt(norm_sqr(v))
 
 
 def compute_face_normal(obj, unnormalized=False):
+    """Compute the normal of a mesh face."""
     v0 = obj['v'][obj['f'][:, 0]]
     v1 = obj['v'][obj['f'][:, 1]]
     v2 = obj['v'][obj['f'][:, 2]]
@@ -28,7 +32,8 @@ def compute_face_normal(obj, unnormalized=False):
 
 
 def compute_circum_circle(obj):
-    """
+    """Compute Circunference circle.
+
     https://en.wikipedia.org/wiki/Circumscribed_circle#Cartesian_coordinates_from_cross-_and_dot-products
     :param obj:
     :return: {'center': circle_center, 'radius': circle_radius}
@@ -51,7 +56,8 @@ def compute_circum_circle(obj):
     beta = norm_sqr(p13) * np.sum(-p12 * p23, axis=-1) * denom_inv
     gamma = norm_sqr(p12) * np.sum(-p13 * -p23, axis=-1) * denom_inv
 
-    center = alpha[:, np.newaxis] * p1 + beta[:, np.newaxis] * p2 + gamma[:, np.newaxis] * p3
+    center = (alpha[:, np.newaxis] * p1 + beta[:, np.newaxis] *
+              p2 + gamma[:, np.newaxis] * p3)
 
     return {'center': center, 'radius': radius}
 
@@ -66,6 +72,7 @@ def obj_to_splat(obj, use_circum_circle=True):
 
 
 def write_splat(filename, obj):
+    """Write 3D m odel in splat format to a file."""
     with open(filename, 'w') as f:
         for v, vn, r in zip(obj['v'], obj['vn'], obj['r']):
             f.write('v {}\n'.format(' '.join([str(x) for x in v])))
@@ -189,20 +196,22 @@ def load_model(filename, verbose=True):
 
 
 def obj_to_triangle_spec(obj):
+    """Object to triangle specs."""
     faces = obj['v'][obj['f']]
     normals = compute_face_normal(obj)
-    faces = np.concatenate((faces, np.ones_like(faces[..., 0])[..., np.newaxis]), axis=-1)
-    normals = np.concatenate((normals, np.zeros_like(normals[..., 0])[..., np.newaxis]), axis=-1)
+    faces = np.concatenate((
+        faces, np.ones_like(faces[..., 0])[..., np.newaxis]), axis=-1)
+    normals = np.concatenate((
+        normals, np.zeros_like(normals[..., 0])[..., np.newaxis]), axis=-1)
 
     return {'face': faces, 'normal': normals}
 
 
 def test_run():
+    """Test."""
     filename = '../data/bunny.obj'
     obj_data = load_obj(filename)
-
     cc = compute_circum_circle(obj_data)
-
     filename = '../data/desk_0007.off'
     off_data = load_off(filename)
 

@@ -2,21 +2,22 @@
 import torch
 import torch.nn as nn
 import torch.nn.parallel
-
 import torch.nn.functional as F
-def create_networks(opt,args):
+
+
+def create_networks(opt):
     """Create the networks."""
     # Parameters
     ngpu = int(opt.ngpu)
     nz = int(opt.nz)
     ngf = int(opt.ngf)
     ndf = int(opt.ndf)
-    nc = args.n
+    nc = opt.n
 
     # Create generator network
-    if args.gen_type=='mlp':
+    if opt.gen_type=='mlp':
         netG = _netG_mlp(ngpu, nz, ngf, nc)
-    elif args.gen_type=='resnet':
+    elif opt.gen_type=='resnet':
         netG = _netG_resnet(nz, nc)
     else:
         netG = _netG(ngpu, nz, ngf, nc)
@@ -27,7 +28,7 @@ def create_networks(opt,args):
 
     # Create the discriminator network
 
-    if args.criterion == 'WGAN':
+    if opt.criterion == 'WGAN':
         netD = _netD(ngpu, 1, ndf,1)
     else:
         netD = _netD(ngpu, 1, ndf)

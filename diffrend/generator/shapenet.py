@@ -1,13 +1,15 @@
-# from __future__ import print_function, division
+"""Shapenet dataset loader."""
 import os
-# import torch
-# import numpy as np
+import numpy as np
 import json
+import torch
 from torch.utils.data import Dataset, DataLoader
 # from torchvision import transforms, utils
 from diffrend.model import load_model, obj_to_splat
 from analysis.gen_surf_pts.generator_anim import animate_sample_generation
-
+from diffrend.generator.splats import SplatScene
+from diffrend.torch.renderer import render
+import matplotlib.pyplot as plt
 
 # Ignore warnings
 # import warnings
@@ -62,11 +64,69 @@ class ShapeNetDataset(Dataset):
 
         # Show loaded model
         animate_sample_generation(model_name=None, obj=obj_model,
-                                  num_samples=1000, out_dir=None,
+                                  num_samples=10, out_dir=None,
                                   resample=False, rotate_angle=360)
 
         # Convert model to splats
         splats_model = obj_to_splat(obj_model, use_circum_circle=True)
+
+        # Create a splat scene that can be redenred
+        n_splats = splats_model['vn'].shape[0]
+        splat_scene = SplatScene(n_lights=2, n_splats=n_splats)
+
+        # Add the splats to the scene
+        for i, splat in enumerate(np.column_stack((
+                splats_model['vn'], splats_model['v'],
+                np.asarray(splats_model['r'], dtype=np.float32),
+                np.ones((n_splats, 3), dtype=np.float32)))):
+            splat_scene.set_splat_array(i, splat)
+
+        # Camera
+        splat_scene.set_camera(
+            viewport=np.asarray([0, 0, 64, 64], dtype=np.float32),
+            eye=np.asarray([0.0, 1.0, 10.0, 1.0], dtype=np.float32),
+            up=np.asarray([0.0, 1.0, 0.0, 0.0], dtype=np.float32),
+            at=np.asarray([0.0, 0.0, 0.0, 1.0], dtype=np.float32),
+            fovy=90.0, focal_length=1.0, near=1.0, far=1000.0)
+
+        # Tonemap
+        splat_scene.set_tonemap(tonemap_type='gamma', gamma=0.8)
+
+        # Lights
+        splat_scene.set_light(
+            id=0,
+            pos=np.asarray([20., 20., 20.], dtype=np.float32),
+            color=np.asarray([0.8, 0.1, 0.1], dtype=np.float32),
+            attenuation=np.asarray([0.2, 0.2, 0.2], dtype=np.float32))
+
+        splat_scene.set_light(
+            id=1,
+            pos=np.asarray([-15, 3., 15.], dtype=np.float32),
+            color=np.asarray([0.8, 0.1, 0.1], dtype=np.float32),
+            attenuation=np.asarray([0., 1., 0.], dtype=np.float32))
+
+        # print (splat_scene.scene)
+        # print (splat_scene.to_pytorch())
+
+        # import ipdb; ipdb.set_trace()
+        # print (splat_scene.to_pytorch())
+
+        # Show splats model
+        res = render(splat_scene.to_pytorch())
+        print ('Finished render')
+
+        if True:
+            im = res['image'].cpu().data.numpy()
+        else:
+            im = res['image'].data.numpy()
+
+        plt.ion()
+        plt.figure()
+        plt.imshow(im)
+        plt.title('Final Rendered Image')
+        plt.show()
+        print ("Finish plot")
+        exit()
 
         # Add model and synset to the output dictionary
         sample = {'splats': splats_model, 'synset': synset}
