@@ -4,14 +4,14 @@ import torch.nn as nn
 import torch.nn.parallel
 
 
-def create_networks(opt,args):
+def create_networks(opt):
     """Create the networks."""
     # Parameters
     ngpu = int(opt.ngpu)
     nz = int(opt.nz)
     ngf = int(opt.ngf)
     ndf = int(opt.ndf)
-    nc = args.n
+    nc = opt.n
 
     # Create generator network
     netG = _netG(ngpu, nz, ngf, nc)
