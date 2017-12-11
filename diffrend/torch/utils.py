@@ -3,21 +3,32 @@ import torch
 from torch.autograd import Variable
 
 CPU_ONLY = False
-CUDA = False
 if torch.cuda.is_available() and not CPU_ONLY:
     CUDA = True
     FloatTensor = torch.cuda.FloatTensor
     LongTensor = torch.cuda.LongTensor
 else:
+    CUDA = False
     FloatTensor = torch.FloatTensor
     LongTensor = torch.LongTensor
 
 print('CUDA support ', CUDA)
 
-tch_var = lambda x, fn_type, req_grad: Variable(fn_type(x), requires_grad=req_grad)
+tch_var = lambda x, fn_type, req_grad: Variable(fn_type(x),
+                                                requires_grad=req_grad)
 tch_var_f = lambda x: tch_var(x, FloatTensor, False)
 tch_var_l = lambda x: tch_var(x, LongTensor, False)
 
+
+def np_var(x, req_grad=False):
+    """Convert a numpy into a pytorch variable."""
+    if CUDA:
+        return Variable(torch.from_numpy(x), requires_grad=req_grad).cuda()
+    else:
+        return Variable(torch.from_numpy(x), requires_grad=req_grad)
+
+# np_var_f = lambda x: np_var(x, FloatTensor, False)
+# np_var_l = lambda x: np_var(x, LongTensor, False)
 
 def where(cond, x, y):
     return cond.float() * x + (1 - cond.float()) * y
@@ -28,7 +39,7 @@ def norm_p(u, p=2):
 
 
 def nonzero_divide(x, y):
-    """ x and y need to have the same dimensions
+    """ x and y need to have the same dimensions.
     :param x:
     :param y:
     :return:

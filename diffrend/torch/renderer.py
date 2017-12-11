@@ -1,23 +1,29 @@
+"""Pytorch splat render."""
 import numpy as np
 import torch
-from diffrend.torch.utils import tonemap, ray_object_intersections, generate_rays, where, tch_var_f
+from diffrend.torch.utils import (tonemap, ray_object_intersections,
+                                  generate_rays, where, tch_var_f)
 
 """
 Scalable Rendering TODO:
-1. Backface culling. Cull splats for which dot((eye - pos), normal) <= 0 
+1. Backface culling. Cull splats for which dot((eye - pos), normal) <= 0
 2. Frustum culling
-3. Ray culling: Low-res image and per-pixel frustum culling to determine the valid rays
-4. Bound sphere for splats 
-5. OpenGL pass to determine visible splats. I.e. every pixel in the output image will have the splat index, the 
-intersection point  
+3. Ray culling: Low-res image and per-pixel frustum culling to determine the
+   valid rays
+4. Bound sphere for splats
+5. OpenGL pass to determine visible splats. I.e. every pixel in the output
+   image will have the splat index, the intersection point
 """
 
+
 def render(scene):
-    """
+    """Render.
+
     :param scene: Scene description
     :return: [H, W, 3] image
     """
-    # Construct rays from the camera's eye position through the screen coordinates
+    # Construct rays from the camera's eye position through the screen
+    # coordinates
     camera = scene['camera']
     eye, ray_dir, H, W = generate_rays(camera)
     H = int(H)
@@ -30,7 +36,8 @@ def render(scene):
     # Valid distances
     pixel_dist = ray_dist
     valid_pixels = (camera['near'] <= ray_dist) * (ray_dist <= camera['far'])
-    pixel_dist = pixel_dist * valid_pixels.float() + (camera['far'] + 1) * (1 - valid_pixels.float())
+    pixel_dist = (pixel_dist * valid_pixels.float() + (camera['far'] + 1) *
+                  (1 - valid_pixels.float()))
 
     # Nearest object needs to be compared for valid regions only
     nearest_dist, nearest_obj = pixel_dist.min(0)
@@ -54,11 +61,13 @@ def render(scene):
     """
     Get the normal and material for the visible objects.
     """
-    frag_normals = torch.gather(normals, 0, nearest_obj[np.newaxis, :, np.newaxis].repeat(1, 1, 3))
-    frag_pos = torch.gather(obj_intersections, 0, nearest_obj[np.newaxis, :, np.newaxis].repeat(1, 1, 3))
+    frag_normals = torch.gather(
+        normals, 0, nearest_obj[np.newaxis, :, np.newaxis].repeat(1, 1, 3))
+    frag_pos = torch.gather(
+        obj_intersections, 0,
+        nearest_obj[np.newaxis, :, np.newaxis].repeat(1, 1, 3))
     tmp_idx = torch.gather(material_idx, 0, nearest_obj)
     frag_albedo = torch.index_select(materials, 0, tmp_idx)
-
 
     # Fragment shading
     light_dir = light_pos[:, np.newaxis, :] - frag_pos

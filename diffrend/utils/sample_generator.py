@@ -1,46 +1,57 @@
+"""Sample generator."""
 from diffrend.model import compute_face_normal
 import numpy as np
 
 
 def uniform_sample_circle(radius, num_samples, normal=np.array([0., 0., 1.])):
+    """Generate uniform random samples into a circle."""
     theta = np.random.rand(num_samples) * 2 * np.pi
-    return radius * np.stack((np.cos(theta), np.sin(theta), np.zeros_like(theta)), axis=1)
+    return radius * np.stack((np.cos(theta), np.sin(theta),
+                              np.zeros_like(theta)), axis=1)
 
 
-def uniform_sample_cylinder(radius, height, num_samples, normal=np.array([0., 0., 1.])):
+def uniform_sample_cylinder(radius, height, num_samples,
+                            normal=np.array([0., 0., 1.])):
+    """Generate uniform random samples into a cilinder."""
     theta = np.random.rand(num_samples) * 2 * np.pi
     z = height * (np.random.rand(num_samples) - .5)
     return radius * np.stack((np.cos(theta), np.sin(theta), z), axis=1)
 
 
 def uniform_sample_sphere(radius, num_samples):
+    """Generate uniform random samples into a sphere."""
     pts_2d = np.random.rand(num_samples, 2)
     # theta is angle from the z-axis
     theta = 2 * np.arccos(np.sqrt(1 - pts_2d[:, 0]))
     phi = 2 * np.pi * pts_2d[:, 1]
-
-    pts = np.stack((np.sin(theta) * np.cos(phi), np.sin(theta) * np.sin(phi), np.cos(theta)), axis=1) * radius
+    pts = np.stack((np.sin(theta) * np.cos(phi), np.sin(theta) * np.sin(phi),
+                    np.cos(theta)), axis=1) * radius
     return pts
 
 
-def uniform_sample_torus(inner_radius, outer_radius, num_samples, normal=np.array([0., 0., 1.])):
-    """
-    Rejection samplign based method:https://math.stackexchange.com/questions/2017079/uniform-random-points-on-a-torus
-    Here I use a different one that works in parallel. Need to check if this is correct.
-    1. First generate samples between inner_radius and outer_radius based on probability weighted by [inner_rad, outer_rad]
-       shift to (outer+inner) / 2
-    2. uniform randomly choose the sign of z and compute
+# TODO: Unfinished
+def uniform_sample_torus(inner_radius, outer_radius, num_samples,
+                         normal=np.array([0., 0., 1.])):
+    """Rejection samplign based method.
+
+    From: https://math.stackexchange.com/questions/2017079/uniform-random-points-on-a-torus
+    Here I use a different one that works in parallel. Need to check if this is
+    correct.
+    1. First generate samples between inner_radius and outer_radius based on
+    probability weighted by [inner_rad, outer_rad]:
+        shift to (outer+inner) / 2
+    2. uniform randomly choose the sign of z and compute:
         rad = outer - inner
         r * cos(theta) = y => theta = arccos(x/r)
         z = r * sin(theta)
     3. uniformly choose phi, and rotate all the points by R(phi, z)
-
     """
     r = outer_radius - inner_radius
     R = (inner_radius + outer_radius) / 2.
 
 
 def uniform_sample_triangle(v, num_samples):
+    """Generate uniform random samples into a triangle."""
     samples = np.random.rand(num_samples, 2)
     # surface parameters
     s, t = samples[:, 0], samples[:, 1]
@@ -59,7 +70,8 @@ def uniform_sample_triangle(v, num_samples):
 
 
 def triangle_double_area(obj):
-    """
+    """Triangle double area.
+
     https://github.com/alecjacobson/gptoolbox/blob/master/mesh/doublearea.m
     :param obj:
     :return:
@@ -84,6 +96,7 @@ def triangle_double_area(obj):
 
 
 def uniform_sample_mesh(obj, num_samples):
+    """Generate uniform random samples into a mesh."""
     v = obj['v']
     f = obj['f']
     if 'a' in obj:
@@ -101,7 +114,9 @@ def uniform_sample_mesh(obj, num_samples):
     # First choose triangles based on their size
     idx = np.random.choice(f.shape[0], num_samples, p=prob_area)
     # Construct batch of triangles
-    tri = np.concatenate((v[f[idx, 0]][:, np.newaxis, :], v[f[idx, 1]][:, np.newaxis, :], v[f[idx, 2]][:, np.newaxis]),
+    tri = np.concatenate((v[f[idx, 0]][:, np.newaxis, :],
+                          v[f[idx, 1]][:, np.newaxis, :],
+                          v[f[idx, 2]][:, np.newaxis]),
                          axis=1)
     vn = fn[idx]
     return uniform_sample_triangle(tri, num_samples), vn
@@ -165,7 +180,6 @@ if __name__ == '__main__':
     ax.view_init(93, -64)
     plt.xlabel('x')
     plt.ylabel('y')
-
 
     obj = load_model('../../data/desk_0007.off')
     pts_obj, vn = uniform_sample_mesh(obj, num_samples=1000)
