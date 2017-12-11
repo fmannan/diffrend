@@ -3,7 +3,7 @@ import numpy as np
 import torch
 from diffrend.torch.utils import (tonemap, ray_object_intersections,
                                   generate_rays, where, tch_var_f)
-
+from diffrend.utils.utils import get_param_value
 """
 Scalable Rendering TODO:
 1. Backface culling. Cull splats for which dot((eye - pos), normal) <= 0
@@ -16,7 +16,7 @@ Scalable Rendering TODO:
 """
 
 
-def render(scene):
+def render(scene, **params):
     """Render.
 
     :param scene: Scene description
@@ -31,13 +31,14 @@ def render(scene):
 
     # Ray-object intersections
     scene_objects = scene['objects']
-    obj_intersections, ray_dist, normals, material_idx = ray_object_intersections(eye, ray_dir, scene_objects)
+    disable_normals = get_param_value('norm_depth_image_only', params, False)
+    obj_intersections, ray_dist, normals, material_idx = ray_object_intersections(eye, ray_dir, scene_objects,
+                                                                                  disable_normals=disable_normals)
 
     # Valid distances
     pixel_dist = ray_dist
     valid_pixels = (camera['near'] <= ray_dist) * (ray_dist <= camera['far'])
-    pixel_dist = (pixel_dist * valid_pixels.float() + (camera['far'] + 1) *
-                  (1 - valid_pixels.float()))
+    pixel_dist = where(valid_pixels, pixel_dist, camera['far'] + 1)
 
     # Nearest object needs to be compared for valid regions only
     nearest_dist, nearest_obj = pixel_dist.min(0)
@@ -45,6 +46,20 @@ def render(scene):
     # Create depth image for visualization
     # use nearest_obj for gather/select the pixel color
     im_depth = torch.gather(pixel_dist, 0, nearest_obj[np.newaxis, :]).view(H, W)
+
+    if get_param_value('norm_depth_image_only', params, False):
+        min_depth = torch.min(im_depth)
+        norm_depth_image = where(im_depth >= camera['far'], min_depth, im_depth)
+        norm_depth_image = (norm_depth_image - min_depth) / (torch.max(im_depth) - min_depth)
+        return {
+            'image': norm_depth_image,
+            'depth': im_depth,
+            'ray_dist': ray_dist,
+            'obj_dist': pixel_dist,
+            'nearest': nearest_obj.view(H, W),
+            'ray_dir': ray_dir,
+            'valid_pixels': valid_pixels,
+        }
 
     ##############################
     # Fragment processing

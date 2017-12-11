@@ -14,7 +14,7 @@ from scipy.misc import imsave
 
 
 def render_random_splat_camera(filename, out_dir, num_samples, radius, cam_dist, num_views, width, height,
-                               fovy, focal_length):
+                               fovy, focal_length, norm_depth_image_only):
     """
     Randomly generate N samples on a surface and render them. The samples include position and normal, the radius is set
     to a constant.
@@ -57,7 +57,7 @@ def render_random_splat_camera(filename, out_dir, num_samples, radius, cam_dist,
 
         # main render run
         start_time = time()
-        res = render(large_scene)
+        res = render(large_scene, norm_depth_image_only=norm_depth_image_only)
         rendering_time.append(time() - start_time)
 
         if CUDA:
@@ -103,6 +103,7 @@ if __name__ == '__main__':
     parser.add_argument('--nv', type=int, default=10, help='Number of views to generate')
     parser.add_argument('--fovy', type=float, default=15.0, help='Field of view in the vertical direction')
     parser.add_argument('--f', type=float, default=0.1, help='focal length')
+    parser.add_argument('--norm_depth_image_only', action='store_true', default=False)
 
     args = parser.parse_args()
     print(args)
@@ -110,7 +111,5 @@ if __name__ == '__main__':
     render_random_splat_camera(filename=args.model, out_dir=args.out_dir, radius=args.r, num_samples=args.n,
                                cam_dist=args.cam_dist, num_views=args.nv,
                                width=args.width, height=args.height,
-                               fovy=args.fovy, focal_length=args.f)
-
-
-
+                               fovy=args.fovy, focal_length=args.f,
+                               norm_depth_image_only=args.norm_depth_image_only)

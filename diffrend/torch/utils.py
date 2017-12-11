@@ -112,7 +112,7 @@ def point_along_ray(eye, ray_dir, ray_dist):
 #             'intersection_mask': intersect_mask}
 
 
-def ray_plane_intersection(eye, ray_dir, plane):
+def ray_plane_intersection(eye, ray_dir, plane, **kwargs):
     """Intersection a bundle of rays with a batch of planes
     :param eye: Camera's center of projection
     :param ray_dir: Ray direction
@@ -132,14 +132,18 @@ def ray_plane_intersection(eye, ray_dir, plane):
 
     intersection_pts = point_along_ray(eye, ray_dir, ray_dist)
 
-    normals = normal[:, np.newaxis, :].repeat(1, intersection_pts.size()[1], 1)
+    if 'disable_normals' in kwargs and kwargs['disable_normals']:
+        normals = None
+    else:
+        # TODO: Delay this normal selection to save memory. Because even if there's an intersection it may not be visible
+        normals = normal[:, np.newaxis, :].repeat(1, intersection_pts.size()[1], 1)
 
     return {'intersect': intersection_pts, 'normal': normals, 'ray_distance': ray_dist,
             'intersection_mask': intersection_mask}
 
 
-def ray_disk_intersection(eye, ray_dir, disks):
-    result = ray_plane_intersection(eye, ray_dir, disks)
+def ray_disk_intersection(eye, ray_dir, disks, **kwargs):
+    result = ray_plane_intersection(eye, ray_dir, disks, **kwargs)
     intersection_pts = result['intersect']
     normals = result['normal']
     ray_dist = result['ray_distance']
@@ -237,24 +241,6 @@ def lookat_inv(eye, at, up):
     :param up: up direction
     :return: 4x4 inverse lookat matrix
     """
-    # if up.size()[-1] == 4:
-    #     assert up.data.numpy()[3] == 0
-    #     up = up[:3]
-    #
-    # if eye.size()[-1] == 4:
-    #     assert abs(eye.data.numpy()[3]) > 0
-    #     eye = eye[:3] / eye[3]
-    #
-    # if at.size()[-1] == 4:
-    #     assert abs(at.data.numpy()[3]) > 0
-    #     at = at[:3] / at[3]
-    #
-    # z = (eye - at)
-    # z = normalize(z)
-    #
-    # y = normalize(up)
-    # x = torch.cross(y, z)
-
     rot_matrix = lookat_rot_inv(eye, at, up)  #torch.stack((x, y, z), dim=1)
     rot_translate = torch.cat((rot_matrix, eye.view(-1, 1)), dim=1)
     return torch.cat((rot_translate, tch_var_f([0, 0, 0, 1.])[np.newaxis, :]), dim=0)
@@ -293,7 +279,6 @@ def tonemap(im, **kwargs):
         return torch.pow(im, kwargs['gamma'])
 
 
-# only required for meta computation, no tensor req
 def generate_rays(camera):
     viewport = np.array(camera['viewport'])
     W, H = viewport[2] - viewport[0], viewport[3] - viewport[1]
@@ -328,13 +313,13 @@ def generate_rays(camera):
     return eye, ray_dir, H, W
 
 
-def ray_object_intersections(eye, ray_dir, scene_objects):
+def ray_object_intersections(eye, ray_dir, scene_objects, **kwargs):
     obj_intersections = None
     ray_dist = None
     normals = None
     material_idx = None
     for obj_type in scene_objects:
-        result = intersection_fn[obj_type](eye, ray_dir, scene_objects[obj_type])
+        result = intersection_fn[obj_type](eye, ray_dir, scene_objects[obj_type], **kwargs)
         curr_intersects = result['intersect']
         curr_ray_dist = result['ray_distance']
         curr_normals = result['normal']
@@ -342,7 +327,7 @@ def ray_object_intersections(eye, ray_dir, scene_objects):
             curr_ray_dist = curr_ray_dist[np.newaxis, :]
         if curr_intersects.dim() == 1:
             curr_intersects = curr_intersects[np.newaxis, :]
-        if curr_normals.dim() == 1:
+        if curr_normals is not None and curr_normals.dim() == 1:
             curr_normals = curr_normals[np.newaxis, :]
 
         if obj_intersections is None:
@@ -354,7 +339,8 @@ def ray_object_intersections(eye, ray_dir, scene_objects):
         else:
             obj_intersections = torch.cat((obj_intersections, curr_intersects), dim=0)
             ray_dist = torch.cat((ray_dist, curr_ray_dist), dim=0)
-            normals = torch.cat((normals, curr_normals), dim=0)
+            if normals is not None:
+                normals = torch.cat((normals, curr_normals), dim=0)
             material_idx = torch.cat((material_idx, scene_objects[obj_type]['material_idx']), dim=0)
 
     return obj_intersections, ray_dist, normals, material_idx

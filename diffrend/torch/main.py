@@ -9,12 +9,12 @@ import os
 import argparse
 
 
-def render_scene(scene, output_folder, plot_res=True):
+def render_scene(scene, output_folder, norm_depth_image_only=False, plot_res=True):
     if not os.path.exists(output_folder):
         os.mkdir(output_folder)
 
     # main render run
-    res = render(scene)
+    res = render(scene, norm_depth_image_only=norm_depth_image_only)
     if CUDA:
         im = res['image'].cpu().data.numpy()
     else:
@@ -155,9 +155,10 @@ if __name__ == '__main__':
     import copy
     from data import DIR_DATA
     parser = argparse.ArgumentParser(usage='python main.py --[render|opt|test_scale]')
-    parser.add_argument('--render', action='store_true')
-    parser.add_argument('--opt', action='store_true')
+    parser.add_argument('--render', action='store_true', help='Renders a scene if specified')
+    parser.add_argument('--opt', action='store_true', help='Optimizes material parameters if specified')
     parser.add_argument('--test_scale', action='store_true')
+    parser.add_argument('--norm_depth_image_only', action='store_true', default=False, help='Only render the normalized depth image.')
     parser.add_argument('--out_dir', type=str, default=OUTPUT_FOLDER)
     parser.add_argument('--model_filename', type=str, default=DIR_DATA + '/bunny.splat',
                         help='Input model filename needed for scalability testing')
@@ -169,7 +170,7 @@ if __name__ == '__main__':
 
     scene = SCENE_BASIC
     if args.render:
-        res = render_scene(scene, args.out_dir)
+        res = render_scene(scene, args.out_dir, args.norm_depth_image_only)
     if args.opt:
         input_scene = copy.deepcopy(SCENE_BASIC)
         input_scene['materials']['albedo'] = tch_var_f([
