@@ -26,7 +26,11 @@ def create_networks(opt,args):
     print(netG)
 
     # Create the discriminator network
-    netD = _netD(ngpu, 1, ndf)
+
+    if args.criterion == 'WGAN':
+        netD = _netD(ngpu, 1, ndf,1)
+    else:
+        netD = _netD(ngpu, 1, ndf)
     netD.apply(weights_init)
     if opt.netD != '':
         netD.load_state_dict(torch.load(opt.netD))
@@ -144,6 +148,7 @@ class ResBlock(nn.Module):
         self.res_block = nn.Sequential(
             nn.ReLU(True),
             nn.Conv1d(DIM, DIM, 3, padding=1),#nn.Linear(DIM, DIM),
+
             nn.ReLU(True),
             nn.Conv1d(DIM, DIM, 3, padding=1),#nn.Linear(DIM, DIM),
         )
@@ -165,7 +170,10 @@ class _netG_resnet(nn.Module):
             ResBlock(),
             ResBlock(),
         )
-        self.conv1 = nn.Conv1d(DIM, nc, 1)
+        self.conv1 = nn.Conv1d(DIM, nc, 3, padding=1)
+        self.bn=nn.BatchNorm1d( nc)
+        self.conv2 = nn.Conv1d(nc, nc, 1)
+
         self.softmax = nn.Softmax()
 
     def forward(self, noise):
@@ -173,50 +181,19 @@ class _netG_resnet(nn.Module):
         output = output.view(-1, DIM, 6)
         output = self.block(output)
         output = self.conv1(output)
-        #import ipdb; ipdb.set_trace()
+
+        output = self.bn(output)
+        output = self.conv2(output)
+
 
         return output
-# class _netD(nn.Module):
-#     def __init__(self, ngpu, nc, ndf):
-#         super(_netD, self).__init__()
-#         self.ngpu = ngpu
-#         self.main = nn.Sequential(
-#             # input is (nc) x 64 x 64
-#             nn.Conv2d(nc, ndf, 4, 2, 1, bias=False),
-#             nn.LeakyReLU(0.2, inplace=True),
-#             # state size. (ndf) x 32 x 32
-#             nn.Conv2d(ndf, ndf * 2, 4, 2, 1, bias=False),
-#             nn.BatchNorm2d(ndf * 2),
-#             nn.LeakyReLU(0.2, inplace=True),
-#             # state size. (ndf*2) x 16 x 16
-#             nn.Conv2d(ndf * 2, ndf * 4, 4, 2, 1, bias=False),
-#             nn.BatchNorm2d(ndf * 4),
-#             nn.LeakyReLU(0.2, inplace=True),
-#             # state size. (ndf*4) x 8 x 8
-#             nn.Conv2d(ndf * 4, ndf * 8, 4, 2, 1, bias=False),
-#             nn.BatchNorm2d(ndf * 8),
-#             nn.LeakyReLU(0.2, inplace=True),
-#             nn.Conv2d(ndf * 8, ndf * 8, 4, 2, 1, bias=False),
-#             nn.BatchNorm2d(ndf * 8),
-#             nn.LeakyReLU(0.2, inplace=True),
-#             # state size. (ndf*8) x 4 x 4
-#             nn.Conv2d(ndf * 8, 1, 4, 1, 0, bias=False),
-#             nn.Sigmoid()
-#         )
-#
-#     def forward(self, input):
-#         if isinstance(input.data, torch.cuda.FloatTensor) and self.ngpu > 1:
-#             output = nn.parallel.data_parallel(self.main, input,
-#                                                range(self.ngpu))
-#         else:
-#             output = self.main(input)
-#
-#         return output.view(-1, 1).squeeze(1)
+
 
 class _netD(nn.Module):
-    def __init__(self, ngpu, nc, ndf):
+    def __init__(self, ngpu, nc, ndf,no_sigmoid=0):
         super(_netD, self).__init__()
         self.ngpu = ngpu
+        self.no_sigmoid=no_sigmoid
 
             # input is (nc) x 64 x 64
         self.c1=    nn.Conv2d(nc, ndf, 4, 2, 1, bias=False)
@@ -248,9 +225,9 @@ class _netD(nn.Module):
         x = F.leaky_relu(
         F.dropout(self.c3(x), p=0.3)
         )
-        x = F.leaky_relu(
-        F.dropout(self.c4(x), p=0.3)
-        )
+        # x = F.leaky_relu(
+        # F.dropout(self.c4(x), p=0.3)
+        # )
         x = F.leaky_relu(
         F.dropout(self.c5(x), p=0.3)
         )
@@ -259,5 +236,7 @@ class _netD(nn.Module):
         x=x.view(-1, 1).squeeze(1)
 
 
-
-        return F.sigmoid(x)
+        if self.no_sigmoid==1:
+            return x
+        else:
+            return F.sigmoid(x)
