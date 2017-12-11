@@ -37,7 +37,7 @@ class Parameters():
         self.parser.add_argument('--model', type=str, default=DIR_DATA + '/bunny.obj')
         self.parser.add_argument('--out_dir', type=str, default='./render_samples/')
         # self.parser.add_argument('--out_dir', type=str, default='/data/lisa/data/sai/renderer_bunny_64_sameview_check_separatefake')
-        parser.add_argument('--gen_type', type=str, default='resnet')
+        self.parser.add_argument('--gen_type', type=str, default='resnet')
         self.parser.add_argument('--width', type=int, default=64)
         self.parser.add_argument('--height', type=int, default=64)
         self.parser.add_argument('--n', type=int, default=2000)
@@ -50,8 +50,7 @@ class Parameters():
         self.parser.add_argument("--criterion", help="GAN Training criterion", choices=['GAN', 'WGAN'], default='WGAN')
         self.parser.add_argument("--gp", help="Add gradient penalty", choices=['None', 'original'], default='original')
         self.parser.add_argument("--gp_lambda", help="GP lambda", type=float, default=10.)
-        
-        
+
     def parse(self):
         """Parse."""
         if not self.initialized:
