@@ -219,7 +219,7 @@ for epoch in range(opt.niter):
     # TODO: We are learning always from a single model!
     if opt.same_view:
         real_cpu = same_view(opt.model, opt.n, opt.r,  opt.width,
-                             opt.height, opt.fovy, opt.f, cam_pos[0],
+                             opt.height, opt.fovy, opt.f, np.copy(cam_pos[0]),
                              opt.batchSize)
     else:
         real_cpu = different_views(opt.model, opt.n, opt.r, opt.cam_dist,
@@ -249,8 +249,9 @@ for epoch in range(opt.niter):
 
     # Generate camera positions on a sphere
     data = []
-    cam_pos = uniform_sample_sphere(radius=opt.cam_dist,
-                                    num_samples=batch_size)
+    if not opt.same_view:
+        cam_pos = uniform_sample_sphere(radius=opt.cam_dist,
+                                        num_samples=batch_size)
     for idx in range(batch_size):
         # import ipdb; ipdb.set_trace()
 
@@ -260,23 +261,18 @@ for epoch in range(opt.niter):
 
         large_scene['objects']['disk']['pos'] = temp
         large_scene['objects']['disk']['normal'] = fake[idx][:, 3:]
-        large_scene['camera']['eye'] = tch_var_f(cam_pos[idx])
+        if not opt.same_view:
+            large_scene['camera']['eye'] = tch_var_f(cam_pos[idx])
+        else:
+            large_scene['camera']['eye'] = tch_var_f(cam_pos[0])
         suffix = '_{}'.format(idx)
 
         # Render scene
         res = render(large_scene)
 
-        # Get image result
-        if CUDA:
-            im = res['image']
-        else:
-            im = res['image']
-
-        # Get depth image
-        if CUDA:
-            depth = res['depth']
-        else:
-            depth = res['depth']
+        # Get image and depth result images
+        im = res['image']
+        depth = res['depth']
 
         # Normalize depth image
         cond = depth >= large_scene['camera']['far']
