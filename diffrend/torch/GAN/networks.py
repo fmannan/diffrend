@@ -203,23 +203,23 @@ class _netD(nn.Module):
         self.c1=    nn.Conv2d(nc, ndf, 4, 2, 1, bias=False)
 
             # state size. (ndf) x 32 x 32
-        self.c2=    nn.Conv2d(ndf, ndf * 2, 4, 2, 1, bias=False)
+        self.c2=    nn.Conv2d(ndf, ndf * 2, 4, 2, 1, bias=True)
 
             # state size. (ndf*2) x 16 x 16
-        self.c3=    nn.Conv2d(ndf * 2, ndf * 4, 4, 2, 1, bias=False)
+        self.c3=    nn.Conv2d(ndf * 2, ndf * 2, 4, 2, 1, bias=False)
 
             # state size. (ndf*4) x 8 x 8
-        self.c4=    nn.Conv2d(ndf * 4, ndf * 4, 4, 2, 1, bias=False)
+        self.c4=    nn.Conv2d(ndf * 2, ndf * 2, 4, 2, 1, bias=True)
 
-        self.c5=    nn.Conv2d(ndf * 4, ndf * 8, 4, 2, 1, bias=False)
+
 
             # state size. (ndf*8) x 4 x 4
-        self.c6=    nn.Conv2d(ndf * 8, 1, 4, 1, 0, bias=False)
+        self.c6=    nn.Conv2d(ndf * 2, 1, 4, 1, 0, bias=False)
 
 
 
     def forward(self,x):
-
+        import ipdb; ipdb.set_trace()
         x = F.leaky_relu(
         F.dropout(self.c1(x), p=0.3)
         )
@@ -227,13 +227,13 @@ class _netD(nn.Module):
         F.dropout(self.c2(x), p= 0.3)
         )
         x = F.leaky_relu(
-        F.dropout(self.c3(x), p=0.3)
+        F.dropout(self.c3(x), p=0.5)
         )
         # x = F.leaky_relu(
         # F.dropout(self.c4(x), p=0.3)
         # )
         x = F.leaky_relu(
-        F.dropout(self.c5(x), p=0.3)
+        F.dropout(self.c4(x), p=0.5)
         )
 
         x=self.c6(x)
