@@ -107,22 +107,25 @@ class _netG_mlp(nn.Module):
         self.main = nn.Sequential(
             # input is Z, going into a convolution
             nn.Linear(nz, ngf*4),
-            nn.BatchNorm1d(ngf*4),
+            #nn.BatchNorm1d(ngf*4),
             nn.LeakyReLU(0.2, True),
 
-            nn.Linear(ngf*4, ngf*8),
-            nn.BatchNorm1d(ngf*8),
-            nn.LeakyReLU(0.2, True),
-
-            nn.Linear(ngf*8, ngf*16),
+            nn.Linear(ngf*4, ngf*16),
             nn.BatchNorm1d(ngf*16),
             nn.LeakyReLU(0.2, True),
 
-            nn.Linear(ngf*16, ngf*36),
-            nn.BatchNorm1d(ngf*36),
+            nn.Linear(ngf*16, ngf*16),
+            nn.BatchNorm1d(ngf*16),
             nn.LeakyReLU(0.2, True),
 
-            nn.Linear(ngf*36,nc*6),
+            nn.Linear(ngf*16, ngf*32),
+            #nn.BatchNorm1d(ngf*16),
+            nn.LeakyReLU(0.2, True),
+
+            nn.Linear(ngf*32,ngf*64),
+            nn.LeakyReLU(0.2, True),
+
+            nn.Linear(ngf*64,nc*6)
             # nn.BatchNorm1d(ndf*4),
             # nn.LeakyReLU(0.2, True),
             #

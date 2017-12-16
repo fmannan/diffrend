@@ -26,7 +26,7 @@ class Parameters():
         self.parser.add_argument('--nz', type=int, default=100, help='size of the latent z vector')
         self.parser.add_argument('--ngf', type=int, default=64)
         self.parser.add_argument('--ndf', type=int, default=64)
-        self.parser.add_argument('--niter', type=int, default=2000, help='number of epochs to train for')
+        self.parser.add_argument('--niter', type=int, default=4000, help='number of epochs to train for')
         self.parser.add_argument('--lr', type=float, default=0.0002, help='learning rate, default=0.0002')
         self.parser.add_argument('--beta1', type=float, default=0.5, help='beta1 for adam. default=0.5')
         self.parser.add_argument('--no_cuda', action='store_true', default=False, help='enables cuda')
