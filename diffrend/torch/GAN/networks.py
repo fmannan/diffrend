@@ -49,7 +49,36 @@ def weights_init(m):
     elif classname.find('BatchNorm') != -1:
         m.weight.data.normal_(1.0, 0.02)
         m.bias.data.fill_(0)
+#############################################
+##########Modules for conditional batchnorm##############
+class TwoInputModule(nn.Module):
+    def forward(self, input1, input2):
+        raise NotImplementedError
+        
+class CondBatchNorm(nn.BatchNorm2d, TwoInputModule):
+    def __init__(self, x_dim, z_dim, eps=1e-5, momentum=0.1):
+        """`x_dim` dimensionality of x input
+           `z_dim` dimensionality of z latents
+        """
+        super(CondBatchNorm, self).__init__(x_dim, eps, momentum, affine=False)
+        self.eps = eps
+        self.shift_conv = nn.Sequential(
+            nn.Conv2d(z_dim, x_dim, kernel_size=1, padding=0, bias=True),
+            # nn.ReLU(True)
+        )
+        self.scale_conv = nn.Sequential(
+            nn.Conv2d(z_dim, x_dim, kernel_size=1, padding=0, bias=True),
+            # nn.ReLU(True)
+        )
 
+    def forward(self, input, noise):
+
+        shift = self.shift_conv.forward(noise)
+        scale = self.scale_conv.forward(noise)
+
+        norm_features = super(CondBatchNorm, self).forward(input)
+        output = norm_features * scale + shift
+        return output
 
 class _netG(nn.Module):
     def __init__(self, ngpu, nz, ngf, nc):
