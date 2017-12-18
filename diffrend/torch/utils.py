@@ -33,7 +33,6 @@ def np_var(x, req_grad=False):
 def where(cond, x, y):
     return cond.float() * x + (1 - cond.float()) * y
 
-
 def norm_p(u, p=2):
     return torch.pow(torch.sum(torch.pow(u, p), dim=-1), 1./p)
 

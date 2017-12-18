@@ -54,7 +54,7 @@ def weights_init(m):
 class TwoInputModule(nn.Module):
     def forward(self, input1, input2):
         raise NotImplementedError
-        
+
 class CondBatchNorm(nn.BatchNorm2d, TwoInputModule):
     def __init__(self, x_dim, z_dim, eps=1e-5, momentum=0.1):
         """`x_dim` dimensionality of x input
@@ -248,7 +248,7 @@ class _netD(nn.Module):
 
 
     def forward(self,x):
-        import ipdb; ipdb.set_trace()
+        # import ipdb; ipdb.set_trace()
         x = F.leaky_relu(
         F.dropout(self.c1(x), p=0.3)
         )
