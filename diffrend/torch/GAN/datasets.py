@@ -4,6 +4,7 @@ import torch.nn.parallel
 import torch.utils.data
 import torchvision.datasets as dset
 import torchvision.transforms as transforms
+from shapenet import ShapeNetDataset
 
 
 class Dataset_load():
@@ -47,6 +48,12 @@ class Dataset_load():
             self.dataset = dset.FakeData(
                 image_size=(3, self.opt.imageSize, self.opt.imageSize),
                 transform=transforms.ToTensor())
+        elif self.opt.dataset == 'shapenet':
+            self.dataset = ShapeNetDataset(
+                # root_dir='/mnt/AIDATA/home/dvazquez/datasets/shapenet/ShapeNetCore.v2',
+                root_dir='/home/dvazquez/datasets/shapenet/ShapeNetCore.v2',
+                synsets=None, classes=["airplane", "microphone"],
+                transform=None)
         assert self.dataset
 
         # Load dataset

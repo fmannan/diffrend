@@ -184,7 +184,7 @@ def load_off(filename, verbose=True):
     return {'v': np.array(v), 'f': np.array(f), 'e': np.array(e)}
 
 
-def load_model(filename, verbose=True):
+def load_model(filename, verbose=False):
     """Load 3D model. Accepts .off .obj .splat."""
     import os
     prefix, ext = os.path.splitext(filename)

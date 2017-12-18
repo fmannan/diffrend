@@ -13,7 +13,7 @@ import torch.utils.data
 from torch.autograd import Variable
 
 from parameters import Parameters
-# from datasets import Dataset_load
+from datasets import Dataset_load
 from networks import create_networks
 
 from diffrend.torch.params import SCENE_BASIC
@@ -46,9 +46,9 @@ def create_scene(width, height, fovy, focal_length, n_samples,
     return scene
 
 
-def generate_samples(filename,  n_samples, radius, width, height, fovy,
+def generate_samples(filename, n_samples, radius, width, height, fovy,
                      focal_length, batch_size, cam_dist=None, cam_pos=None,
-                     verbose=False):
+                     verbose=False, obj=None):
     """Generate random samples of an object from the same camera position.
 
     Randomly generate N samples on a surface and render them. The samples
@@ -68,7 +68,8 @@ def generate_samples(filename,  n_samples, radius, width, height, fovy,
         single_view = True
 
     # Load model
-    obj = load_model(filename, verbose=verbose)
+    if obj is None:
+        obj = load_model(filename, verbose=verbose)
 
     # Create a splats rendering scene
     large_scene = create_scene(width, height, fovy, focal_length, n_samples,
@@ -135,11 +136,12 @@ def calc_gradient_penalty(discriminator, real_data, fake_data, gp_lambda):
 class GAN(object):
     """GAN class."""
 
-    def __init__(self, opt):
+    def __init__(self, opt, dataloader=None):
         """Constructor."""
         self.opt = opt
         self.real_label = 1
         self.fake_label = 0
+        self.dataloader = dataloader
 
         # Create the networks
         self.create_networks()
@@ -207,7 +209,7 @@ class GAN(object):
         self.optimizerG = optim.Adam(self.netG.parameters(), lr=self.opt.lr,
                                      betas=(self.opt.beta1, 0.999))
 
-    def get_real_sample(self,):
+    def get_real_sample(self, i):
         """Get a real sample."""
         if self.opt.same_view:
             cam_dist = None
@@ -216,10 +218,15 @@ class GAN(object):
             cam_dist = self.opt.cam_dist
             cam_pos = None
 
+        if self.dataloader is not None:
+            obj_model = self.dataloader[i]['obj']
+        else:
+            obj_model = None
+
         real_sample = generate_samples(
             self.opt.model, self.opt.n, self.opt.r, self.opt.width,
             self.opt.height, self.opt.fovy, self.opt.f, self.opt.batchSize,
-            cam_dist=cam_dist, cam_pos=cam_pos, verbose=False)
+            cam_dist=cam_dist, cam_pos=cam_pos, verbose=False, obj=obj_model)
 
         self.batch_size = real_sample.size(0)
 
@@ -291,7 +298,7 @@ class GAN(object):
 
                 # Train with real
                 self.netD.zero_grad()
-                self.get_real_sample()
+                self.get_real_sample(epoch)
                 real_output = self.netD(self.inputv)
                 if self.opt.criterion == 'GAN':
                     errD_real = self.criterion(real_output, self.labelv)
@@ -360,8 +367,6 @@ class GAN(object):
             if epoch % 500 == 0:
                 self.save_networks(epoch)
 
-            print ("iteration ", epoch, "finished")
-
     def save_networks(self, epoch):
         """Save networks to hard disk."""
         torch.save(self.netG.state_dict(),
@@ -383,10 +388,14 @@ def main():
     opt = Parameters().parse()
 
     # Load dataset
+    dataset_load = Dataset_load(opt)
+    dataset_load.initialize()
+
     # dataloader = Dataset_load(opt).get_dataloader()
+    dataloader = dataset_load.dataset
 
     # Create GAN
-    gan = GAN(opt)
+    gan = GAN(opt, dataloader)
 
     # Train gan
     gan.train()

@@ -61,15 +61,16 @@ class ShapeNetDataset(Dataset):
         obj_model = load_model(obj_path)
 
         # Show loaded model
-        animate_sample_generation(model_name=None, obj=obj_model,
-                                  num_samples=1000, out_dir=None,
-                                  resample=False, rotate_angle=360)
+        # animate_sample_generation(model_name=None, obj=obj_model,
+        #                           num_samples=1000, out_dir=None,
+        #                           resample=False, rotate_angle=360)
 
         # Convert model to splats
-        splats_model = obj_to_splat(obj_model, use_circum_circle=True)
+        # splats_model = obj_to_splat(obj_model, use_circum_circle=True)
 
         # Add model and synset to the output dictionary
-        sample = {'splats': splats_model, 'synset': synset}
+        # sample = {'obj': obj_model, 'splats': splats_model, 'synset': synset}
+        sample = {'obj': obj_model, 'synset': synset}
 
         # Transform
         if self.transform:
