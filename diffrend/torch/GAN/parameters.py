@@ -18,11 +18,19 @@ class Parameters():
 
     def initialize(self):
         """Initialize."""
-        self.parser.add_argument('--model', type=str, default=DIR_DATA + '/bunny.obj')
+        # Dataset
         self.parser.add_argument('--dataset', type=str, default='shapenet', help='dataset name')
-        self.parser.add_argument('--niter', type=int, default=4000, help='number of epochs to train for')
-        self.parser.add_argument('--batchSize', type=int, default=7, help='input batch size')
+        self.parser.add_argument('--root_dir', type=str, default='/home/dvazquez/datasets/shapenet/ShapeNetCore.v2', help='dataset root directory')
+        # self.parser.add_argument('--root_dir', type=str, default='/mnt/AIDATA/home/dvazquez/datasets/shapenet/ShapeNetCore.v2', help='dataset root directory')
+        self.parser.add_argument('--synsets', type=str, default='', help='Synsets from the shapenet dataset to use')
+        self.parser.add_argument('--classes', type=str, default='airplane,microphone', help='Classes from the shapenet dataset to use')
+        self.parser.add_argument('--model', type=str, default=DIR_DATA + '/bunny.obj')
         self.parser.add_argument('--workers', type=int, default=2, help='number of data loading workers')
+
+        self.parser.add_argument('--n_epochs', type=int, default=100, help='number of epochs to train')
+        self.parser.add_argument('--niter', type=int, default=4000, help='number of iterations to train')
+        self.parser.add_argument('--batchSize', type=int, default=7, help='input batch size')
+
         self.parser.add_argument('--imageSize', type=int, default=64, help='the height / width of the input image to network')
 
         self.parser.add_argument('--gen_type', type=str, default='resnet')
@@ -37,6 +45,7 @@ class Parameters():
         self.parser.add_argument("--criterion", help="GAN Training criterion", choices=['GAN', 'WGAN'], default='WGAN')
         self.parser.add_argument("--gp", help="Add gradient penalty", choices=['None', 'original'], default='original')
         self.parser.add_argument("--gp_lambda", help="GP lambda", type=float, default=10.)
+        self.parser.add_argument("--critic_iters", type=int, default=4, help="Number of critic iterations")
 
         self.parser.add_argument('--no_cuda', action='store_true', default=False, help='enables cuda')
         self.parser.add_argument('--ngpu', type=int, default=1, help='number of GPUs to use')
@@ -51,10 +60,10 @@ class Parameters():
         self.parser.add_argument('--cam_dist', type=float, default=5.0, help='Camera distance from the center of the object')
         self.parser.add_argument('--nv', type=int, default=10, help='Number of views to generate')
         self.parser.add_argument('--fovy', type=float, default=15.0, help='Field of view in the vertical direction')
-        self.parser.add_argument('--f', type=float, default=0.1, help='focal length')
+        self.parser.add_argument('--focal_length', type=float, default=0.1, help='focal length')
 
-        self.parser.add_argument('--n', type=int, default=2000, help='number of splats to generate')
-        self.parser.add_argument('--r', type=float, default=0.025, help='radius of the splats (fix)')
+        self.parser.add_argument('--n_splats', type=int, default=2000, help='number of splats to generate')
+        self.parser.add_argument('--splats_radius', type=float, default=0.025, help='radius of the splats (fix)')
 
         self.parser.add_argument('--same_view', action='store_true', default=False, help='data with view fixed')
 

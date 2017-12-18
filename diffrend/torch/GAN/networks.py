@@ -5,37 +5,45 @@ import torch.nn.parallel
 import torch.nn.functional as F
 
 
-def create_networks(opt):
+def create_networks(opt, verbose=True):
     """Create the networks."""
     # Parameters
     ngpu = int(opt.ngpu)
     nz = int(opt.nz)
     ngf = int(opt.ngf)
     ndf = int(opt.ndf)
-    nc = opt.n
+    nc = opt.n_splats
 
     # Create generator network
-    if opt.gen_type=='mlp':
+    if opt.gen_type == 'mlp':
         netG = _netG_mlp(ngpu, nz, ngf, nc)
-    elif opt.gen_type=='resnet':
+    elif opt.gen_type == 'resnet':
         netG = _netG_resnet(nz, nc)
     else:
         netG = _netG(ngpu, nz, ngf, nc)
-    netG.apply(weights_init)
+
+    # netG.apply(weights_init)
     if opt.netG != '':
         netG.load_state_dict(torch.load(opt.netG))
-    print(netG)
+    else:
+        netG.apply(weights_init)
 
     # Create the discriminator network
-
     if opt.criterion == 'WGAN':
-        netD = _netD(ngpu, 1, ndf,1)
+        netD = _netD(ngpu, 1, ndf, 1)
     else:
         netD = _netD(ngpu, 1, ndf)
-    netD.apply(weights_init)
+
+    # Init weights/load pretrained model
     if opt.netD != '':
         netD.load_state_dict(torch.load(opt.netD))
-    print(netD)
+    else:
+        netD.apply(weights_init)
+
+    # Show networks
+    if verbose:
+        print(netG)
+        print(netD)
 
     return netG, netD
 
@@ -49,16 +57,27 @@ def weights_init(m):
     elif classname.find('BatchNorm') != -1:
         m.weight.data.normal_(1.0, 0.02)
         m.bias.data.fill_(0)
+
+
 #############################################
-##########Modules for conditional batchnorm##############
+# Modules for conditional batchnorm
+#############################################
 class TwoInputModule(nn.Module):
+    """Abstract class."""
+
     def forward(self, input1, input2):
+        """Forward method."""
         raise NotImplementedError
 
+
 class CondBatchNorm(nn.BatchNorm2d, TwoInputModule):
+    """Conditional batch norm."""
+
     def __init__(self, x_dim, z_dim, eps=1e-5, momentum=0.1):
-        """`x_dim` dimensionality of x input
-           `z_dim` dimensionality of z latents
+        """Constructor.
+
+        - `x_dim`: dimensionality of x input
+        - `z_dim`: dimensionality of z latents
         """
         super(CondBatchNorm, self).__init__(x_dim, eps, momentum, affine=False)
         self.eps = eps
@@ -72,7 +91,7 @@ class CondBatchNorm(nn.BatchNorm2d, TwoInputModule):
         )
 
     def forward(self, input, noise):
-
+        """Forward method."""
         shift = self.shift_conv.forward(noise)
         scale = self.scale_conv.forward(noise)
 
@@ -80,11 +99,15 @@ class CondBatchNorm(nn.BatchNorm2d, TwoInputModule):
         output = norm_features * scale + shift
         return output
 
+
+#############################################
+# Generators
+#############################################
 class _netG(nn.Module):
     def __init__(self, ngpu, nz, ngf, nc):
         super(_netG, self).__init__()
         self.ngpu = ngpu
-        self.nc=nc
+        self.nc = nc
         self.main = nn.Sequential(
 
             # input is Z, going into a convolution
@@ -124,9 +147,10 @@ class _netG(nn.Module):
                                                range(self.ngpu))
         else:
             output = self.main(input)
-            out = self.main2(output.view(output.size(0),-1))
-            out=out.view(out.size(0),self.nc,6)
+            out = self.main2(output.view(output.size(0), -1))
+            out = out.view(out.size(0), self.nc, 6)
         return out
+
 
 class _netG_mlp(nn.Module):
     def __init__(self, ngpu, nz, ngf, nc):
@@ -136,7 +160,7 @@ class _netG_mlp(nn.Module):
         self.main = nn.Sequential(
             # input is Z, going into a convolution
             nn.Linear(nz, ngf*4),
-            #nn.BatchNorm1d(ngf*4),
+            # nn.BatchNorm1d(ngf*4),
             nn.LeakyReLU(0.2, True),
 
             nn.Linear(ngf*4, ngf*16),
@@ -148,18 +172,16 @@ class _netG_mlp(nn.Module):
             nn.LeakyReLU(0.2, True),
 
             nn.Linear(ngf*16, ngf*32),
-            #nn.BatchNorm1d(ngf*16),
+            # nn.BatchNorm1d(ngf*16),
             nn.LeakyReLU(0.2, True),
 
-            nn.Linear(ngf*32,ngf*64),
+            nn.Linear(ngf*32, ngf*64),
             nn.LeakyReLU(0.2, True),
 
-            nn.Linear(ngf*64,nc*6)
+            nn.Linear(ngf*64, nc*6)
             # nn.BatchNorm1d(ndf*4),
             # nn.LeakyReLU(0.2, True),
-            #
             # nn.Linear(ndf*4, 1)
-
             # state size. (nc) x 64 x 64
         )
 
@@ -169,21 +191,21 @@ class _netG_mlp(nn.Module):
                                                range(self.ngpu))
         else:
             output = self.main(input)
-            output=output.view(output.size(0),self.nc,6)
+            output = output.view(output.size(0), self.nc, 6)
         return output
 
 DIM = 512
-class ResBlock(nn.Module):
 
+
+class ResBlock(nn.Module):
     def __init__(self):
         super(ResBlock, self).__init__()
 
         self.res_block = nn.Sequential(
             nn.ReLU(True),
-            nn.Conv1d(DIM, DIM, 3, padding=1),#nn.Linear(DIM, DIM),
-
+            nn.Conv1d(DIM, DIM, 3, padding=1),  # nn.Linear(DIM, DIM),
             nn.ReLU(True),
-            nn.Conv1d(DIM, DIM, 3, padding=1),#nn.Linear(DIM, DIM),
+            nn.Conv1d(DIM, DIM, 3, padding=1),  # nn.Linear(DIM, DIM),
         )
 
     def forward(self, input):
@@ -191,7 +213,6 @@ class ResBlock(nn.Module):
         return input + (0.3*output)
 
 class _netG_resnet(nn.Module):
-
     def __init__(self,nz,nc):
         super(_netG_resnet, self).__init__()
 
@@ -204,7 +225,7 @@ class _netG_resnet(nn.Module):
             ResBlock(),
         )
         self.conv1 = nn.Conv1d(DIM, nc, 3, padding=1)
-        self.bn=nn.BatchNorm1d( nc)
+        self.bn = nn.BatchNorm1d(nc)
         self.conv2 = nn.Conv1d(nc, nc, 1)
 
         self.softmax = nn.Softmax()
@@ -217,59 +238,40 @@ class _netG_resnet(nn.Module):
 
         output = self.bn(output)
         output = self.conv2(output)
-
-
         return output
 
 
+#############################################
+# Discriminators
+#############################################
 class _netD(nn.Module):
-    def __init__(self, ngpu, nc, ndf,no_sigmoid=0):
+    def __init__(self, ngpu, nc, ndf, no_sigmoid=0):
         super(_netD, self).__init__()
         self.ngpu = ngpu
-        self.no_sigmoid=no_sigmoid
+        self.no_sigmoid = no_sigmoid
 
-            # input is (nc) x 64 x 64
-        self.c1=    nn.Conv2d(nc, ndf, 4, 2, 1, bias=False)
-
-            # state size. (ndf) x 32 x 32
-        self.c2=    nn.Conv2d(ndf, ndf * 2, 4, 2, 1, bias=True)
-
-            # state size. (ndf*2) x 16 x 16
-        self.c3=    nn.Conv2d(ndf * 2, ndf * 2, 4, 2, 1, bias=False)
-
-            # state size. (ndf*4) x 8 x 8
-        self.c4=    nn.Conv2d(ndf * 2, ndf * 2, 4, 2, 1, bias=True)
-
-
-
-            # state size. (ndf*8) x 4 x 4
-        self.c6=    nn.Conv2d(ndf * 2, 1, 4, 1, 0, bias=False)
-
-
+        # input is (nc) x 64 x 64
+        self.c1 = nn.Conv2d(nc, ndf, 4, 2, 1, bias=False)
+        # state size. (ndf) x 32 x 32
+        self.c2 = nn.Conv2d(ndf, ndf * 2, 4, 2, 1, bias=True)
+        # state size. (ndf*2) x 16 x 16
+        self.c3 = nn.Conv2d(ndf * 2, ndf * 2, 4, 2, 1, bias=False)
+        # state size. (ndf*4) x 8 x 8
+        self.c4 = nn.Conv2d(ndf * 2, ndf * 2, 4, 2, 1, bias=True)
+        # state size. (ndf*8) x 4 x 4
+        self.c6 = nn.Conv2d(ndf * 2, 1, 4, 1, 0, bias=False)
 
     def forward(self,x):
         # import ipdb; ipdb.set_trace()
-        x = F.leaky_relu(
-        F.dropout(self.c1(x), p=0.3)
-        )
-        x = F.leaky_relu(
-        F.dropout(self.c2(x), p= 0.3)
-        )
-        x = F.leaky_relu(
-        F.dropout(self.c3(x), p=0.5)
-        )
-        # x = F.leaky_relu(
-        # F.dropout(self.c4(x), p=0.3)
-        # )
-        x = F.leaky_relu(
-        F.dropout(self.c4(x), p=0.5)
-        )
+        x = F.leaky_relu(F.dropout(self.c1(x), p=0.3))
+        x = F.leaky_relu(F.dropout(self.c2(x), p=0.3))
+        x = F.leaky_relu(F.dropout(self.c3(x), p=0.5))
+        # x = F.leaky_relu(F.dropout(self.c4(x), p=0.3))
+        x = F.leaky_relu(F.dropout(self.c4(x), p=0.5))
+        x = self.c6(x)
+        x = x.view(-1, 1).squeeze(1)
 
-        x=self.c6(x)
-        x=x.view(-1, 1).squeeze(1)
-
-
-        if self.no_sigmoid==1:
+        if self.no_sigmoid == 1:
             return x
         else:
             return F.sigmoid(x)

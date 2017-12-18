@@ -49,11 +49,7 @@ class Dataset_load():
                 image_size=(3, self.opt.imageSize, self.opt.imageSize),
                 transform=transforms.ToTensor())
         elif self.opt.dataset == 'shapenet':
-            self.dataset = ShapeNetDataset(
-                # root_dir='/mnt/AIDATA/home/dvazquez/datasets/shapenet/ShapeNetCore.v2',
-                root_dir='/home/dvazquez/datasets/shapenet/ShapeNetCore.v2',
-                synsets=None, classes=["airplane", "microphone"],
-                transform=None)
+            self.dataset = ShapeNetDataset(self.opt, transform=None)
         assert self.dataset
 
         # Load dataset

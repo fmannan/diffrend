@@ -23,9 +23,6 @@ from diffrend.torch.renderer import render
 from diffrend.utils.sample_generator import (uniform_sample_mesh,
                                              uniform_sample_sphere)
 
-# TODO: Parameter
-CRITIC_ITERS = 4
-
 
 def create_scene(width, height, fovy, focal_length, n_samples,
                  radius):
@@ -160,7 +157,7 @@ class GAN(object):
 
     def create_networks(self,):
         """Create networks."""
-        self.netG, self.netD = create_networks(self.opt)
+        self.netG, self.netD = create_networks(self.opt, verbose=False)
         if not self.opt.no_cuda:
             self.netD = self.netD.cuda()
             self.netG = self.netG.cuda()
@@ -168,8 +165,8 @@ class GAN(object):
     def create_scene(self,):
         """Create a semi-empty scene with camera parameters."""
         self.scene = create_scene(self.opt.width, self.opt.height,
-                                  self.opt.fovy, self.opt.f, self.opt.n,
-                                  self.opt.r)
+                                  self.opt.fovy, self.opt.focal_length,
+                                  self.opt.n_splats, self.opt.splats_radius)
         if self.opt.same_view:
             self.cam_pos = uniform_sample_sphere(
                 radius=self.opt.cam_dist, num_samples=self.opt.batchSize)
@@ -218,22 +215,23 @@ class GAN(object):
             cam_dist = self.opt.cam_dist
             cam_pos = None
 
-        if self.dataloader is not None:
-            obj_model = self.dataloader[i]['obj']
+        if self.dataloader is None:
+            real_samples = generate_samples(
+                 self.opt.model, self.opt.n_splats, self.opt.splats_radius,
+                 self.opt.width, self.opt.height, self.opt.fovy,
+                 self.opt.focal_length, self.opt.batchSize, cam_dist=cam_dist,
+                 cam_pos=cam_pos, verbose=False, obj=None)
         else:
-            obj_model = None
+            self.dataloader.set_camera_pos(cam_dist=cam_dist,
+                                           cam_pos=cam_pos)
+            real_samples = self.dataloader[i]['samples']
 
-        real_sample = generate_samples(
-            self.opt.model, self.opt.n, self.opt.r, self.opt.width,
-            self.opt.height, self.opt.fovy, self.opt.f, self.opt.batchSize,
-            cam_dist=cam_dist, cam_pos=cam_pos, verbose=False, obj=obj_model)
-
-        self.batch_size = real_sample.size(0)
+        self.batch_size = real_samples.size(0)
 
         if not self.opt.no_cuda:
-            real_sample = real_sample.cuda()
+            real_samples = real_samples.cuda()
 
-        self.input.resize_as_(real_sample.data).copy_(real_sample.data)
+        self.input.resize_as_(real_samples.data).copy_(real_samples.data)
         self.label.resize_(self.batch_size).fill_(self.real_label)
         self.inputv = Variable(self.input)
         self.labelv = Variable(self.label)
@@ -294,7 +292,7 @@ class GAN(object):
             ############################
             # (1) Update D network: maximize log(D(x)) + log(1 - D(G(z)))
             ###########################
-            for i in range(CRITIC_ITERS):
+            for i in range(self.opt.critic_iters):
 
                 # Train with real
                 self.netD.zero_grad()
@@ -353,14 +351,14 @@ class GAN(object):
             self.optimizerG.step()
 
             # Log print
-            if epoch % 10 == 0:
+            if epoch % 5 == 0:
                 print('\n[%d/%d] Loss_D: %.4f Loss_G: %.4f D(x): %.4f'
                       ' D(G(z)): %.4f / %.4f' % (
                           epoch, self.opt.niter, errD.data[0], errG.data[0],
                           D_x, D_G_z1, D_G_z2))
 
             # Save images
-            if epoch % 25 == 0:
+            if epoch % 5 == 0:
                 self.save_images(epoch, self.inputv[0], fake_rendered[0])
 
             # Do checkpointing
