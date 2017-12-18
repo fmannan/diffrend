@@ -1,5 +1,6 @@
 import numpy as np
 from diffrend.numpy.quaternion import Quaternion
+from copy import deepcopy
 
 
 def norm_p(u, p=2):
@@ -176,7 +177,7 @@ def sph2cart(radius, phi, theta):
     """
     :param radius:
     :param phi: azimuth, i.e., angle between x-axis and xy proj of vector r * sin(theta)
-    :param theta:  inclination, i.e., angle between vector and z-axis
+    :param theta: inclination, i.e., angle between vector and z-axis
     :return: [x, y, z]
     """
     sinth = np.sin(theta)
@@ -218,3 +219,48 @@ def sph2cart_vec(u):
 
 def cart2sph_vec(u):
     pass
+
+
+def backface_culling(obj, camera, copy=True):
+    """Remove all the meshes that are pointing away from the camera
+    :param obj: Dictionary with vertices in 'v' and faces 'f'
+    :param camera: Camera specified by 'eye', 'up' and 'at'
+    :param copy: Specifies whether to return an updated copy of the object (safer) or do in-place update
+    :return: New object with faces pointing away from the camera removed
+    """
+    fn = obj['fn'] if 'fn' in obj else compute_face_normal(obj)
+
+    # Pick any one vertex on the face to find the camera direction
+    v = obj['v'][obj['f'][..., 0]]
+    cam_dir = normalize(camera['eye'] - v)
+
+    facing_dir = np.sum(fn * cam_dir, axis=-1)
+    new_obj = deepcopy(obj) if copy else obj
+    cond = facing_dir >= 0
+    new_obj['f'] = new_obj['f'][cond]
+    if 'fn' in new_obj:
+        new_obj['fn'] = new_obj['fn'][cond]
+
+    return new_obj
+
+
+def test_backface_culling():
+    obj = {'v': np.array([[-1, -1, 0], [1, -1, 0], [0, 1, 0]]),
+           'f': np.array([[0, 1, 2],
+                          [0, 2, 1]])}
+
+    camera = {'eye': np.array([0, 0, 10])}
+
+    new_obj = backface_culling(obj, camera, copy=True)
+    np.testing.assert_equal(new_obj['f'], np.array([[0, 1, 2]]))
+    # Check if the original object is intact
+    np.testing.assert_equal(obj['f'], np.array([[0, 1, 2],
+                                                [0, 2, 1]]))
+
+    camera = {'eye': np.array([0, 0, -10])}
+    new_obj = backface_culling(obj, camera, copy=False)
+    np.testing.assert_equal(new_obj['f'], np.array([[0, 2, 1]]))
+
+
+if __name__ == '__main__':
+    test_backface_culling()

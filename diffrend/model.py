@@ -2,6 +2,7 @@
 from __future__ import absolute_import
 import numpy as np
 import re
+import diffrend.numpy.ops as ops
 
 
 def norm_sqr(v):
@@ -62,10 +63,13 @@ def compute_circum_circle(obj):
     return {'center': center, 'radius': radius}
 
 
-def obj_to_splat(obj, use_circum_circle=True):
+def obj_to_splat(obj, use_circum_circle=True, camera=None):
     """Convert meshes to splats."""
     if not use_circum_circle:
-        raise ValueError('obj_to_splat only support circumscribed circle.')
+        raise ValueError('obj_to_splat only supports circumscribed circle.')
+    if camera is not None:
+        # Back-face culling: remove faces pointing away from the camera
+        obj = ops.backface_culling(obj, camera)
     cc = compute_circum_circle(obj)
     normals = compute_face_normal(obj)
     return {'v': cc['center'], 'r': cc['radius'], 'vn': normals}
