@@ -25,10 +25,9 @@ class Parameters():
         self.parser.add_argument('--synsets', type=str, default='', help='Synsets from the shapenet dataset to use')
         self.parser.add_argument('--classes', type=str, default='airplane,microphone', help='Classes from the shapenet dataset to use')
         self.parser.add_argument('--model', type=str, default=DIR_DATA + '/bunny.obj')
-        self.parser.add_argument('--workers', type=int, default=2, help='number of data loading workers')
+        self.parser.add_argument('--workers', type=int, default=1, help='number of data loading workers')
 
-        self.parser.add_argument('--n_epochs', type=int, default=100, help='number of epochs to train')
-        self.parser.add_argument('--niter', type=int, default=4000, help='number of iterations to train')
+        self.parser.add_argument('--n_iter', type=int, default=4000, help='number of iterations to train')
         self.parser.add_argument('--batchSize', type=int, default=7, help='input batch size')
 
         self.parser.add_argument('--imageSize', type=int, default=64, help='the height / width of the input image to network')

@@ -133,12 +133,15 @@ def calc_gradient_penalty(discriminator, real_data, fake_data, gp_lambda):
 class GAN(object):
     """GAN class."""
 
-    def __init__(self, opt, dataloader=None):
+    def __init__(self, opt, dataset_load=None):
         """Constructor."""
         self.opt = opt
         self.real_label = 1
         self.fake_label = 0
-        self.dataloader = dataloader
+        self.dataset_load = dataset_load
+
+        # Create dataset loader
+        self.create_dataset_loader()
 
         # Create the networks
         self.create_networks()
@@ -155,6 +158,23 @@ class GAN(object):
         # Create splats rendering scene
         self.create_scene()
 
+    def create_dataset_loader(self,):
+        """Create dataset leader."""
+        if self.opt.same_view:
+            self.cam_pos = uniform_sample_sphere(radius=self.opt.cam_dist,
+                                                 num_samples=1)[0]
+            self.cam_dist = None
+        else:
+            self.cam_dist = self.opt.cam_dist
+            self.cam_pos = None
+        self.dataset_load.initialize_dataset()
+        self.dataset = self.dataset_load.get_dataset()
+        self.dataset.set_camera_pos(cam_dist=self.cam_dist,
+                                    cam_pos=self.cam_pos)
+        if False:
+            self.dataset_load.initialize_dataset_loader()
+            self.dataset_loader = self.dataset_load.get_dataset_loader()
+
     def create_networks(self,):
         """Create networks."""
         self.netG, self.netD = create_networks(self.opt, verbose=False)
@@ -167,9 +187,6 @@ class GAN(object):
         self.scene = create_scene(self.opt.width, self.opt.height,
                                   self.opt.fovy, self.opt.focal_length,
                                   self.opt.n_splats, self.opt.splats_radius)
-        if self.opt.same_view:
-            self.cam_pos = uniform_sample_sphere(
-                radius=self.opt.cam_dist, num_samples=self.opt.batchSize)
 
     def create_tensors(self,):
         """Create the tensors."""
@@ -208,23 +225,19 @@ class GAN(object):
 
     def get_real_sample(self, i):
         """Get a real sample."""
-        if self.opt.same_view:
-            cam_dist = None
-            cam_pos = self.cam_pos[0]
-        else:
-            cam_dist = self.opt.cam_dist
-            cam_pos = None
-
-        if self.dataloader is None:
+        if self.dataset is None:
             real_samples = generate_samples(
                  self.opt.model, self.opt.n_splats, self.opt.splats_radius,
                  self.opt.width, self.opt.height, self.opt.fovy,
-                 self.opt.focal_length, self.opt.batchSize, cam_dist=cam_dist,
-                 cam_pos=cam_pos, verbose=False, obj=None)
+                 self.opt.focal_length, self.opt.batchSize,
+                 cam_dist=self.cam_dist, cam_pos=self.cam_pos, verbose=False,
+                 obj=None)
         else:
-            self.dataloader.set_camera_pos(cam_dist=cam_dist,
-                                           cam_pos=cam_pos)
-            real_samples = self.dataloader[i]['samples']
+            if not self.opt.same_view:
+                self.dataset.set_camera_pos(cam_dist=self.cam_dist,
+                                            cam_pos=None)
+            # real_samples = self.data_iter.next()['samples']
+            real_samples = self.dataset[i]['samples']
 
         self.batch_size = real_samples.size(0)
 
@@ -287,83 +300,95 @@ class GAN(object):
     def train(self,):
         """Train networtk."""
         # Start training
-        for epoch in range(self.opt.niter):
+        for epoch in range(self.opt.n_iter):
+            # self.data_iter = iter(self.dataset_loader)
+            i = 0
+            while i < len(self.dataset):
+                iteration = epoch*len(self.dataset) + i
 
-            ############################
-            # (1) Update D network: maximize log(D(x)) + log(1 - D(G(z)))
-            ###########################
-            for i in range(self.opt.critic_iters):
+                ############################
+                # (1) Update D network
+                ###########################
+                j = 0
+                while j < self.opt.critic_iters:
+                    j += 1
 
-                # Train with real
-                self.netD.zero_grad()
-                self.get_real_sample(epoch)
-                real_output = self.netD(self.inputv)
-                if self.opt.criterion == 'GAN':
-                    errD_real = self.criterion(real_output, self.labelv)
-                    errD_real.backward()
-                elif self.opt.criterion == 'WGAN':
-                    errD_real = real_output.mean()
-                    errD_real.backward(self.mone)
-                D_x = real_output.data.mean()
+                    # Train with real
+                    self.netD.zero_grad()
+                    self.get_real_sample(i)
+                    i += 1
+                    real_output = self.netD(self.inputv)
+                    if self.opt.criterion == 'GAN':
+                        errD_real = self.criterion(real_output, self.labelv)
+                        errD_real.backward()
+                    elif self.opt.criterion == 'WGAN':
+                        errD_real = real_output.mean()
+                        errD_real.backward(self.mone)
+                    D_x = real_output.data.mean()
 
-                # Train with fake
+                    # Train with fake
+                    self.generate_noise_vector()
+                    fake = self.netG(self.noisev)
+                    fake_rendered = self.render_batch(fake, self.batch_size,
+                                                      self.scene)
+                    labelv = Variable(self.label.fill_(self.fake_label))
+                    # Do not bp through gen
+                    fake_output = self.netD(fake_rendered.detach())
+                    if self.opt.criterion == 'WGAN':
+                        errD_fake = fake_output.mean()
+                        errD_fake.backward(self.one)
+                        errD = errD_fake - errD_real
+                    else:
+                        errD_fake = self.criterion(fake_output, labelv)
+                        errD_fake.backward()
+                        errD = errD_real + errD_fake
+                    D_G_z1 = fake_output.data.mean()
+
+                    # Compute gradient penalty
+                    if self.opt.gp != 'None':
+                        gradient_penalty = calc_gradient_penalty(
+                            self.netD, self.inputv.data, fake_rendered.data,
+                            self.opt.gp_lambda)
+                        gradient_penalty.backward()
+                        errD += gradient_penalty
+
+                    self.optimizerD.step()
+
+                ############################
+                # (2) Update G network: maximize log(D(G(z)))
+                ###########################
+                self.netG.zero_grad()
                 self.generate_noise_vector()
                 fake = self.netG(self.noisev)
                 fake_rendered = self.render_batch(fake, self.batch_size,
                                                   self.scene)
-                labelv = Variable(self.label.fill_(self.fake_label))
-                # Do not bp through gen
-                fake_output = self.netD(fake_rendered.detach())
+                # Fake labels are real for generator cost
+                labelv = Variable(self.label.fill_(self.real_label))
+                fake_output = self.netD(fake_rendered)
                 if self.opt.criterion == 'WGAN':
-                    errD_fake = fake_output.mean()
-                    errD_fake.backward(self.one)
-                    errD = errD_fake - errD_real
+                    errG = fake_output.mean()
+                    errG.backward(self.mone)
                 else:
-                    errD_fake = self.criterion(fake_output, labelv)
-                    errD_fake.backward()
-                    errD = errD_real + errD_fake
-                D_G_z1 = fake_output.data.mean()
+                    errG = self.criterion(fake_output, labelv)
+                    errG.backward()
+                D_G_z2 = fake_output.data.mean()
+                self.optimizerG.step()
 
-                # Compute gradient penalty
-                if self.opt.gp != 'None':
-                    gradient_penalty = calc_gradient_penalty(
-                        self.netD, self.inputv.data, fake_rendered.data,
-                        self.opt.gp_lambda)
-                    gradient_penalty.backward()
-                    errD += gradient_penalty
+                # Log print
+                if iteration % 5 == 0:
+                    print('\n[%d/%d] Loss_D: %.4f Loss_G: %.4f D(x): %.4f'
+                          ' D(G(z)): %.4f / %.4f' % (
+                              iteration, self.opt.n_iter, errD.data[0],
+                              errG.data[0], D_x, D_G_z1, D_G_z2))
 
-                self.optimizerD.step()
+                # Save images
+                if iteration % 5 == 0:
+                    self.save_images(iteration, self.inputv[0],
+                                     fake_rendered[0])
 
-            ############################
-            # (2) Update G network: maximize log(D(G(z)))
-            ###########################
-            self.netG.zero_grad()
-            # Fake labels are real for generator cost
-            labelv = Variable(self.label.fill_(self.real_label))
-            fake_output = self.netD(fake_rendered)
-            if self.opt.criterion == 'WGAN':
-                errG = fake_output.mean()
-                errG.backward(self.mone)
-            else:
-                errG = self.criterion(fake_output, labelv)
-                errG.backward()
-            D_G_z2 = fake_output.data.mean()
-            self.optimizerG.step()
-
-            # Log print
-            if epoch % 5 == 0:
-                print('\n[%d/%d] Loss_D: %.4f Loss_G: %.4f D(x): %.4f'
-                      ' D(G(z)): %.4f / %.4f' % (
-                          epoch, self.opt.niter, errD.data[0], errG.data[0],
-                          D_x, D_G_z1, D_G_z2))
-
-            # Save images
-            if epoch % 5 == 0:
-                self.save_images(epoch, self.inputv[0], fake_rendered[0])
-
-            # Do checkpointing
-            if epoch % 500 == 0:
-                self.save_networks(epoch)
+                # Do checkpointing
+                if iteration % 500 == 0:
+                    self.save_networks(iteration)
 
     def save_networks(self, epoch):
         """Save networks to hard disk."""
@@ -385,15 +410,11 @@ def main():
     # Parse args
     opt = Parameters().parse()
 
-    # Load dataset
+    # Create dataset loader
     dataset_load = Dataset_load(opt)
-    dataset_load.initialize()
-
-    # dataloader = Dataset_load(opt).get_dataloader()
-    dataloader = dataset_load.dataset
 
     # Create GAN
-    gan = GAN(opt, dataloader)
+    gan = GAN(opt, dataset_load)
 
     # Train gan
     gan.train()

@@ -13,9 +13,10 @@ class Dataset_load():
     def __init__(self, opt):
         """Constructor."""
         self.opt = opt
-        self.initialized = False
+        self.dataset = None
+        self.dataset_loader = None
 
-    def initialize(self):
+    def initialize_dataset(self):
         """Initialize."""
         if self.opt.dataset in ['imagenet', 'folder', 'lfw']:
             # folder dataset
@@ -52,13 +53,23 @@ class Dataset_load():
             self.dataset = ShapeNetDataset(self.opt, transform=None)
         assert self.dataset
 
-        # Load dataset
-        self.dataloader = torch.utils.data.DataLoader(
-            self.dataset, batch_size=self.opt.batchSize, shuffle=True,
+    def initialize_dataset_loader(self, batchSize=None):
+        """Create the datset loader."""
+        if batchSize is None:
+            batchSize = self.opt.batchSize
+
+        self.dataset_loader = torch.utils.data.DataLoader(
+            self.dataset, batch_size=batchSize, shuffle=True,
             num_workers=int(self.opt.workers))
 
-    def get_dataloader(self):
+    def get_dataset(self):
         """Get the dataset."""
-        if not self.initialized:
-            self.initialize()
-        return self.dataloader
+        if self.dataset is None:
+            raise ValueError("Error: Init the dataset first")
+        return self.dataset
+
+    def get_dataset_loader(self):
+        """Get the dataset loader."""
+        if self.dataset_loader is None:
+            raise ValueError("Error: Init the loader first")
+        return self.dataset_loader

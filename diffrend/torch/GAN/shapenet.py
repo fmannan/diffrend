@@ -1,3 +1,4 @@
+"""Sapenet dataset."""
 import os
 import numpy as np
 import copy
@@ -51,8 +52,7 @@ class ShapeNetDataset(Dataset):
         self._get_objects_paths()
         print ("Total samples: {}".format(len(self.samples)))
 
-        # Create semi-empty scene
-        self._create_scene()
+        self.scene = self._create_scene()
 
     def __len__(self):
         """Get dataset length."""
@@ -144,19 +144,19 @@ class ShapeNetDataset(Dataset):
     def _create_scene(self,):
         """Create a semi-empty scene with camera parameters."""
         # Create a splats rendering scene
-        self.scene = copy.deepcopy(SCENE_BASIC)
+        scene = copy.deepcopy(SCENE_BASIC)
 
         # Define the camera parameters
-        self.scene['camera']['viewport'] = [0, 0, self.opt.width,
-                                            self.opt.height]
-        self.scene['camera']['fovy'] = np.deg2rad(self.opt.fovy)
-        self.scene['camera']['focal_length'] = self.opt.focal_length
-        self.scene['objects']['disk']['radius'] = tch_var_f(
+        scene['camera']['viewport'] = [0, 0, self.opt.width, self.opt.height]
+        scene['camera']['fovy'] = np.deg2rad(self.opt.fovy)
+        scene['camera']['focal_length'] = self.opt.focal_length
+        scene['objects']['disk']['radius'] = tch_var_f(
             np.ones(self.opt.n_splats) * self.opt.splats_radius)
-        self.scene['objects']['disk']['material_idx'] = tch_var_l(
+        scene['objects']['disk']['material_idx'] = tch_var_l(
             np.zeros(self.opt.n_splats, dtype=int).tolist())
-        self.scene['materials']['albedo'] = tch_var_f([[0.6, 0.6, 0.6]])
-        self.scene['tonemap']['gamma'] = tch_var_f([1.0])  # Linear output
+        scene['materials']['albedo'] = tch_var_f([[0.6, 0.6, 0.6]])
+        scene['tonemap']['gamma'] = tch_var_f([1.0])  # Linear output
+        return scene
 
     def set_camera_pos(self, cam_dist=None, cam_pos=None):
         """Set camera pose."""
@@ -179,6 +179,15 @@ class ShapeNetDataset(Dataset):
         Randomly generate N samples on a surface and render them. The samples
         include position and normal, the radius is set to a constant.
         """
+        # Create semi-empty scene
+        # scene = self._create_scene()
+        scene = self.scene
+
+        # # generate camera positions on a sphere
+        # if not self.single_view:
+        #     self.cam_pos = uniform_sample_sphere(
+        #         radius=self.cam_dist, num_samples=self.opt.batchSize)
+
         data = []
         for idx in range(self.opt.batchSize):
             # Sample points from the 3D mesh
@@ -188,17 +197,17 @@ class ShapeNetDataset(Dataset):
             v = (v - np.mean(v, axis=0)) / (v.max() - v.min())
 
             # Save the splats into the rendering scene
-            self.scene['objects']['disk']['pos'] = tch_var_f(v)
-            self.scene['objects']['disk']['normal'] = tch_var_f(vn)
+            scene['objects']['disk']['pos'] = tch_var_f(v)
+            scene['objects']['disk']['normal'] = tch_var_f(vn)
 
             # Set camera position
             if self.single_view:
-                self.scene['camera']['eye'] = tch_var_f(self.cam_pos)
+                scene['camera']['eye'] = tch_var_f(self.cam_pos)
             else:
-                self.scene['camera']['eye'] = tch_var_f(self.cam_pos[idx])
+                scene['camera']['eye'] = tch_var_f(self.cam_pos[idx])
 
             # Render scene
-            res = render(self.scene)
+            res = render(scene)
             depth = res['depth']
             # im = res['image']
 
