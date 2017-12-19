@@ -20,7 +20,8 @@ class Parameters():
         """Initialize."""
         # Dataset
         self.parser.add_argument('--dataset', type=str, default='shapenet', help='dataset name')
-        self.parser.add_argument('--root_dir', type=str, default='/home/dvazquez/datasets/shapenet/ShapeNetCore.v2', help='dataset root directory')
+        self.parser.add_argument('--root_dir', type=str, default='/data/lisa/data/ShapeNetCore.v2', help='dataset root directory') # MILA
+        # self.parser.add_argument('--root_dir', type=str, default='/home/dvazquez/datasets/shapenet/ShapeNetCore.v2', help='dataset root directory')
         # self.parser.add_argument('--root_dir', type=str, default='/mnt/AIDATA/home/dvazquez/datasets/shapenet/ShapeNetCore.v2', help='dataset root directory')
         self.parser.add_argument('--synsets', type=str, default='', help='Synsets from the shapenet dataset to use')
         self.parser.add_argument('--classes', type=str, default='airplane,microphone', help='Classes from the shapenet dataset to use')

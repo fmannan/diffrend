@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.parallel
 import torch.nn.functional as F
-
+import numpy as np
 
 def create_networks(opt, verbose=True):
     """Create the networks."""
@@ -140,6 +140,12 @@ class _netG(nn.Module):
             nn.Linear(nc*6, nc*6)
             # state size. (nc) x 64 x 64
         )
+        coords_tmp = np.array(list(np.ndindex((64,64)))).reshape(64,64,2)
+        coords = np.zeros((64,64,3), dtype=np.float32)
+        coords[:,:,:2] = coords_tmp
+        self.coords = torch.FloatTensor(coords)
+        if torch.cuda.is_available():
+            self.coords = self.coords.cuda()
 
     def forward(self, input):
         if isinstance(input.data, torch.cuda.FloatTensor) and self.ngpu > 1:
@@ -147,7 +153,12 @@ class _netG(nn.Module):
                                                range(self.ngpu))
         else:
             output = self.main(input)
-            out = self.main2(output.view(output.size(0), -1))
+
+            # coordinates bias:
+            # something like this... we have to fiddle around with this
+            out = torch.sum(output, self.coords)
+
+            out = self.main2(out.view(out.size(0), -1))
             out = out.view(out.size(0), self.nc, 6)
         return out
 
