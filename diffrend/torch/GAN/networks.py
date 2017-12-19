@@ -141,8 +141,11 @@ class _netG(nn.Module):
             # state size. (nc) x 64 x 64
         )
         coords_tmp = np.array(list(np.ndindex((64,64)))).reshape(64,64,2)
-        self.coords = np.zeros((64,64,3), dtype=np.float32)
-        self.coords[:,:,:2] = coords_tmp
+        coords = np.zeros((64,64,3), dtype=np.float32)
+        coords[:,:,:2] = coords_tmp
+        self.coords = torch.FloatTensor(coords)
+        if torch.cuda.is_available():
+            self.coords = self.coords.cuda()
 
     def forward(self, input):
         if isinstance(input.data, torch.cuda.FloatTensor) and self.ngpu > 1:
