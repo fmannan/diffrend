@@ -1,0 +1,1 @@
+python generator_test.py --criterion GAN  --gen_type mlp --dataset cifar10 --imageSize 32 --dataroot /data/lisa/ta/sai --batchSize 64
