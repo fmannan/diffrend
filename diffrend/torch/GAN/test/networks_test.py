@@ -20,7 +20,7 @@ def create_networks(opt, verbose=True):
     elif opt.gen_type == 'resnet':
         netG = _netG_resnet(nz, nc)
     else:
-        netG = _netG(ngpu, nz, ngf, nc)
+        netG = _netG(ngpu, nz, ngf, 3)
 
     # netG.apply(weights_init)
     if opt.netG != '':
@@ -107,60 +107,43 @@ class _netG(nn.Module):
     def __init__(self, ngpu, nz, ngf, nc):
         super(_netG, self).__init__()
         self.ngpu = ngpu
-        self.nc = nc
+        self.model=nn.Sequential(
+        nn.Conv2d(nz, 1024, kernel_size=1, padding=0, stride=1, bias=True)
+
+
+
+        )
         self.main = nn.Sequential(
-
             # input is Z, going into a convolution
-            nn.ConvTranspose2d(nz, ngf * 8, 4, 1, 0, bias=False),
-            nn.BatchNorm2d(ngf * 8),
-            nn.LeakyReLU(0.2, True),
+
             # state size. (ngf*8) x 4 x 4
-            nn.ConvTranspose2d(ngf * 8, ngf * 4, 4, 2, 1, bias=False),
+            nn.ConvTranspose2d(ngf , ngf * 4, kernel_size=4,stride= 2, padding=1, bias=True),
             nn.BatchNorm2d(ngf * 4),
-            nn.LeakyReLU(0.2, True),
+            nn.ReLU(True),
             # state size. (ngf*4) x 8 x 8
-            nn.ConvTranspose2d(ngf * 4, ngf * 4, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(ngf * 4),
-            nn.LeakyReLU(0.2, True),
+            nn.ConvTranspose2d(ngf * 4, ngf * 2, kernel_size=4, stride=2, padding=1, bias=True),
+            nn.BatchNorm2d(ngf * 2),
+            nn.ReLU(True),
             # state size. (ngf*2) x 16 x 16
-            nn.ConvTranspose2d(ngf * 4,     ngf, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(ngf),
-            nn.LeakyReLU(0.2, True),
+            # nn.ConvTranspose2d(ngf * 2,     ngf, 4, 2, 1, bias=False),
+            # nn.BatchNorm2d(ngf),
+            # nn.ReLU(True),
             # state size. (ngf) x 32 x 32
-            nn.ConvTranspose2d(ngf,      3, 4, 2, 1, bias=False),
-
+            nn.ConvTranspose2d(ngf*2,      nc, kernel_size=4, stride=2, padding=1, bias=True),
+            nn.Tanh()
             # state size. (nc) x 64 x 64
         )
-        self.main2 = nn.Sequential(
-            # input is Z, going into a convolution
-
-            nn.Linear(64 * 64 * 3, nc*6),
-            nn.BatchNorm1d(nc*6),
-            nn.LeakyReLU(0.2, True),
-            nn.Linear(nc*6, nc*6)
-            # state size. (nc) x 64 x 64
-        )
-        coords_tmp = np.array(list(np.ndindex((64,64)))).reshape(64,64,2)
-        coords = np.zeros((64,64,3), dtype=np.float32)
-        coords[:,:,:2] = coords_tmp
-        self.coords = torch.FloatTensor(coords)
-        if torch.cuda.is_available():
-            self.coords = self.coords.cuda()
 
     def forward(self, input):
         if isinstance(input.data, torch.cuda.FloatTensor) and self.ngpu > 1:
             output = nn.parallel.data_parallel(self.main, input,
                                                range(self.ngpu))
         else:
-            output = self.main(input)
-
-            # coordinates bias:
-            # something like this... we have to fiddle around with this
-            out = torch.sum(output, self.coords)
-
-            out = self.main2(out.view(out.size(0), -1))
-            out = out.view(out.size(0), self.nc, 6)
-        return out
+            input=input.view(input.size(0),input.size(1),1,1)
+            out= self.model(input)
+            out=out.view(-1,64,4,4)
+            output = self.main(out)
+        return output
 
 
 class _netG_mlp(nn.Module):
@@ -257,7 +240,7 @@ class _netG_resnet(nn.Module):
 #############################################
 class _netD(nn.Module):
     def __init__(self, ngpu, nc, ndf, no_sigmoid=0):
-        
+
         super(_netD, self).__init__()
         self.ngpu = ngpu
         self.no_sigmoid = no_sigmoid
