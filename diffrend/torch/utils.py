@@ -33,8 +33,22 @@ def np_var(x, req_grad=False):
 def where(cond, x, y):
     return cond.float() * x + (1 - cond.float()) * y
 
+
 def norm_p(u, p=2):
     return torch.pow(torch.sum(torch.pow(u, p), dim=-1), 1./p)
+
+
+def tensor_cross_prod(u, M):
+    """
+    :param u:  N x 3
+    :param M: N x P x 3
+    :return:
+    """
+    s0 = u[:, 1][:, np.newaxis] * M[..., 2] - u[:, 2][:, np.newaxis] * M[..., 1]
+    s1 = -u[:, 0][:, np.newaxis] * M[..., 2] + u[:, 2][:, np.newaxis] * M[..., 0]
+    s2 = u[:, 0][:, np.newaxis] * M[..., 1] - u[:, 1][:, np.newaxis] * M[..., 0]
+
+    return torch.stack((s0, s1, s2), dim=2)
 
 
 def nonzero_divide(x, y):
@@ -158,47 +172,50 @@ def ray_disk_intersection(eye, ray_dir, disks, **kwargs):
             'intersection_mask': intersection_mask}
 
 
-# def ray_triangle_intersection(eye, ray_dir, triangles):
-#     """Intersection of a bundle of rays with a batch of triangles.
-#     Assumes that the triangles vertices are specified as F x 3 x 4 matrix where F is the number of faces and
-#     the normals for all faces are precomputed and in a matrix of size F x 4 (i.e., similar to the normals for other
-#     geometric primitives). Note that here the number of faces F is the same as number of primitives M.
-#     :param eye:
-#     :param ray_dir:
-#     :param triangles:
-#     :return:
-#     """
-#
-#     planes = {'pos': triangles['face'][:, 0, :], 'normal': triangles['normal']}
-#     result = ray_plane_intersection(eye, ray_dir, planes)
-#     intersection_pts = result['intersect']  # M x N x 4 matrix where M is the number of objects and N pixels.
-#     normals = result['normal'][..., :3]  # M x N x 4
-#     ray_dist = result['ray_distance']
-#
-#     # check if intersection point is inside or outside the triangle
-#     v_p0 = (intersection_pts - triangles['face'][:, 0, :][:, np.newaxis, :])[..., :3]  # M x N x 3
-#     v_p1 = (intersection_pts - triangles['face'][:, 1, :][:, np.newaxis, :])[..., :3]  # M x N x 3
-#     v_p2 = (intersection_pts - triangles['face'][:, 2, :][:, np.newaxis, :])[..., :3]  # M x N x 3
-#
-#     v01 = (triangles['face'][:, 1, :3] - triangles['face'][:, 0, :3])[:, np.newaxis, :]  # M x 1 x 3
-#     v12 = (triangles['face'][:, 2, :3] - triangles['face'][:, 1, :3])[:, np.newaxis, :]  # M x 1 x 3
-#     v20 = (triangles['face'][:, 0, :3] - triangles['face'][:, 2, :3])[:, np.newaxis, :]  # M x 1 x 3
-#
-#     cond_v01 = np.sum(np.cross(v01, v_p0) * normals, axis=-1) >= 0
-#     cond_v12 = np.sum(np.cross(v12, v_p1) * normals, axis=-1) >= 0
-#     cond_v20 = np.sum(np.cross(v20, v_p2) * normals, axis=-1) >= 0
-#
-#     intersection_mask = cond_v01 & cond_v12 & cond_v20
-#     ray_dist[~intersection_mask] = np.inf
-#
-#     return {'intersect': intersection_pts, 'normal': result['normal'], 'ray_distance': ray_dist,
-#             'intersection_mask': intersection_mask}
+def ray_triangle_intersection(eye, ray_dir, triangles, **kwargs):
+    """Intersection of a bundle of rays with a batch of triangles.
+    Assumes that the triangles vertices are specified as F x 3 x 4 matrix where F is the number of faces and
+    the normals for all faces are precomputed and in a matrix of size F x 4 (i.e., similar to the normals for other
+    geometric primitives). Note that here the number of faces F is the same as number of primitives M.
+    :param eye:
+    :param ray_dir:
+    :param triangles:
+    :return:
+    """
+
+    planes = {'pos': triangles['face'][:, 0, :], 'normal': triangles['normal']}
+    result = ray_plane_intersection(eye, ray_dir, planes)
+    intersection_pts = result['intersect']  # M x N x 4 matrix where M is the number of objects and N pixels.
+    normals = result['normal'][..., :3]  # M x N x 4
+    ray_dist = result['ray_distance']
+
+    # check if intersection point is inside or outside the triangle
+    # M x N x 3
+    v_p0 = (intersection_pts - triangles['face'][:, 0, :3][:, np.newaxis, :])
+    v_p1 = (intersection_pts - triangles['face'][:, 1, :3][:, np.newaxis, :])
+    v_p2 = (intersection_pts - triangles['face'][:, 2, :3][:, np.newaxis, :])
+
+    # Torch and Tensorflow's cross product requires both inputs to be of the same size unlike numpy
+    # M x 3
+    v01 = triangles['face'][:, 1, :3] - triangles['face'][:, 0, :3]
+    v12 = triangles['face'][:, 2, :3] - triangles['face'][:, 1, :3]
+    v20 = triangles['face'][:, 0, :3] - triangles['face'][:, 2, :3]
+
+    cond_v01 = torch.sum(tensor_cross_prod(v01, v_p0) * normals, dim=-1) >= 0
+    cond_v12 = torch.sum(tensor_cross_prod(v12, v_p1) * normals, dim=-1) >= 0
+    cond_v20 = torch.sum(tensor_cross_prod(v20, v_p2) * normals, dim=-1) >= 0
+
+    intersection_mask = cond_v01 * cond_v12 * cond_v20
+    ray_dist = where(intersection_mask, ray_dist, 1001)
+
+    return {'intersect': intersection_pts, 'normal': result['normal'], 'ray_distance': ray_dist,
+            'intersection_mask': intersection_mask}
 
 
 intersection_fn = {'disk': ray_disk_intersection,
                    'plane': ray_plane_intersection,
                    'sphere': ray_sphere_intersection,
-                   # 'triangle': ray_triangle_intersection,
+                   'triangle': ray_triangle_intersection,
                    }
 
 
