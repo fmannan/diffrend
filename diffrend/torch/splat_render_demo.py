@@ -23,6 +23,12 @@ def render_random_splat_camera(filename, out_dir, num_samples, radius, cam_dist,
     rendering_time = []
 
     obj = load_model(filename)
+    # normalize the vertices
+    v = obj['v']
+    axis_range = np.max(v, axis=0) - np.min(v, axis=0)
+    v = (v - np.mean(v, axis=0)) / max(axis_range)  # Normalize to make the largest spread 1
+    obj['v'] = v
+
     if not os.path.exists(out_dir):
         os.mkdir(out_dir)
 
@@ -40,14 +46,16 @@ def render_random_splat_camera(filename, out_dir, num_samples, radius, cam_dist,
 
     # generate camera positions on a sphere
     cam_pos = uniform_sample_sphere(radius=cam_dist, num_samples=num_views)
+    obj_center = np.mean(v, axis=0)
+    large_scene['camera']['at'] = tch_var_f(obj_center)
+    # TODO: Change the camera position so that the entire object is inside the view frustum
+    # ...
+
     plt.figure()
     for idx in range(cam_pos.shape[0]):
         start_time = time()
         v, vn = uniform_sample_mesh(obj, num_samples=num_samples)
         sampling_time.append(time() - start_time)
-
-        # normalize the vertices
-        v = (v - np.mean(v, axis=0)) / (v.max() - v.min())
 
         large_scene['objects']['disk']['pos'] = tch_var_f(v)
         large_scene['objects']['disk']['normal'] = tch_var_f(vn)
@@ -93,17 +101,18 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(usage="splat_gen_render_demo.py --model filename --out_dir output_dir "
                                            "--n 5000 --width 128 --height 128 --r 0.025 --cam_dist 5 --nv 10")
-    parser.add_argument('--model', type=str, default=DIR_DATA + '/chair_0001.off')
-    parser.add_argument('--out_dir', type=str, default='./render_samples/')
-    parser.add_argument('--width', type=int, default=128)
-    parser.add_argument('--height', type=int, default=128)
-    parser.add_argument('--n', type=int, default=5000)
-    parser.add_argument('--r', type=float, default=0.025)
-    parser.add_argument('--cam_dist', type=float, default=6.0, help='Camera distance from the center of the object')
-    parser.add_argument('--nv', type=int, default=10, help='Number of views to generate')
-    parser.add_argument('--fovy', type=float, default=15.0, help='Field of view in the vertical direction')
-    parser.add_argument('--f', type=float, default=0.1, help='focal length')
-    parser.add_argument('--norm_depth_image_only', action='store_true', default=False)
+    parser.add_argument('--model', type=str, default=DIR_DATA + '/chair_0001.off', help='Path to the model file')
+    parser.add_argument('--out_dir', type=str, default='./render_samples/', help='Directory for rendered images.')
+    parser.add_argument('--width', type=int, default=128, help='Width of output image.')
+    parser.add_argument('--height', type=int, default=128, help='Height of output image.')
+    parser.add_argument('--n', type=int, default=5000, help='Number of samples to generate.')
+    parser.add_argument('--r', type=float, default=0.025, help='Constant radius for each splat.')
+    parser.add_argument('--cam_dist', type=float, default=7.0, help='Camera distance from the center of the object.')
+    parser.add_argument('--nv', type=int, default=10, help='Number of views to generate.')
+    parser.add_argument('--fovy', type=float, default=20.0, help='Field of view in the vertical direction.')
+    parser.add_argument('--f', type=float, default=0.1, help='Focal length of camera.')
+    parser.add_argument('--norm_depth_image_only', action='store_true', default=False, help='Render on the normalized'
+                                                                                            ' depth image.')
 
     args = parser.parse_args()
     print(args)
