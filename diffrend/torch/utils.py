@@ -67,48 +67,47 @@ def point_along_ray(eye, ray_dir, ray_dist):
     return eye[np.newaxis, np.newaxis, :] + ray_dist[:, :, np.newaxis] * ray_dir.transpose(1, 0)[np.newaxis, ...]
 
 
-# def ray_sphere_intersection(eye, ray_dir, sphere):
-#     """Bundle of rays intersected with a batch of spheres
-#     :param eye:
-#     :param ray_dir:
-#     :param sphere:
-#     :return:
-#     """
-#     pos = sphere['pos']
-#     pos_tilde = eye - pos
-#     radius = sphere['radius']
-#
-#     a = np.sum(ray_dir ** 2, axis=0)
-#     b = 2 * np.dot(pos_tilde, ray_dir)
-#     c = (np.sum(pos_tilde ** 2, axis=1) - radius ** 2)[:, np.newaxis]
-#
-#     d_sqr = b ** 2 - 4 * a * c
-#     intersect_mask = d_sqr >= 0
-#
-#     d_sqr = np.where(intersect_mask, d_sqr, np.zeros_like(d_sqr))
-#     d = np.sqrt(d_sqr)
-#     inv_denom = 1. / (2 * a)
-#
-#     t1 = (-b - d) * inv_denom
-#     t2 = (-b + d) * inv_denom
-#
-#     # get the nearest positive depth
-#     t1 = np.where(intersect_mask & (t1 >= 0), t1, np.ones_like(np.max(t1) + 1))
-#     t2 = np.where(intersect_mask & (t2 >= 0), t2, np.ones_like(np.max(t2) + 1))
-#     # left_intersect[~intersect_mask] = np.inf
-#     # right_intersect[~intersect_mask] = np.inf
-#
-#     ray_dist = np.min(np.stack((t1, t2), axis=2), axis=2)
-#     ray_dist = np.where(intersect_mask, ray_dist, np.zeros_like(ray_dist))
-#     # ray_dist[~intersect_mask] = 0  # set this to zero here so that the following line doesn't throw an error
-#     intersection_pts = point_along_ray(eye, ray_dir, ray_dist)
-#     # ray_dist[~intersect_mask] = np.inf
-#     normals = intersection_pts - pos[:, np.newaxis, :]
-#     normals /= np.sqrt(np.sum(normals ** 2, axis=-1))[..., np.newaxis]
-#     normals[~intersect_mask] = 0
-#
-#     return {'intersect': intersection_pts, 'normal': normals, 'ray_distance': ray_dist,
-#             'intersection_mask': intersect_mask}
+def ray_sphere_intersection(eye, ray_dir, sphere, **kwargs):
+    """Bundle of rays intersected with a batch of spheres
+    :param eye:
+    :param ray_dir:
+    :param sphere:
+    :return:
+    """
+    pos = sphere['pos'][:, :3]
+    pos_tilde = eye[:3] - pos
+    radius = sphere['radius']
+
+    a = torch.sum(ray_dir ** 2, dim=0)
+    b = 2 * torch.matmul(pos_tilde, ray_dir)
+    c = (torch.sum(pos_tilde ** 2, dim=1) - radius ** 2)[:, np.newaxis]
+
+    d_sqr = b ** 2 - 4 * a * c
+    intersection_mask = d_sqr >= 0
+
+    d_sqr = where(intersection_mask, d_sqr, 0)
+
+    d = torch.sqrt(d_sqr)
+    inv_denom = 1. / (2 * a)
+
+    t1 = (-b - d) * inv_denom
+    t2 = (-b + d) * inv_denom
+
+    # get the nearest positive depth
+    max_val = torch.max(torch.max(t1, t2)) + 1
+    t1 = where(intersection_mask * (t1 >= 0), t1, max_val)
+    t2 = where(intersection_mask * (t2 >= 0), t2, max_val)
+
+    ray_dist, _ = torch.min(torch.stack((t1, t2), dim=2), dim=2)
+    ray_dist = where(intersection_mask, ray_dist, 1001)
+
+    intersection_pts = point_along_ray(eye, ray_dir, ray_dist)
+
+    normals = intersection_pts - pos[:, np.newaxis, :]
+    normals /= torch.sqrt(torch.sum(normals ** 2, dim=-1))[:, :, np.newaxis]
+
+    return {'intersect': intersection_pts, 'normal': normals, 'ray_distance': ray_dist,
+            'intersection_mask': intersection_mask}
 
 
 def ray_plane_intersection(eye, ray_dir, plane, **kwargs):
@@ -198,7 +197,7 @@ def ray_disk_intersection(eye, ray_dir, disks, **kwargs):
 
 intersection_fn = {'disk': ray_disk_intersection,
                    'plane': ray_plane_intersection,
-                   # 'sphere': ray_sphere_intersection,
+                   'sphere': ray_sphere_intersection,
                    # 'triangle': ray_triangle_intersection,
                    }
 

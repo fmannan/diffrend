@@ -1,4 +1,4 @@
-from diffrend.torch.params import OUTPUT_FOLDER, SCENE_BASIC
+from diffrend.torch.params import OUTPUT_FOLDER, SCENE_BASIC, SCENE_1
 from diffrend.torch.renderer import render
 from diffrend.torch.utils import tch_var_f, tch_var_l, CUDA
 import torch.nn as nn
@@ -158,7 +158,8 @@ if __name__ == '__main__':
     parser.add_argument('--render', action='store_true', help='Renders a scene if specified')
     parser.add_argument('--opt', action='store_true', help='Optimizes material parameters if specified')
     parser.add_argument('--test_scale', action='store_true')
-    parser.add_argument('--norm_depth_image_only', action='store_true', default=False, help='Only render the normalized depth image.')
+    parser.add_argument('--norm_depth_image_only', action='store_true', default=False,
+                        help='Only render the normalized depth image.')
     parser.add_argument('--out_dir', type=str, default=OUTPUT_FOLDER)
     parser.add_argument('--model_filename', type=str, default=DIR_DATA + '/bunny.splat',
                         help='Input model filename needed for scalability testing')
@@ -168,7 +169,7 @@ if __name__ == '__main__':
     if not (args.render or args.opt or args.test_scale):
         args.render = True
 
-    scene = SCENE_BASIC
+    scene = SCENE_1
     if args.render:
         res = render_scene(scene, args.out_dir, args.norm_depth_image_only)
     if args.opt:
