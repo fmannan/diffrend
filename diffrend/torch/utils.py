@@ -296,8 +296,10 @@ def lookat_rot_inv(eye, at, up):
     z = (eye - at)
     z = normalize(z)
 
-    y = normalize(up)
-    x = torch.cross(y, z)
+    up = normalize(up)
+    x = torch.cross(up, z)
+    # The input `up` vector may not be orthogonal to z.
+    y = torch.cross(z, x)
 
     return torch.stack((x, y, z), dim=1)
 
