@@ -30,6 +30,19 @@ def np_var(x, req_grad=False):
 # np_var_f = lambda x: np_var(x, FloatTensor, False)
 # np_var_l = lambda x: np_var(x, LongTensor, False)
 
+
+def get_data(x):
+    return x.cpu().data.numpy() if x.is_cuda else x.data.numpy()
+
+
+def bincount(x, nbins, ret_var=True):
+    data = x.cpu().data if x.is_cuda else x.data
+    count = torch.zeros(nbins).scatter_add_(0, data, torch.ones(x.size()))
+    if ret_var:
+        count = torch.autograd.Variable(count)
+    return count
+
+
 def where(cond, x, y):
     return cond.float() * x + (1 - cond.float()) * y
 
@@ -359,3 +372,27 @@ def ray_object_intersections(eye, ray_dir, scene_objects, **kwargs):
             material_idx = torch.cat((material_idx, scene_objects[obj_type]['material_idx']), dim=0)
 
     return obj_intersections, ray_dist, normals, material_idx
+
+
+def backface_labeler(eye, scene_objects):
+    """Add a binary label per planar geometry.
+       0: Facing the camera.
+       1: Facing away from the camera, i.e., back-face.
+    :param eye: Camera position
+    :param scene_objects: Dictionary of scene geometry
+    :return: Dictionary of scene geometry with backface label for each geometry
+    """
+    for obj_type in scene_objects:
+        if obj_type == 'sphere':
+            continue
+        if obj_type == 'triangle':
+            pos = scene_objects[obj_type]['face'][:, 0, :3]
+        else:
+            pos = scene_objects[obj_type]['pos'][:, :3]
+        normals = scene_objects[obj_type]['normal'][:, :3]
+        cam_dir = normalize(eye[:3] - pos)
+        facing_dir = torch.sum(normals * cam_dir, dim=-1)
+        scene_objects[obj_type]['facing_dir'] = facing_dir
+        scene_objects[obj_type]['backface'] = facing_dir < 0
+
+    return scene_objects
