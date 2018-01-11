@@ -284,7 +284,8 @@ def main():
 
     # Parse args
     opt = Parameters().parse()
-    for key, val in opt.__dict__.iter():
+
+    for key, val in opt.__dict__.items():
         exp.param(key, val)
 
     # Create dataset loader
