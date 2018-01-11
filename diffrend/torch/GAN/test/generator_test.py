@@ -3,8 +3,6 @@ from __future__ import absolute_import
 import os
 import sys
 
-from diffrend.generator.generator import D_G_z1
-
 sys.path.append('../../..')
 import copy
 import numpy as np
