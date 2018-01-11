@@ -177,7 +177,7 @@ class GAN(object):
 
     def create_networks(self,):
         """Create networks."""
-        self.netG, self.netD = create_networks(self.opt, verbose=False)
+        self.netG, self.netD = create_networks(self.opt, verbose=True)
         if not self.opt.no_cuda:
             self.netD = self.netD.cuda()
             self.netG = self.netG.cuda()
@@ -251,7 +251,8 @@ class GAN(object):
 
     def generate_noise_vector(self,):
         """Generate a noise vector."""
-        self.noise.resize_(self.batch_size, int(self.opt.nz)).normal_(0, 1)
+        # self.noise.resize_(self.batch_size, int(self.opt.nz)).normal_(0, 1)
+        self.noise.resize_(self.batch_size, int(self.opt.nz), 1, 1).normal_(0, 1)
         self.noisev = Variable(self.noise)
 
     def render_batch(self, batch, batch_size, scene):
@@ -329,6 +330,7 @@ class GAN(object):
                     # Train with fake
                     self.generate_noise_vector()
                     fake = self.netG(self.noisev)
+                    # print (fake.size())
                     fake_rendered = self.render_batch(fake, self.batch_size,
                                                       self.scene)
                     labelv = Variable(self.label.fill_(self.fake_label))

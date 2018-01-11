@@ -20,8 +20,8 @@ class Parameters():
         """Initialize."""
         # Dataset
         self.parser.add_argument('--dataset', type=str, default='shapenet', help='dataset name')
-        self.parser.add_argument('--root_dir', type=str, default='/data/lisa/data/ShapeNetCore.v2', help='dataset root directory') # MILA
-        # self.parser.add_argument('--root_dir', type=str, default='/home/dvazquez/datasets/shapenet/ShapeNetCore.v2', help='dataset root directory')
+        # self.parser.add_argument('--root_dir', type=str, default='/data/lisa/data/ShapeNetCore.v2', help='dataset root directory') # MILA
+        self.parser.add_argument('--root_dir', type=str, default='/home/dvazquez/datasets/shapenet/ShapeNetCore.v2', help='dataset root directory')
         # self.parser.add_argument('--root_dir', type=str, default='/mnt/AIDATA/home/dvazquez/datasets/shapenet/ShapeNetCore.v2', help='dataset root directory')
         self.parser.add_argument('--synsets', type=str, default='', help='Synsets from the shapenet dataset to use')
         self.parser.add_argument('--classes', type=str, default='airplane,microphone', help='Classes from the shapenet dataset to use')
@@ -29,11 +29,11 @@ class Parameters():
         self.parser.add_argument('--workers', type=int, default=1, help='number of data loading workers')
 
         self.parser.add_argument('--n_iter', type=int, default=4000, help='number of iterations to train')
-        self.parser.add_argument('--batchSize', type=int, default=7, help='input batch size')
+        self.parser.add_argument('--batchSize', type=int, default=2, help='input batch size')
 
         self.parser.add_argument('--imageSize', type=int, default=64, help='the height / width of the input image to network')
 
-        self.parser.add_argument('--gen_type', type=str, default='resnet')
+        self.parser.add_argument('--gen_type', type=str, default='cnn')
         self.parser.add_argument('--netG', default='', help="path to netG (to continue training)")
         self.parser.add_argument('--netD', default='', help="path to netD (to continue training)")
         self.parser.add_argument('--nz', type=int, default=100, help='size of the latent z vector')
@@ -62,7 +62,7 @@ class Parameters():
         self.parser.add_argument('--fovy', type=float, default=15.0, help='Field of view in the vertical direction')
         self.parser.add_argument('--focal_length', type=float, default=0.1, help='focal length')
 
-        self.parser.add_argument('--n_splats', type=int, default=2000, help='number of splats to generate')
+        self.parser.add_argument('--n_splats', type=int, default=1024, help='number of splats to generate')
         self.parser.add_argument('--splats_radius', type=float, default=0.025, help='radius of the splats (fix)')
 
         self.parser.add_argument('--same_view', action='store_true', default=False, help='data with view fixed')

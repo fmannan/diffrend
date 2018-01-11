@@ -5,6 +5,7 @@ import torch.nn.parallel
 import torch.nn.functional as F
 import numpy as np
 
+
 def create_networks(opt, verbose=True):
     """Create the networks."""
     # Parameters
@@ -12,17 +13,19 @@ def create_networks(opt, verbose=True):
     nz = int(opt.nz)
     ngf = int(opt.ngf)
     ndf = int(opt.ndf)
-    nc = opt.n_splats
+    nc = int(opt.n_splats)
 
     # Create generator network
     if opt.gen_type == 'mlp':
         netG = _netG_mlp(ngpu, nz, ngf, nc)
     elif opt.gen_type == 'resnet':
         netG = _netG_resnet(nz, nc)
-    else:
+    elif opt.gen_type == 'cnn':
         netG = _netG(ngpu, nz, ngf, nc)
+    else:
+        raise ValueError("Unknown generator")
 
-    # netG.apply(weights_init)
+    # Init weights/load pretrained model
     if opt.netG != '':
         netG.load_state_dict(torch.load(opt.netG))
     else:
@@ -109,7 +112,6 @@ class _netG(nn.Module):
         self.ngpu = ngpu
         self.nc = nc
         self.main = nn.Sequential(
-
             # input is Z, going into a convolution
             nn.ConvTranspose2d(nz, ngf * 8, 4, 1, 0, bias=False),
             nn.BatchNorm2d(ngf * 8),
@@ -123,26 +125,29 @@ class _netG(nn.Module):
             nn.BatchNorm2d(ngf * 4),
             nn.LeakyReLU(0.2, True),
             # state size. (ngf*2) x 16 x 16
-            nn.ConvTranspose2d(ngf * 4,     ngf, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(ngf),
-            nn.LeakyReLU(0.2, True),
+            nn.ConvTranspose2d(ngf * 4, 6, 4, 2, 1, bias=False),
+            # nn.ConvTranspose2d(ngf * 4, ngf, 4, 2, 1, bias=False),
+            # nn.BatchNorm2d(ngf),
+            # nn.LeakyReLU(0.2, True),
             # state size. (ngf) x 32 x 32
-            nn.ConvTranspose2d(ngf,      3, 4, 2, 1, bias=False),
-
+            # nn.ConvTranspose2d(ngf, 6, 4, 2, 1, bias=False),
             # state size. (nc) x 64 x 64
         )
-        self.main2 = nn.Sequential(
-            # input is Z, going into a convolution
 
-            nn.Linear(64 * 64 * 3, nc*6),
-            nn.BatchNorm1d(nc*6),
-            nn.LeakyReLU(0.2, True),
-            nn.Linear(nc*6, nc*6)
-            # state size. (nc) x 64 x 64
-        )
-        coords_tmp = np.array(list(np.ndindex((64,64)))).reshape(64,64,2)
-        coords = np.zeros((64,64,3), dtype=np.float32)
-        coords[:,:,:2] = coords_tmp
+        # ??
+        # self.main2 = nn.Sequential(
+        #     # input is Z, going into a convolution
+        #     nn.Linear(64 * 64 * 3, nc*6),
+        #     nn.BatchNorm1d(nc*6),
+        #     nn.LeakyReLU(0.2, True),
+        #     nn.Linear(nc*6, nc*6)
+        #     # state size. (nc) x 64 x 64
+        # )
+
+        # Coordinates bias
+        coords_tmp = np.array(list(np.ndindex((64, 64)))).reshape(64, 64, 2)
+        coords = np.zeros((64, 64, 3), dtype=np.float32)
+        coords[:, :, :2] = coords_tmp
         self.coords = torch.FloatTensor(coords)
         if torch.cuda.is_available():
             self.coords = self.coords.cuda()
@@ -152,14 +157,17 @@ class _netG(nn.Module):
             output = nn.parallel.data_parallel(self.main, input,
                                                range(self.ngpu))
         else:
+            # Generate the output
             output = self.main(input)
+            out = output.view(output.size(0), 6, -1)
+            out = out.permute(0, 2, 1)
+            # return output
 
-            # coordinates bias:
-            # something like this... we have to fiddle around with this
-            out = torch.sum(output, self.coords)
-
-            out = self.main2(out.view(out.size(0), -1))
-            out = out.view(out.size(0), self.nc, 6)
+            # Coordinates bias:
+            # TODO: Something like this... we have to fiddle around with this
+            # out = torch.sum(output, self.coords)
+            # out = self.main2(out.view(out.size(0), -1))
+            # out = out.view(out.size(0), self.nc, 6)
         return out
 
 
@@ -205,26 +213,35 @@ class _netG_mlp(nn.Module):
             output = output.view(output.size(0), self.nc, 6)
         return output
 
+
+# TODO: Change this
 DIM = 512
 
 
 class ResBlock(nn.Module):
+    """Resnet block."""
+
     def __init__(self):
+        """Constructor."""
         super(ResBlock, self).__init__()
 
         self.res_block = nn.Sequential(
             nn.ReLU(True),
-            nn.Conv1d(DIM, DIM, 3, padding=1),  # nn.Linear(DIM, DIM),
+            nn.Conv1d(DIM, DIM, 3, padding=1),
             nn.ReLU(True),
-            nn.Conv1d(DIM, DIM, 3, padding=1),  # nn.Linear(DIM, DIM),
+            nn.Conv1d(DIM, DIM, 3, padding=1),
+            # TODO (dvb): Why two convolutions? Why no batchnorm?
         )
 
     def forward(self, input):
+        """Forward method."""
         output = self.res_block(input)
         return input + (0.3*output)
+        # TODO (dvd): Why 0.3???
+
 
 class _netG_resnet(nn.Module):
-    def __init__(self,nz,nc):
+    def __init__(self, nz, nc):
         super(_netG_resnet, self).__init__()
 
         self.fc1 = nn.Linear(nz, DIM*6)
@@ -239,6 +256,7 @@ class _netG_resnet(nn.Module):
         self.bn = nn.BatchNorm1d(nc)
         self.conv2 = nn.Conv1d(nc, nc, 1)
 
+        # TODO (dvb): Why Softmax????
         self.softmax = nn.Softmax()
 
     def forward(self, noise):
