@@ -114,21 +114,26 @@ def generate_samples(filename, n_samples, radius, width, height, fovy,
     return torch.stack(data)
 
 
-def calc_gradient_penalty(discriminator, real_data, fake_data, gp_lambda):
+def calc_gradient_penalty(discriminator, real_data, fake_data, gp_lambda, no_cuda=False):
     """Calculate GP."""
     assert real_data.size(0) == fake_data.size(0)
     alpha = torch.rand(real_data.size(0), 1, 1, 1)
     alpha = alpha.expand(real_data.size())
-    alpha = alpha.cuda()
+    if not no_cuda:
+        alpha = alpha.cuda()
 
     interpolates = Variable(alpha * real_data + ((1 - alpha) * fake_data),
                             requires_grad=True)
 
     disc_interpolates = discriminator(interpolates)
 
+    grad_outputs = torch.ones(disc_interpolates.size())
+    if not no_cuda:
+        grad_outputs = grad_outputs.cuda()
+
     gradients = torch.autograd.grad(
         outputs=disc_interpolates, inputs=interpolates,
-        grad_outputs=torch.ones(disc_interpolates.size()).cuda(),
+        grad_outputs=grad_outputs,
         create_graph=True, retain_graph=True, only_inputs=True)[0]
     gradients = gradients.view(gradients.size(0), -1)
     gradient_penalty = ((gradients.norm(2, dim=1) - 1) ** 2).mean() * gp_lambda
@@ -357,7 +362,7 @@ class GAN(object):
                     if self.opt.gp != 'None':
                         gradient_penalty = calc_gradient_penalty(
                             self.netD, self.inputv.data, fake_rendered.data,
-                            self.opt.gp_lambda)
+                            self.opt.gp_lambda, self.opt.no_cuda)
                         gradient_penalty.backward()
                         errD += gradient_penalty
 
