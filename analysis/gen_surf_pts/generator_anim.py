@@ -32,7 +32,7 @@ def animate_sample_generation(model_name, obj=None, num_samples=1000,
     scale_dims = [min_val, max_val]
     # print(scale_dims)
 
-    # Sample points from the mesh
+    # Sample points from the mesh only once
     if not resample:
         pts_obj, vn = uniform_sample_mesh(obj, num_samples=num_samples)
 
@@ -50,7 +50,7 @@ def animate_sample_generation(model_name, obj=None, num_samples=1000,
         else:
             ax.clear()
 
-        # Sample points from the mesh
+        # Sample points from the mesh for the current iteration
         if resample:
             pts_obj, vn = uniform_sample_mesh(obj, num_samples=num_samples)
 
@@ -73,7 +73,6 @@ def animate_sample_generation(model_name, obj=None, num_samples=1000,
 def main():
     import sys
     import argparse
-    import argcomplete
 
     parser = argparse.ArgumentParser(
         description='Demo of generating uniform samples on a mesh.\n Usage: ' + sys.argv[0] +
@@ -82,7 +81,6 @@ def main():
     parser.add_argument('--out', type=str, help='Optional output directory for storing frames for animation.')
     parser.add_argument('--samples', type=int, help='Number of samples. default=1000', default=1000)
 
-    argcomplete.autocomplete(parser)
     args = parser.parse_args()
 
     print(args)

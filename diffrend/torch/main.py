@@ -1,6 +1,6 @@
-from diffrend.torch.params import OUTPUT_FOLDER, SCENE_BASIC
+from diffrend.torch.params import OUTPUT_FOLDER, SCENE_BASIC, SCENE_1
 from diffrend.torch.renderer import render
-from diffrend.torch.utils import tch_var_f, tch_var_l, CUDA
+from diffrend.torch.utils import tch_var_f, tch_var_l, CUDA, get_data
 import torch.nn as nn
 from torch import optim
 import numpy as np
@@ -9,16 +9,15 @@ import os
 import argparse
 
 
-def render_scene(scene, output_folder, norm_depth_image_only=False, plot_res=True):
+def render_scene(scene, output_folder, norm_depth_image_only=False, backface_culling=False, plot_res=True):
     if not os.path.exists(output_folder):
         os.mkdir(output_folder)
 
     # main render run
-    res = render(scene, norm_depth_image_only=norm_depth_image_only)
-    if CUDA:
-        im = res['image'].cpu().data.numpy()
-    else:
-        im = res['image'].data.numpy()
+    res = render(scene, norm_depth_image_only=norm_depth_image_only, backface_culling=backface_culling)
+    im = get_data(res['image'])
+    im_nearest = get_data(res['nearest'])
+    obj_pixel_count = get_data(res['obj_pixel_count'])
 
     if plot_res:
         plt.ion()
@@ -27,10 +26,18 @@ def render_scene(scene, output_folder, norm_depth_image_only=False, plot_res=Tru
         plt.title('Final Rendered Image')
         plt.savefig(output_folder + '/img_torch.png')
 
-    if CUDA:
-        depth = res['depth'].cpu().data.numpy()
-    else:
-        depth = res['depth'].data.numpy()
+        plt.figure()
+        plt.imshow(im_nearest)
+        plt.title('Nearest Object Index')
+        plt.colorbar()
+        plt.savefig(output_folder + '/img_nearest.png')
+
+        plt.figure()
+        plt.plot(obj_pixel_count, 'r-+')
+        plt.xlabel('Object Index')
+        plt.ylabel('Number of Pixels')
+
+    depth = get_data(res['depth'])
     depth[depth >= scene['camera']['far']] = np.inf
     print(depth.min(), depth.max())
     if plot_res:
@@ -81,14 +88,10 @@ def optimize_scene(input_scene, target_scene, out_dir, max_iter=100, lr=1e-3, pr
         optimizer.zero_grad()
         loss = criterion(im_out, target_im)
 
-        if CUDA:
-            im_out_ = im_out.cpu().data.numpy()
-            loss_ = loss.cpu().data.numpy()
-        else:
-            im_out_ = im_out.data.numpy()
-            loss_ = loss.data.numpy()
-
+        im_out_ = get_data(im_out)
+        loss_ = get_data(loss)
         loss_per_iter.append(loss_)
+
         if iter == 0:
             plt.figure(h0.number)
             plt.imshow(im_out_)
@@ -157,20 +160,26 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(usage='python main.py --[render|opt|test_scale]')
     parser.add_argument('--render', action='store_true', help='Renders a scene if specified')
     parser.add_argument('--opt', action='store_true', help='Optimizes material parameters if specified')
-    parser.add_argument('--test_scale', action='store_true')
-    parser.add_argument('--norm_depth_image_only', action='store_true', default=False, help='Only render the normalized depth image.')
+    parser.add_argument('--test_scale', action='store_true', help='Test what is the maximum number of splats that can'
+                                                                  'be rendered at a given resolution.')
+    parser.add_argument('--norm_depth_image_only', action='store_true', default=False,
+                        help='Only render the normalized depth image.')
+    parser.add_argument('--backface_culling', action='store_true', help='Filter out objects that are facing away from'
+                                                                        'the camera.')
     parser.add_argument('--out_dir', type=str, default=OUTPUT_FOLDER)
     parser.add_argument('--model_filename', type=str, default=DIR_DATA + '/bunny.splat',
                         help='Input model filename needed for scalability testing')
+    parser.add_argument('--display', action='store_true', help='Display result using matplotlib.')
 
     args = parser.parse_args()
     print(args)
     if not (args.render or args.opt or args.test_scale):
         args.render = True
 
-    scene = SCENE_BASIC
+    scene = SCENE_1
     if args.render:
-        res = render_scene(scene, args.out_dir, args.norm_depth_image_only)
+        res = render_scene(scene, args.out_dir, args.norm_depth_image_only, backface_culling=args.backface_culling,
+                           plot_res=args.display)
     if args.opt:
         input_scene = copy.deepcopy(SCENE_BASIC)
         input_scene['materials']['albedo'] = tch_var_f([
