@@ -424,7 +424,6 @@ class GAN(object):
 
 def main():
     """Start training."""
-
     # Parse args
     opt = Parameters().parse()
 
@@ -445,6 +444,10 @@ def main():
 
     # Train gan
     gan.train()
+
+    # Finsih Hyperdash logger
+    if exp is not None:
+        exp.end()
 
 
 if __name__ == '__main__':
