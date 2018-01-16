@@ -12,16 +12,22 @@ import torch.optim as optim
 import torch.utils.data
 from torch.autograd import Variable
 
-from parameters import Parameters
-from datasets import Dataset_load
-from networks import create_networks
-
+from diffrend.torch.GAN.datasets import Dataset_load
+from diffrend.torch.GAN.networks import create_networks
+from diffrend.torch.GAN.parameters import Parameters
 from diffrend.torch.params import SCENE_BASIC
 from diffrend.torch.utils import tch_var_f, tch_var_l, where
 from diffrend.model import load_model
 from diffrend.torch.renderer import render
 from diffrend.utils.sample_generator import (uniform_sample_mesh,
                                              uniform_sample_sphere)
+
+try:
+    from hyperdash import Experiment
+
+    HYPERDASH_SUPPORTED = True
+except ImportError:
+    HYPERDASH_SUPPORTED = False
 
 
 def create_scene(width, height, fovy, focal_length, n_samples,
@@ -133,9 +139,10 @@ def calc_gradient_penalty(discriminator, real_data, fake_data, gp_lambda):
 class GAN(object):
     """GAN class."""
 
-    def __init__(self, opt, dataset_load=None):
+    def __init__(self, opt, dataset_load=None, experiment=None):
         """Constructor."""
         self.opt = opt
+        self.exp = experiment
         self.real_label = 1
         self.fake_label = 0
         self.dataset_load = dataset_load
@@ -158,7 +165,7 @@ class GAN(object):
         # Create splats rendering scene
         self.create_scene()
 
-    def create_dataset_loader(self,):
+    def create_dataset_loader(self, ):
         """Create dataset leader."""
         if self.opt.same_view:
             self.cam_pos = uniform_sample_sphere(radius=self.opt.cam_dist,
@@ -175,20 +182,20 @@ class GAN(object):
             self.dataset_load.initialize_dataset_loader()
             self.dataset_loader = self.dataset_load.get_dataset_loader()
 
-    def create_networks(self,):
+    def create_networks(self, ):
         """Create networks."""
         self.netG, self.netD = create_networks(self.opt, verbose=True)
         if not self.opt.no_cuda:
             self.netD = self.netD.cuda()
             self.netG = self.netG.cuda()
 
-    def create_scene(self,):
+    def create_scene(self, ):
         """Create a semi-empty scene with camera parameters."""
         self.scene = create_scene(self.opt.width, self.opt.height,
                                   self.opt.fovy, self.opt.focal_length,
                                   self.opt.n_splats, self.opt.splats_radius)
 
-    def create_tensors(self,):
+    def create_tensors(self, ):
         """Create the tensors."""
         self.input = torch.FloatTensor(
             self.opt.batchSize, 3, self.opt.imageSize, self.opt.imageSize)
@@ -210,13 +217,13 @@ class GAN(object):
 
         self.fixed_noise = Variable(self.fixed_noise)
 
-    def create_criterion(self,):
+    def create_criterion(self, ):
         """Create criterion."""
         self.criterion = nn.BCELoss()
         if not self.opt.no_cuda:
             self.criterion = self.criterion.cuda()
 
-    def create_optimizers(self,):
+    def create_optimizers(self, ):
         """Create optimizers."""
         self.optimizerD = optim.Adam(self.netD.parameters(), lr=self.opt.lr,
                                      betas=(self.opt.beta1, 0.999))
@@ -227,11 +234,11 @@ class GAN(object):
         """Get a real sample."""
         if self.dataset is None:
             real_samples = generate_samples(
-                 self.opt.model, self.opt.n_splats, self.opt.splats_radius,
-                 self.opt.width, self.opt.height, self.opt.fovy,
-                 self.opt.focal_length, self.opt.batchSize,
-                 cam_dist=self.cam_dist, cam_pos=self.cam_pos, verbose=False,
-                 obj=None)
+                self.opt.model, self.opt.n_splats, self.opt.splats_radius,
+                self.opt.width, self.opt.height, self.opt.fovy,
+                self.opt.focal_length, self.opt.batchSize,
+                cam_dist=self.cam_dist, cam_pos=self.cam_pos, verbose=False,
+                obj=None)
         else:
             if not self.opt.same_view:
                 self.dataset.set_camera_pos(cam_dist=self.cam_dist,
@@ -249,7 +256,7 @@ class GAN(object):
         self.inputv = Variable(self.input)
         self.labelv = Variable(self.label)
 
-    def generate_noise_vector(self,):
+    def generate_noise_vector(self, ):
         """Generate a noise vector."""
         # self.noise.resize_(self.batch_size, int(self.opt.nz)).normal_(0, 1)
         self.noise.resize_(self.batch_size, int(self.opt.nz), 1, 1).normal_(0, 1)
@@ -266,7 +273,7 @@ class GAN(object):
         for idx in range(batch_size):
             # Get splats positions and normals
             pos = batch[idx][:, :3]
-            pos = (pos - torch.mean(pos, 0)) / (torch.max(pos)-torch.min(pos))
+            pos = (pos - torch.mean(pos, 0)) / (torch.max(pos) - torch.min(pos))
             normals = batch[idx][:, 3:]
 
             # Set splats into rendering scene
@@ -298,14 +305,14 @@ class GAN(object):
         redered_data = torch.stack(redered_data)
         return redered_data
 
-    def train(self,):
+    def train(self, ):
         """Train networtk."""
         # Start training
         for epoch in range(self.opt.n_iter):
             # self.data_iter = iter(self.dataset_loader)
             i = 0
             while i < len(self.dataset):
-                iteration = epoch*len(self.dataset) + i
+                iteration = epoch * len(self.dataset) + i
 
                 ############################
                 # (1) Update D network
@@ -382,6 +389,14 @@ class GAN(object):
                           ' D(G(z)): %.4f / %.4f' % (
                               iteration, self.opt.n_iter, errD.data[0],
                               errG.data[0], D_x, D_G_z1, D_G_z2))
+                    if self.exp is not None:
+                        self.exp.metric("epoch", epoch)
+                        self.exp.metric("loss D", errD.data[0])
+                        self.exp.metric("loss G", errG.data[0])
+                        self.exp.metric("D(x)", D_x)
+                        self.exp.metric("D(G(z1))", D_G_z1)
+                        self.exp.metric("D(G(z2))", D_G_z2)
+                        self.exp.metric("D(x)-D(G(z1))", D_x - D_G_z1)
 
                 # Save images
                 if iteration % 5 == 0:
@@ -409,14 +424,24 @@ class GAN(object):
 
 def main():
     """Start training."""
+
     # Parse args
     opt = Parameters().parse()
+
+    exp = None
+    if HYPERDASH_SUPPORTED:
+        # create new Hyperdash logger
+        exp = Experiment("inverse graphics")
+
+        # log all the parameters for this experiment
+        for key, val in opt.__dict__.items():
+            exp.param(key, val)
 
     # Create dataset loader
     dataset_load = Dataset_load(opt)
 
     # Create GAN
-    gan = GAN(opt, dataset_load)
+    gan = GAN(opt, dataset_load, exp)
 
     # Train gan
     gan.train()
