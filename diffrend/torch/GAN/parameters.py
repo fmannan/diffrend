@@ -23,8 +23,24 @@ class Parameters():
         # self.parser.add_argument('--root_dir', type=str, default='/data/lisa/data/ShapeNetCore.v2', help='dataset root directory') # MILA
         self.parser.add_argument('--root_dir', type=str, default='/home/dvazquez/datasets/shapenet/ShapeNetCore.v2', help='dataset root directory')
         # self.parser.add_argument('--root_dir', type=str, default='/mnt/AIDATA/home/dvazquez/datasets/shapenet/ShapeNetCore.v2', help='dataset root directory')
+        # /media/florian/8BAA-82D3/shapenet
+
         self.parser.add_argument('--synsets', type=str, default='', help='Synsets from the shapenet dataset to use')
         self.parser.add_argument('--classes', type=str, default='airplane,microphone', help='Classes from the shapenet dataset to use')
+        #corresponding folders: 02691156, 03759954
+
+        # other low-footprint objects:
+        # 02773838 - bag, 83
+        # 02801938 - basket, 113
+        # 02880940 - bowl, 186
+        # 02942699 - camera, 113
+        # 03261776 - headphone, 73
+        # 03513137 - helmet, 162
+        # 03797390 - mug, 214
+        # 04004475 - printer, 166
+
+        # bowl,mug
+
         self.parser.add_argument('--model', type=str, default=DIR_DATA + '/bunny.obj')
         self.parser.add_argument('--workers', type=int, default=1, help='number of data loading workers')
 
