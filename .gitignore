@@ -110,3 +110,5 @@ venv.bak/
 diffrend/tensorflow/output/
 diffrend/torch/output/
 diffrend/numpy/output/
+analysis/exp/
+
