@@ -88,14 +88,10 @@ def optimize_scene(input_scene, target_scene, out_dir, max_iter=100, lr=1e-3, pr
         optimizer.zero_grad()
         loss = criterion(im_out, target_im)
 
-        if CUDA:
-            im_out_ = im_out.cpu().data.numpy()
-            loss_ = loss.cpu().data.numpy()
-        else:
-            im_out_ = im_out.data.numpy()
-            loss_ = loss.data.numpy()
-
+        im_out_ = get_data(im_out)
+        loss_ = get_data(loss)
         loss_per_iter.append(loss_)
+
         if iter == 0:
             plt.figure(h0.number)
             plt.imshow(im_out_)
@@ -173,6 +169,7 @@ if __name__ == '__main__':
     parser.add_argument('--out_dir', type=str, default=OUTPUT_FOLDER)
     parser.add_argument('--model_filename', type=str, default=DIR_DATA + '/bunny.splat',
                         help='Input model filename needed for scalability testing')
+    parser.add_argument('--display', action='store_true', help='Display result using matplotlib.')
 
     args = parser.parse_args()
     print(args)
@@ -181,7 +178,8 @@ if __name__ == '__main__':
 
     scene = SCENE_1
     if args.render:
-        res = render_scene(scene, args.out_dir, args.norm_depth_image_only, backface_culling=args.backface_culling)
+        res = render_scene(scene, args.out_dir, args.norm_depth_image_only, backface_culling=args.backface_culling,
+                           plot_res=args.display)
     if args.opt:
         input_scene = copy.deepcopy(SCENE_BASIC)
         input_scene['materials']['albedo'] = tch_var_f([

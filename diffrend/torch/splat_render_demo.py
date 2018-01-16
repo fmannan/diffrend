@@ -14,7 +14,7 @@ from scipy.misc import imsave
 
 
 def render_random_splat_camera(filename, out_dir, num_samples, radius, cam_dist, num_views, width, height,
-                               fovy, focal_length, norm_depth_image_only, cam_pos=None):
+                               fovy, focal_length, norm_depth_image_only, cam_pos=None, b_display=False):
     """
     Randomly generate N samples on a surface and render them. The samples include position and normal, the radius is set
     to a constant.
@@ -50,7 +50,8 @@ def render_random_splat_camera(filename, out_dir, num_samples, radius, cam_dist,
     obj_center = np.mean(v, axis=0)
     large_scene['camera']['at'] = tch_var_f(obj_center)
 
-    plt.figure()
+    if b_display:
+        plt.figure()
     for idx in range(cam_pos.shape[0]):
         start_time = time()
         v, vn = uniform_sample_mesh(obj, num_samples=num_samples)
@@ -72,13 +73,15 @@ def render_random_splat_camera(filename, out_dir, num_samples, radius, cam_dist,
 
         depth[depth >= large_scene['camera']['far']] = depth.min()
         im_depth = np.uint8(255. * (depth - depth.min()) / (depth.max() - depth.min()))
-        plt.imshow(im)
-        plt.title('Image')
-        plt.savefig(out_dir + '/fig_img' + suffix + '.png')
 
-        plt.imshow(im_depth)
-        plt.title('Depth Image')
-        plt.savefig(out_dir + '/fig_depth' + suffix + '.png')
+        if b_display:
+            plt.imshow(im)
+            plt.title('Image')
+            plt.savefig(out_dir + '/fig_img' + suffix + '.png')
+
+            plt.imshow(im_depth)
+            plt.title('Depth Image')
+            plt.savefig(out_dir + '/fig_depth' + suffix + '.png')
 
         imsave(out_dir + '/img' + suffix + '.png', im)
         imsave(out_dir + '/depth' + suffix + '.png', im_depth)
@@ -130,6 +133,7 @@ if __name__ == '__main__':
                                                                                             ' depth image.')
     parser.add_argument('--test_cam_dist', action='store_true', help='Check if the images are consistent with a'
                                                                      'camera at a fixed distance.')
+    parser.add_argument('--display', action='store_true', help='Optionally display using matplotlib.')
 
     args = parser.parse_args()
     print(args)
@@ -142,4 +146,5 @@ if __name__ == '__main__':
                                cam_dist=args.cam_dist, num_views=args.nv,
                                width=args.width, height=args.height,
                                fovy=args.fovy, focal_length=args.f,
-                               norm_depth_image_only=args.norm_depth_image_only, cam_pos=cam_pos)
+                               norm_depth_image_only=args.norm_depth_image_only,
+                               cam_pos=cam_pos, b_display=args.display)
