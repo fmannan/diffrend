@@ -2,6 +2,7 @@
 from __future__ import absolute_import
 import os
 import sys
+
 sys.path.append('../../..')
 import copy
 import numpy as np
@@ -25,8 +26,7 @@ from diffrend.torch.renderer import render
 from diffrend.utils.sample_generator import (uniform_sample_mesh,
                                              uniform_sample_sphere)
 
-
-
+from hyperdash import Experiment
 
 
 def calc_gradient_penalty(discriminator, real_data, fake_data, gp_lambda):
@@ -54,16 +54,16 @@ def calc_gradient_penalty(discriminator, real_data, fake_data, gp_lambda):
 class GAN(object):
     """GAN class."""
 
-    def __init__(self, opt, dataset_load=None):
+    def __init__(self, opt, dataset_load=None, experiment=None):
         """Constructor."""
         self.opt = opt
+        self.exp = experiment
         self.real_label = 1
         self.fake_label = 0
         self.dataloader = Dataset_load(opt).get_dataloader()
 
-        self.batch_size=opt.batchSize
+        self.batch_size = opt.batchSize
         # Create dataset loader
-
 
         # Create the networks
         self.create_networks()
@@ -79,19 +79,14 @@ class GAN(object):
 
         # Create splats rendering scene
 
-
-
-
-    def create_networks(self,):
+    def create_networks(self, ):
         """Create networks."""
         self.netG, self.netD = create_networks(self.opt, verbose=False)
         if not self.opt.no_cuda:
             self.netD = self.netD.cuda()
             self.netG = self.netG.cuda()
 
-
-
-    def create_tensors(self,):
+    def create_tensors(self, ):
         """Create the tensors."""
         self.input = torch.FloatTensor(
             self.opt.batchSize, 3, self.opt.imageSize, self.opt.imageSize)
@@ -113,13 +108,13 @@ class GAN(object):
 
         self.fixed_noise = Variable(self.fixed_noise)
 
-    def create_criterion(self,):
+    def create_criterion(self, ):
         """Create criterion."""
         self.criterion = nn.BCELoss()
         if not self.opt.no_cuda:
             self.criterion = self.criterion.cuda()
 
-    def create_optimizers(self,):
+    def create_optimizers(self, ):
         """Create optimizers."""
         self.optimizerD = optim.Adam(self.netD.parameters(), lr=self.opt.lr,
                                      betas=(self.opt.beta1, 0.999))
@@ -152,21 +147,19 @@ class GAN(object):
     #     self.inputv = Variable(self.input)
     #     self.labelv = Variable(self.label)
 
-    def generate_noise_vector(self,):
+    def generate_noise_vector(self, ):
         """Generate a noise vector."""
         self.noise.resize_(self.batch_size, int(self.opt.nz)).normal_(0, 1)
         self.noisev = Variable(self.noise)
 
-
-
-    def train(self,):
+    def train(self, ):
         """Train networtk."""
         # Start training
         for epoch in range(self.opt.n_iter):
             # self.data_iter = iter(self.dataset_loader)
 
             for i, data in enumerate(self.dataloader, 0):
-                if data[0].size(0) !=self.batch_size:
+                if data[0].size(0) != self.batch_size:
                     continue
 
                 ############################
@@ -248,11 +241,18 @@ class GAN(object):
                           ' D(G(z)): %.4f / %.4f' % (
                               i, self.opt.n_iter, errD.data[0],
                               errG.data[0], D_x, D_G_z1, D_G_z2))
+                    if self.exp is not None:
+                        self.exp.metric("epoch", epoch)
+                        self.exp.metric("loss D", errD.data[0])
+                        self.exp.metric("loss G", errG.data[0])
+                        self.exp.metric("D(x)", D_x)
+                        self.exp.metric("D(G(z1))", D_G_z1)
+                        self.exp.metric("D(G(z2))", D_G_z2)
 
                 # Save images
                 if i % 100 == 0:
                     vutils.save_image(real_cpu, '%s/real_samples.png' % self.opt.out_dir,
-                              normalize=True)
+                                      normalize=True)
                     fake = self.netG(self.fixed_noise)
                     vutils.save_image(
                         fake.data,
@@ -280,14 +280,19 @@ class GAN(object):
 
 def main():
     """Start training."""
+    exp = Experiment("diffrend test")
+
     # Parse args
     opt = Parameters().parse()
+
+    for key, val in opt.__dict__.items():
+        exp.param(key, val)
 
     # Create dataset loader
     dataset_load = Dataset_load(opt)
 
     # Create GAN
-    gan = GAN(opt, dataset_load)
+    gan = GAN(opt, dataset_load, exp)
 
     # Train gan
     gan.train()
