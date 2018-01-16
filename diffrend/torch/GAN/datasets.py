@@ -4,7 +4,7 @@ import torch.nn.parallel
 import torch.utils.data
 import torchvision.datasets as dset
 import torchvision.transforms as transforms
-from shapenet import ShapeNetDataset
+from diffrend.torch.GAN.shapenet import ShapeNetDataset
 
 
 class Dataset_load():

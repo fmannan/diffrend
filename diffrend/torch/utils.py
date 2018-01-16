@@ -30,11 +30,38 @@ def np_var(x, req_grad=False):
 # np_var_f = lambda x: np_var(x, FloatTensor, False)
 # np_var_l = lambda x: np_var(x, LongTensor, False)
 
+
+def get_data(x):
+    return x.cpu().data.numpy() if x.is_cuda else x.data.numpy()
+
+
+def bincount(x, nbins, ret_var=True):
+    data = x.cpu().data if x.is_cuda else x.data
+    count = torch.zeros(nbins).scatter_add_(0, data, torch.ones(x.size()))
+    if ret_var:
+        count = torch.autograd.Variable(count)
+    return count
+
+
 def where(cond, x, y):
     return cond.float() * x + (1 - cond.float()) * y
 
+
 def norm_p(u, p=2):
     return torch.pow(torch.sum(torch.pow(u, p), dim=-1), 1./p)
+
+
+def tensor_cross_prod(u, M):
+    """
+    :param u:  N x 3
+    :param M: N x P x 3
+    :return:
+    """
+    s0 = u[:, 1][:, np.newaxis] * M[..., 2] - u[:, 2][:, np.newaxis] * M[..., 1]
+    s1 = -u[:, 0][:, np.newaxis] * M[..., 2] + u[:, 2][:, np.newaxis] * M[..., 0]
+    s2 = u[:, 0][:, np.newaxis] * M[..., 1] - u[:, 1][:, np.newaxis] * M[..., 0]
+
+    return torch.stack((s0, s1, s2), dim=2)
 
 
 def nonzero_divide(x, y):
@@ -67,48 +94,47 @@ def point_along_ray(eye, ray_dir, ray_dist):
     return eye[np.newaxis, np.newaxis, :] + ray_dist[:, :, np.newaxis] * ray_dir.transpose(1, 0)[np.newaxis, ...]
 
 
-# def ray_sphere_intersection(eye, ray_dir, sphere):
-#     """Bundle of rays intersected with a batch of spheres
-#     :param eye:
-#     :param ray_dir:
-#     :param sphere:
-#     :return:
-#     """
-#     pos = sphere['pos']
-#     pos_tilde = eye - pos
-#     radius = sphere['radius']
-#
-#     a = np.sum(ray_dir ** 2, axis=0)
-#     b = 2 * np.dot(pos_tilde, ray_dir)
-#     c = (np.sum(pos_tilde ** 2, axis=1) - radius ** 2)[:, np.newaxis]
-#
-#     d_sqr = b ** 2 - 4 * a * c
-#     intersect_mask = d_sqr >= 0
-#
-#     d_sqr = np.where(intersect_mask, d_sqr, np.zeros_like(d_sqr))
-#     d = np.sqrt(d_sqr)
-#     inv_denom = 1. / (2 * a)
-#
-#     t1 = (-b - d) * inv_denom
-#     t2 = (-b + d) * inv_denom
-#
-#     # get the nearest positive depth
-#     t1 = np.where(intersect_mask & (t1 >= 0), t1, np.ones_like(np.max(t1) + 1))
-#     t2 = np.where(intersect_mask & (t2 >= 0), t2, np.ones_like(np.max(t2) + 1))
-#     # left_intersect[~intersect_mask] = np.inf
-#     # right_intersect[~intersect_mask] = np.inf
-#
-#     ray_dist = np.min(np.stack((t1, t2), axis=2), axis=2)
-#     ray_dist = np.where(intersect_mask, ray_dist, np.zeros_like(ray_dist))
-#     # ray_dist[~intersect_mask] = 0  # set this to zero here so that the following line doesn't throw an error
-#     intersection_pts = point_along_ray(eye, ray_dir, ray_dist)
-#     # ray_dist[~intersect_mask] = np.inf
-#     normals = intersection_pts - pos[:, np.newaxis, :]
-#     normals /= np.sqrt(np.sum(normals ** 2, axis=-1))[..., np.newaxis]
-#     normals[~intersect_mask] = 0
-#
-#     return {'intersect': intersection_pts, 'normal': normals, 'ray_distance': ray_dist,
-#             'intersection_mask': intersect_mask}
+def ray_sphere_intersection(eye, ray_dir, sphere, **kwargs):
+    """Bundle of rays intersected with a batch of spheres
+    :param eye:
+    :param ray_dir:
+    :param sphere:
+    :return:
+    """
+    pos = sphere['pos'][:, :3]
+    pos_tilde = eye[:3] - pos
+    radius = sphere['radius']
+
+    a = torch.sum(ray_dir ** 2, dim=0)
+    b = 2 * torch.matmul(pos_tilde, ray_dir)
+    c = (torch.sum(pos_tilde ** 2, dim=1) - radius ** 2)[:, np.newaxis]
+
+    d_sqr = b ** 2 - 4 * a * c
+    intersection_mask = d_sqr >= 0
+
+    d_sqr = where(intersection_mask, d_sqr, 0)
+
+    d = torch.sqrt(d_sqr)
+    inv_denom = 1. / (2 * a)
+
+    t1 = (-b - d) * inv_denom
+    t2 = (-b + d) * inv_denom
+
+    # get the nearest positive depth
+    max_val = torch.max(torch.max(t1, t2)) + 1
+    t1 = where(intersection_mask * (t1 >= 0), t1, max_val)
+    t2 = where(intersection_mask * (t2 >= 0), t2, max_val)
+
+    ray_dist, _ = torch.min(torch.stack((t1, t2), dim=2), dim=2)
+    ray_dist = where(intersection_mask, ray_dist, 1001)
+
+    intersection_pts = point_along_ray(eye, ray_dir, ray_dist)
+
+    normals = intersection_pts - pos[:, np.newaxis, :]
+    normals /= torch.sqrt(torch.sum(normals ** 2, dim=-1))[:, :, np.newaxis]
+
+    return {'intersect': intersection_pts, 'normal': normals, 'ray_distance': ray_dist,
+            'intersection_mask': intersection_mask}
 
 
 def ray_plane_intersection(eye, ray_dir, plane, **kwargs):
@@ -159,47 +185,50 @@ def ray_disk_intersection(eye, ray_dir, disks, **kwargs):
             'intersection_mask': intersection_mask}
 
 
-# def ray_triangle_intersection(eye, ray_dir, triangles):
-#     """Intersection of a bundle of rays with a batch of triangles.
-#     Assumes that the triangles vertices are specified as F x 3 x 4 matrix where F is the number of faces and
-#     the normals for all faces are precomputed and in a matrix of size F x 4 (i.e., similar to the normals for other
-#     geometric primitives). Note that here the number of faces F is the same as number of primitives M.
-#     :param eye:
-#     :param ray_dir:
-#     :param triangles:
-#     :return:
-#     """
-#
-#     planes = {'pos': triangles['face'][:, 0, :], 'normal': triangles['normal']}
-#     result = ray_plane_intersection(eye, ray_dir, planes)
-#     intersection_pts = result['intersect']  # M x N x 4 matrix where M is the number of objects and N pixels.
-#     normals = result['normal'][..., :3]  # M x N x 4
-#     ray_dist = result['ray_distance']
-#
-#     # check if intersection point is inside or outside the triangle
-#     v_p0 = (intersection_pts - triangles['face'][:, 0, :][:, np.newaxis, :])[..., :3]  # M x N x 3
-#     v_p1 = (intersection_pts - triangles['face'][:, 1, :][:, np.newaxis, :])[..., :3]  # M x N x 3
-#     v_p2 = (intersection_pts - triangles['face'][:, 2, :][:, np.newaxis, :])[..., :3]  # M x N x 3
-#
-#     v01 = (triangles['face'][:, 1, :3] - triangles['face'][:, 0, :3])[:, np.newaxis, :]  # M x 1 x 3
-#     v12 = (triangles['face'][:, 2, :3] - triangles['face'][:, 1, :3])[:, np.newaxis, :]  # M x 1 x 3
-#     v20 = (triangles['face'][:, 0, :3] - triangles['face'][:, 2, :3])[:, np.newaxis, :]  # M x 1 x 3
-#
-#     cond_v01 = np.sum(np.cross(v01, v_p0) * normals, axis=-1) >= 0
-#     cond_v12 = np.sum(np.cross(v12, v_p1) * normals, axis=-1) >= 0
-#     cond_v20 = np.sum(np.cross(v20, v_p2) * normals, axis=-1) >= 0
-#
-#     intersection_mask = cond_v01 & cond_v12 & cond_v20
-#     ray_dist[~intersection_mask] = np.inf
-#
-#     return {'intersect': intersection_pts, 'normal': result['normal'], 'ray_distance': ray_dist,
-#             'intersection_mask': intersection_mask}
+def ray_triangle_intersection(eye, ray_dir, triangles, **kwargs):
+    """Intersection of a bundle of rays with a batch of triangles.
+    Assumes that the triangles vertices are specified as F x 3 x 4 matrix where F is the number of faces and
+    the normals for all faces are precomputed and in a matrix of size F x 4 (i.e., similar to the normals for other
+    geometric primitives). Note that here the number of faces F is the same as number of primitives M.
+    :param eye:
+    :param ray_dir:
+    :param triangles:
+    :return:
+    """
+
+    planes = {'pos': triangles['face'][:, 0, :], 'normal': triangles['normal']}
+    result = ray_plane_intersection(eye, ray_dir, planes)
+    intersection_pts = result['intersect']  # M x N x 4 matrix where M is the number of objects and N pixels.
+    normals = result['normal'][..., :3]  # M x N x 4
+    ray_dist = result['ray_distance']
+
+    # check if intersection point is inside or outside the triangle
+    # M x N x 3
+    v_p0 = (intersection_pts - triangles['face'][:, 0, :3][:, np.newaxis, :])
+    v_p1 = (intersection_pts - triangles['face'][:, 1, :3][:, np.newaxis, :])
+    v_p2 = (intersection_pts - triangles['face'][:, 2, :3][:, np.newaxis, :])
+
+    # Torch and Tensorflow's cross product requires both inputs to be of the same size unlike numpy
+    # M x 3
+    v01 = triangles['face'][:, 1, :3] - triangles['face'][:, 0, :3]
+    v12 = triangles['face'][:, 2, :3] - triangles['face'][:, 1, :3]
+    v20 = triangles['face'][:, 0, :3] - triangles['face'][:, 2, :3]
+
+    cond_v01 = torch.sum(tensor_cross_prod(v01, v_p0) * normals, dim=-1) >= 0
+    cond_v12 = torch.sum(tensor_cross_prod(v12, v_p1) * normals, dim=-1) >= 0
+    cond_v20 = torch.sum(tensor_cross_prod(v20, v_p2) * normals, dim=-1) >= 0
+
+    intersection_mask = cond_v01 * cond_v12 * cond_v20
+    ray_dist = where(intersection_mask, ray_dist, 1001)
+
+    return {'intersect': intersection_pts, 'normal': result['normal'], 'ray_distance': ray_dist,
+            'intersection_mask': intersection_mask}
 
 
 intersection_fn = {'disk': ray_disk_intersection,
                    'plane': ray_plane_intersection,
-                   # 'sphere': ray_sphere_intersection,
-                   # 'triangle': ray_triangle_intersection,
+                   'sphere': ray_sphere_intersection,
+                   'triangle': ray_triangle_intersection,
                    }
 
 
@@ -267,8 +296,10 @@ def lookat_rot_inv(eye, at, up):
     z = (eye - at)
     z = normalize(z)
 
-    y = normalize(up)
-    x = torch.cross(y, z)
+    up = normalize(up)
+    x = normalize(torch.cross(up, z))
+    # The input `up` vector may not be orthogonal to z.
+    y = torch.cross(z, x)
 
     return torch.stack((x, y, z), dim=1)
 
@@ -343,3 +374,27 @@ def ray_object_intersections(eye, ray_dir, scene_objects, **kwargs):
             material_idx = torch.cat((material_idx, scene_objects[obj_type]['material_idx']), dim=0)
 
     return obj_intersections, ray_dist, normals, material_idx
+
+
+def backface_labeler(eye, scene_objects):
+    """Add a binary label per planar geometry.
+       0: Facing the camera.
+       1: Facing away from the camera, i.e., back-face.
+    :param eye: Camera position
+    :param scene_objects: Dictionary of scene geometry
+    :return: Dictionary of scene geometry with backface label for each geometry
+    """
+    for obj_type in scene_objects:
+        if obj_type == 'sphere':
+            continue
+        if obj_type == 'triangle':
+            pos = scene_objects[obj_type]['face'][:, 0, :3]
+        else:
+            pos = scene_objects[obj_type]['pos'][:, :3]
+        normals = scene_objects[obj_type]['normal'][:, :3]
+        cam_dir = normalize(eye[:3] - pos)
+        facing_dir = torch.sum(normals * cam_dir, dim=-1)
+        scene_objects[obj_type]['facing_dir'] = facing_dir
+        scene_objects[obj_type]['backface'] = facing_dir < 0
+
+    return scene_objects

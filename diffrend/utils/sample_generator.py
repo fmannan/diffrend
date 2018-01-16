@@ -1,5 +1,6 @@
 """Sample generator."""
 from diffrend.model import compute_face_normal
+import diffrend.numpy.ops as ops
 import numpy as np
 
 
@@ -95,8 +96,21 @@ def triangle_double_area(obj):
     return dblA
 
 
-def uniform_sample_mesh(obj, num_samples):
-    """Generate uniform random samples into a mesh."""
+def uniform_sample_mesh(obj, num_samples, camera=None):
+    """Generate uniform random samples on a mesh.
+    :param obj: Dictionary with vertices in 'v' and faces 'f'
+    :param num_samples: The number of samples to generate
+    :param camera: If specified then generate only sample that are visible to the camera.
+                   Camera is specified by {'eye': np.array([x, y, z]),
+                                           'up': np.array([x, y, z]),
+                                           'at': np.array([x, y, z])}
+    :return: num_samples x 3 matrix, vertex normal
+    """
+    if camera is not None:
+        obj = ops.backface_culling(obj, camera=camera, copy=True)
+        # TODO: occlusion culling, frustum culling
+        # ...
+
     v = obj['v']
     f = obj['f']
     if 'a' in obj:
@@ -122,7 +136,7 @@ def uniform_sample_mesh(obj, num_samples):
     return uniform_sample_triangle(tri, num_samples), vn
 
 
-if __name__ == '__main__':
+def main():
     import matplotlib.pyplot as plt
     from mpl_toolkits.mplot3d import Axes3D
     plt.ion()
@@ -182,12 +196,27 @@ if __name__ == '__main__':
     plt.ylabel('y')
 
     obj = load_model('../../data/desk_0007.off')
-    pts_obj, vn = uniform_sample_mesh(obj, num_samples=1000)
+    camera = {'eye': np.array([0, 0, 10])}
+    pts_obj, vn = uniform_sample_mesh(obj, num_samples=1000, camera=camera)
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
     ax.scatter(pts_obj[:, 0], pts_obj[:, 1], pts_obj[:, 2])
     plt.xlabel('x')
     plt.ylabel('y')
 
+    obj = load_model('../../data/bunny.obj')
+    camera = {'eye': np.array([0, 0, 10])}
+    pts_obj, vn = uniform_sample_mesh(obj, num_samples=800, camera=camera)
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    ax.scatter(pts_obj[:, 0], pts_obj[:, 1], pts_obj[:, 2])
+    ax.view_init(93, -64)
+    plt.xlabel('x')
+    plt.ylabel('y')
+
     plt.ioff()
     plt.show()
+
+
+if __name__ == '__main__':
+    main()

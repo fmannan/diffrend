@@ -2,17 +2,22 @@
 import numpy as np
 import torch
 from diffrend.torch.utils import (tonemap, ray_object_intersections,
-                                  generate_rays, where, tch_var_f)
+                                  generate_rays, where, backface_labeler,
+                                  bincount)
 from diffrend.utils.utils import get_param_value
 """
 Scalable Rendering TODO:
-1. Backface culling. Cull splats for which dot((eye - pos), normal) <= 0
+1. Backface culling. Cull splats for which dot((eye - pos), normal) <= 0 [DONE]
+1.1. Filter out objects based on backface labeling.
 2. Frustum culling
 3. Ray culling: Low-res image and per-pixel frustum culling to determine the
    valid rays
 4. Bound sphere for splats
 5. OpenGL pass to determine visible splats. I.e. every pixel in the output
    image will have the splat index, the intersection point
+6. Specialized version that does not render any non-planar geometry. For these the 
+normals per pixel do not need to be stored.
+Implement ray_planar_object_intersection
 """
 
 
@@ -29,23 +34,40 @@ def render(scene, **params):
     H = int(H)
     W = int(W)
 
-    # Ray-object intersections
     scene_objects = scene['objects']
+
+    if get_param_value('backface_culling', params, False):
+        # Add a binary label per planar geometry.
+        # 1: Facing away from the camera, i.e., back-face, i.e., dot(camera_dir, normal) < 0
+        # 0: Facing the camera.
+        # Labels are stored in the key 'backface'
+        # Note that doing this before ray object intersection test reduces memory but may not result in correct
+        # rendering, e.g, when an object is occluded by a back-face.
+        scene_objects = backface_labeler(eye, scene_objects)
+
+    # Ray-object intersections
     disable_normals = get_param_value('norm_depth_image_only', params, False)
     obj_intersections, ray_dist, normals, material_idx = ray_object_intersections(eye, ray_dir, scene_objects,
                                                                                   disable_normals=disable_normals)
-
+    num_objects = obj_intersections.size()[0]
     # Valid distances
     pixel_dist = ray_dist
     valid_pixels = (camera['near'] <= ray_dist) * (ray_dist <= camera['far'])
     pixel_dist = where(valid_pixels, pixel_dist, camera['far'] + 1)
 
-    # Nearest object needs to be compared for valid regions only
-    nearest_dist, nearest_obj = pixel_dist.min(0)
+    # Nearest object depth and index
+    im_depth, nearest_obj = pixel_dist.min(0)
 
-    # Create depth image for visualization
+    # Reshape to image for visualization
     # use nearest_obj for gather/select the pixel color
-    im_depth = torch.gather(pixel_dist, 0, nearest_obj[np.newaxis, :]).view(H, W)
+    # im_depth = torch.gather(pixel_dist, 0, nearest_obj[np.newaxis, :]).view(H, W)
+    im_depth = im_depth.view(H, W)
+
+    # Find the number of pixels covered by each object
+    pixel_obj_count = torch.sum(valid_pixels, dim=0)
+    valid_pixels_mask = pixel_obj_count > 0
+    nearest_obj_only = torch.masked_select(nearest_obj, valid_pixels_mask)
+    obj_pixel_count = bincount(nearest_obj_only, num_objects)
 
     if get_param_value('norm_depth_image_only', params, False):
         min_depth = torch.min(im_depth)
@@ -59,6 +81,9 @@ def render(scene, **params):
             'nearest': nearest_obj.view(H, W),
             'ray_dir': ray_dir,
             'valid_pixels': valid_pixels,
+            'obj_pixel_count': obj_pixel_count,
+            'pixel_obj_count': pixel_obj_count,
+            'valid_pixels_mask': valid_pixels_mask.view(H, W),
         }
 
     ##############################
@@ -112,4 +137,7 @@ def render(scene, **params):
         'nearest': nearest_obj.view(H, W),
         'ray_dir': ray_dir,
         'valid_pixels': valid_pixels,
+        'obj_pixel_count': obj_pixel_count,
+        'pixel_obj_count': pixel_obj_count,
+        'valid_pixels_mask': valid_pixels_mask.view(H, W),
     }
