@@ -1,5 +1,18 @@
 # DiffRend: An Experimental Differentiable Renderer
 
+## TODO list
+[ ] Check weight initialization (Florian)
+[ ] Remove rendering from Shapenet dataset leader (David)
+[ ] Add conditional BatchNorm on Camera position and orientation to the generator (Florian)
+[ ] Improve Resnet generator/discriminator (Florian)
+[ ] Implement different generators/discriminators from DCGAN/WasserstainGAN/WasserstainGAN-GP (David)
+[ ] Play with Discriminator parameters (David)
+[ ] Use hyperdash.io (david)
+[ ] Tray plane bias (David)
+[ ] Implement Sphere bias (David)
+[ ] Implement Gaussian bias (Florian)
+[ ] Init Generator to produce a sphere (Fahim)
+
 ## Setup
 
 ```bash
