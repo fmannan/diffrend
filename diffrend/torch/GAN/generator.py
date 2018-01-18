@@ -443,8 +443,6 @@ def main():
 
     exp = None
     if HYPERDASH_SUPPORTED and not opt.no_hyperdash:
-        print("I would start HD now... quitting")
-        quit()
         # create new Hyperdash logger
         exp = Experiment("inverse graphics")
 
