@@ -15,12 +15,13 @@ from torch.autograd import Variable
 from diffrend.torch.GAN.datasets import Dataset_load
 from diffrend.torch.GAN.networks import create_networks
 from diffrend.torch.GAN.parameters import Parameters
-from diffrend.torch.params import SCENE_BASIC
-from diffrend.torch.utils import tch_var_f, tch_var_l, where
+from diffrend.torch.GAN.params import Params
+from diffrend.torch.GAN.utils import where, Utils
 from diffrend.model import load_model
-from diffrend.torch.renderer import render
+from diffrend.torch.GAN.renderer import Renderer
 from diffrend.utils.sample_generator import (uniform_sample_mesh,
                                              uniform_sample_sphere)
+import matplotlib.pyplot as plt
 
 try:
     from hyperdash import Experiment
@@ -31,87 +32,87 @@ except ImportError:
 
 
 def create_scene(width, height, fovy, focal_length, n_samples,
-                 radius):
+                 radius, utils, params):
     """Create a semi-empty scene with camera parameters."""
     # Create a splats rendering scene
-    scene = copy.deepcopy(SCENE_BASIC)
+    scene = copy.deepcopy(params.SCENE_BASIC)
 
     # Define the camera parameters
     scene['camera']['viewport'] = [0, 0, width, height]
     scene['camera']['fovy'] = np.deg2rad(fovy)
     scene['camera']['focal_length'] = focal_length
-    scene['objects']['disk']['radius'] = tch_var_f(
+    scene['objects']['disk']['radius'] = utils.tch_var_f(
         np.ones(n_samples) * radius)
-    scene['objects']['disk']['material_idx'] = tch_var_l(
+    scene['objects']['disk']['material_idx'] = utils.tch_var_l(
         np.zeros(n_samples, dtype=int).tolist())
-    scene['materials']['albedo'] = tch_var_f([[0.6, 0.6, 0.6]])
-    scene['tonemap']['gamma'] = tch_var_f([1.0])  # Linear output
+    scene['materials']['albedo'] = utils.tch_var_f([[0.6, 0.6, 0.6]])
+    scene['tonemap']['gamma'] = utils.tch_var_f([1.0])  # Linear output
     return scene
 
 
-def generate_samples(filename, n_samples, radius, width, height, fovy,
-                     focal_length, batch_size, cam_dist=None, cam_pos=None,
-                     verbose=False, obj=None):
-    """Generate random samples of an object from the same camera position.
-
-    Randomly generate N samples on a surface and render them. The samples
-    include position and normal, the radius is set to a constant.
-    """
-    # Check camera Parameters
-    if cam_dist is None and cam_pos is None:
-        raise ValueError('Use parameter cam_dist or cam_pos')
-    elif cam_dist is not None and cam_pos is not None:
-        raise ValueError('Use parameter cam_dist or cam_pos. No both.')
-    elif cam_dist is not None:
-        # generate camera positions on a sphere
-        cam_pos = uniform_sample_sphere(radius=cam_dist,
-                                        num_samples=batch_size)
-        single_view = False
-    else:
-        single_view = True
-
-    # Load model
-    if obj is None:
-        obj = load_model(filename, verbose=verbose)
-
-    # Create a splats rendering scene
-    large_scene = create_scene(width, height, fovy, focal_length, n_samples,
-                               radius)
-
-    # Generate camera positions on a sphere
-    data = []
-    for idx in range(batch_size):
-        # Sample points from the 3D mesh
-        v, vn = uniform_sample_mesh(obj, num_samples=n_samples)
-
-        # Normalize the vertices
-        v = (v - np.mean(v, axis=0)) / (v.max() - v.min())
-
-        # Save the splats into the rendering scene
-        large_scene['objects']['disk']['pos'] = tch_var_f(v)
-        large_scene['objects']['disk']['normal'] = tch_var_f(vn)
-
-        # Set camera position
-        if single_view:
-            large_scene['camera']['eye'] = tch_var_f(cam_pos)
-        else:
-            large_scene['camera']['eye'] = tch_var_f(cam_pos[idx])
-
-        # Render scene
-        res = render(large_scene)
-        depth = res['depth']
-        # im = res['image']
-
-        # Normalize depth image
-        cond = depth >= large_scene['camera']['far']
-        depth = where(cond, torch.min(depth), depth)
-        im_depth = ((depth - torch.min(depth)) /
-                    (torch.max(depth) - torch.min(depth)))
-
-        # Add depth image to the output structure
-        data.append(im_depth.unsqueeze(0))
-
-    return torch.stack(data)
+# def generate_samples(filename, n_samples, radius, width, height, fovy,
+#                      focal_length, batch_size, utils, cam_dist=None, cam_pos=None,
+#                      verbose=False, obj=None):
+#     """Generate random samples of an object from the same camera position.
+#
+#     Randomly generate N samples on a surface and render them. The samples
+#     include position and normal, the radius is set to a constant.
+#     """
+#     # Check camera Parameters
+#     if cam_dist is None and cam_pos is None:
+#         raise ValueError('Use parameter cam_dist or cam_pos')
+#     elif cam_dist is not None and cam_pos is not None:
+#         raise ValueError('Use parameter cam_dist or cam_pos. No both.')
+#     elif cam_dist is not None:
+#         # generate camera positions on a sphere
+#         cam_pos = uniform_sample_sphere(radius=cam_dist,
+#                                         num_samples=batch_size)
+#         single_view = False
+#     else:
+#         single_view = True
+#
+#     # Load model
+#     if obj is None:
+#         obj = load_model(filename, verbose=verbose)
+#
+#     # Create a splats rendering scene
+#     large_scene = create_scene(width, height, fovy, focal_length, n_samples,
+#                                radius, utils)
+#
+#     # Generate camera positions on a sphere
+#     data = []
+#     for idx in range(batch_size):
+#         # Sample points from the 3D mesh
+#         v, vn = uniform_sample_mesh(obj, num_samples=n_samples)
+#
+#         # Normalize the vertices
+#         v = (v - np.mean(v, axis=0)) / (v.max() - v.min())
+#
+#         # Save the splats into the rendering scene
+#         large_scene['objects']['disk']['pos'] = utils.tch_var_f(v)
+#         large_scene['objects']['disk']['normal'] = utils.tch_var_f(vn)
+#
+#         # Set camera position
+#         if single_view:
+#             large_scene['camera']['eye'] = utils.tch_var_f(cam_pos)
+#         else:
+#             large_scene['camera']['eye'] = utils.tch_var_f(cam_pos[idx])
+#
+#         # Render scene
+#         res = render(large_scene)
+#         depth = res['depth']
+#         # im = res['image']
+#
+#         # Normalize depth image
+#         cond = depth >= large_scene['camera']['far']
+#         depth = where(cond, torch.min(depth), depth)
+#         im_depth = ((depth - torch.min(depth)) /
+#                     (torch.max(depth) - torch.min(depth)))
+#
+#         # Add depth image to the output structure
+#         data.append(im_depth.unsqueeze(0))
+#
+#     return torch.stack(data)
 
 
 def calc_gradient_penalty(discriminator, real_data, fake_data, gp_lambda, no_cuda=False):
@@ -147,6 +148,9 @@ class GAN(object):
     def __init__(self, opt, dataset_load=None, experiment=None):
         """Constructor."""
         self.opt = opt
+        self.utils = Utils(opt)
+        self.renderer = Renderer(self.utils)
+        self.params = Params(self.utils)
         self.exp = experiment
         self.real_label = 1
         self.fake_label = 0
@@ -172,20 +176,20 @@ class GAN(object):
 
     def create_dataset_loader(self, ):
         """Create dataset leader."""
-        if self.opt.same_view:
+        if self.opt.same_view:  # if camera is fixed, then sample once
             self.cam_pos = uniform_sample_sphere(radius=self.opt.cam_dist,
                                                  num_samples=1)[0]
             self.cam_dist = None
-        else:
+        else:  # if camera is not fixed, storr distance and resample cam position every time
             self.cam_dist = self.opt.cam_dist
             self.cam_pos = None
         self.dataset_load.initialize_dataset()
         self.dataset = self.dataset_load.get_dataset()
         self.dataset.set_camera_pos(cam_dist=self.cam_dist,
                                     cam_pos=self.cam_pos)
-        if False:
-            self.dataset_load.initialize_dataset_loader()
-            self.dataset_loader = self.dataset_load.get_dataset_loader()
+        # if False:  # WHAT?
+        #     self.dataset_load.initialize_dataset_loader()
+        #     self.dataset_loader = self.dataset_load.get_dataset_loader()
 
     def create_networks(self, ):
         """Create networks."""
@@ -198,7 +202,8 @@ class GAN(object):
         """Create a semi-empty scene with camera parameters."""
         self.scene = create_scene(self.opt.width, self.opt.height,
                                   self.opt.fovy, self.opt.focal_length,
-                                  self.opt.n_splats, self.opt.splats_radius)
+                                  self.opt.n_splats, self.opt.splats_radius,
+                                  self.utils, self.params)
 
     def create_tensors(self, ):
         """Create the tensors."""
@@ -237,20 +242,23 @@ class GAN(object):
 
     def get_real_sample(self, i):
         """Get a real sample."""
-        if self.dataset is None:
-            real_samples = generate_samples(
-                self.opt.model, self.opt.n_splats, self.opt.splats_radius,
-                self.opt.width, self.opt.height, self.opt.fovy,
-                self.opt.focal_length, self.opt.batchSize,
-                cam_dist=self.cam_dist, cam_pos=self.cam_pos, verbose=False,
-                obj=None)
-        else:
-            if not self.opt.same_view:
-                self.dataset.set_camera_pos(cam_dist=self.cam_dist,
-                                            cam_pos=None)
-            # real_samples = self.data_iter.next()['samples']
-            real_samples = self.dataset[i]['samples']
-
+        # if self.dataset is None: # when would this ever be the case?
+        #     real_samples = generate_samples(
+        #         self.opt.model, self.opt.n_splats, self.opt.splats_radius,
+        #         self.opt.width, self.opt.height, self.opt.fovy,
+        #         self.opt.focal_length, self.opt.batchSize, self.utils,
+        #         cam_dist=self.cam_dist, cam_pos=self.cam_pos, verbose=False,
+        #         obj=None)
+        # else:
+        if not self.opt.same_view:  # set camera to new position
+            self.dataset.set_camera_pos(cam_dist=self.cam_dist,
+                                        cam_pos=None)
+        real_samples = self.dataset[i]['samples']
+        # print (real_samples.data.numpy()[0,0].shape)
+        # plt.imshow(real_samples.data.numpy()[0,0], interpolation='nearest')
+        # plt.show()
+        # plt.imshow(real_samples.data.numpy()[1,0], interpolation='nearest')
+        # plt.show()
         self.batch_size = real_samples.size(0)
 
         if not self.opt.no_cuda:
@@ -287,13 +295,13 @@ class GAN(object):
 
             # Set camera position
             if not self.opt.same_view:
-                scene['camera']['eye'] = tch_var_f(self.cam_pos[idx])
+                scene['camera']['eye'] = self.utils.tch_var_f(self.cam_pos[idx])
             else:
-                scene['camera']['eye'] = tch_var_f(self.cam_pos[0])
+                scene['camera']['eye'] = self.utils.tch_var_f(self.cam_pos[0])
             # suffix = '_{}'.format(idx)
 
             # Render scene
-            res = render(scene)
+            res = self.renderer.render(scene)
 
             # Take rendered and depth images
             # im = res['image']
@@ -434,7 +442,9 @@ def main():
     opt = Parameters().parse()
 
     exp = None
-    if HYPERDASH_SUPPORTED:
+    if HYPERDASH_SUPPORTED and not opt.no_hyperdash:
+        print("I would start HD now... quitting")
+        quit()
         # create new Hyperdash logger
         exp = Experiment("inverse graphics")
 

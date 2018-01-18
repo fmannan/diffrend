@@ -13,6 +13,7 @@ else:
     LongTensor = torch.LongTensor
 
 print('CUDA support ', CUDA)
+raise Exception("THIS SHOULDN'T BE IMPORTED, EVER")
 
 tch_var = lambda x, fn_type, req_grad: Variable(fn_type(x),
                                                 requires_grad=req_grad)

@@ -82,6 +82,7 @@ class Parameters():
         self.parser.add_argument('--splats_radius', type=float, default=0.025, help='radius of the splats (fix)')
 
         self.parser.add_argument('--same_view', action='store_true', default=False, help='data with view fixed')
+        self.parser.add_argument('--no_hyperdash', action='store_true', default=False, help='disable hyperdash (use when debugging)')
 
     def parse(self):
         """Parse."""

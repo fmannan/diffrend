@@ -7,10 +7,11 @@ import torch
 from torch.utils.data import Dataset
 # from torchvision import transforms, utils
 from diffrend.model import load_model
-from diffrend.torch.params import SCENE_BASIC
-from diffrend.torch.utils import tch_var_f, tch_var_l, where
+from diffrend.torch.GAN.parameters import Parameters
+from diffrend.torch.GAN.params import Params
+from diffrend.torch.GAN.utils import Utils, where
 # from analysis.gen_surf_pts.generator_anim import animate_sample_generation
-from diffrend.torch.renderer import render
+from diffrend.torch.GAN.renderer import Renderer
 from diffrend.utils.sample_generator import (uniform_sample_mesh,
                                              uniform_sample_sphere)
 
@@ -28,6 +29,9 @@ class ShapeNetDataset(Dataset):
             on a sample.
         """
         self.opt = opt
+        self.utils = Utils(opt)
+        self.renderer = Renderer(self.utils)
+        self.params = Params(self.utils)
         if opt.synsets == '':
             self.synsets = None
         else:
@@ -45,12 +49,12 @@ class ShapeNetDataset(Dataset):
 
         # Check the selected synsets/classes
         self._check_synsets_classes()
-        print ("Selected synsets: {}".format(self.synsets))
-        print ("Selected classes: {}".format(self.classes))
+        print("Selected synsets: {}".format(self.synsets))
+        print("Selected classes: {}".format(self.classes))
 
         # Get object paths
         self._get_objects_paths()
-        print ("Total samples: {}".format(len(self.samples)))
+        print("Total samples: {}".format(len(self.samples)))
 
         self.scene = self._create_scene()
 
@@ -85,7 +89,7 @@ class ShapeNetDataset(Dataset):
 
         return sample
 
-    def _get_taxonomy(self,):
+    def _get_taxonomy(self, ):
         """Read json metadata file."""
         # Create the output dictionaries
         self.synset_to_class = {}
@@ -109,7 +113,7 @@ class ShapeNetDataset(Dataset):
                     self.synset_to_class[synset] = name
                     self.class_to_synset[name] = synset
 
-    def _check_synsets_classes(self,):
+    def _check_synsets_classes(self, ):
         # Check selected classes/synsets
         if self.classes is None and self.synsets is None:
             raise ValueError("Select classes to load")
@@ -135,27 +139,27 @@ class ShapeNetDataset(Dataset):
                 else:
                     self.synsets.append(self.class_to_synset[el])
 
-    def _get_objects_paths(self,):
+    def _get_objects_paths(self, ):
         for synset in self.synsets:
             synset_path = os.path.join(self.opt.root_dir, synset)
             for o in os.listdir(synset_path):
                 self.samples.append([synset, o])
 
-    def _create_scene(self,):
+    def _create_scene(self, ):
         """Create a semi-empty scene with camera parameters."""
         # Create a splats rendering scene
-        scene = copy.deepcopy(SCENE_BASIC)
+        scene = copy.deepcopy(self.params.SCENE_BASIC)
 
         # Define the camera parameters
         scene['camera']['viewport'] = [0, 0, self.opt.width, self.opt.height]
         scene['camera']['fovy'] = np.deg2rad(self.opt.fovy)
         scene['camera']['focal_length'] = self.opt.focal_length
-        scene['objects']['disk']['radius'] = tch_var_f(
+        scene['objects']['disk']['radius'] = self.utils.tch_var_f(
             np.ones(self.opt.n_splats) * self.opt.splats_radius)
-        scene['objects']['disk']['material_idx'] = tch_var_l(
+        scene['objects']['disk']['material_idx'] = self.utils.tch_var_l(
             np.zeros(self.opt.n_splats, dtype=int).tolist())
-        scene['materials']['albedo'] = tch_var_f([[0.6, 0.6, 0.6]])
-        scene['tonemap']['gamma'] = tch_var_f([1.0])  # Linear output
+        scene['materials']['albedo'] = self.utils.tch_var_f([[0.6, 0.6, 0.6]])
+        scene['tonemap']['gamma'] = self.utils.tch_var_f([1.0])  # Linear output
         return scene
 
     def set_camera_pos(self, cam_dist=None, cam_pos=None):
@@ -197,17 +201,17 @@ class ShapeNetDataset(Dataset):
             v = (v - np.mean(v, axis=0)) / (v.max() - v.min())
 
             # Save the splats into the rendering scene
-            scene['objects']['disk']['pos'] = tch_var_f(v)
-            scene['objects']['disk']['normal'] = tch_var_f(vn)
+            scene['objects']['disk']['pos'] = self.utils.tch_var_f(v)
+            scene['objects']['disk']['normal'] = self.utils.tch_var_f(vn)
 
             # Set camera position
             if self.single_view:
-                scene['camera']['eye'] = tch_var_f(self.cam_pos)
+                scene['camera']['eye'] = self.utils.tch_var_f(self.cam_pos)
             else:
-                scene['camera']['eye'] = tch_var_f(self.cam_pos[idx])
+                scene['camera']['eye'] = self.utils.tch_var_f(self.cam_pos[idx])
 
             # Render scene
-            res = render(scene)
+            res = self.renderer.render(scene)
             depth = res['depth']
             # im = res['image']
 
@@ -225,13 +229,15 @@ class ShapeNetDataset(Dataset):
 
 def main():
     """Test function."""
-    dataset = ShapeNetDataset(
-        root_dir='/home/dvazquez/datasets/shapenet/ShapeNetCore.v2',
-        synsets=None, classes=["airplane", "microphone"], transform=None)
-    print (len(dataset))
+    opts = Parameters().parse()
+    opts.root_dir = '/media/florian/8BAA-82D3/shapenet'
+    # root_dir='/home/dvazquez/datasets/shapenet/ShapeNetCore.v2',
+    opts.classes = "mug,bowl"
+    dataset = ShapeNetDataset(opts, transform=None)
+    print(len(dataset))
 
     for f in dataset:
-        print (f)
+        print(f)
 
 
 if __name__ == "__main__":

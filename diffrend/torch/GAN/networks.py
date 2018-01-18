@@ -21,7 +21,7 @@ def create_networks(opt, verbose=True):
     elif opt.gen_type == 'resnet':
         netG = _netG_resnet(nz, nc)
     elif opt.gen_type == 'cnn':
-        netG = _netG(ngpu, nz, ngf, nc)
+        netG = _netG(ngpu, nz, ngf, nc, no_cuda=opt.no_cuda)
     else:
         raise ValueError("Unknown generator")
 
@@ -107,7 +107,7 @@ class CondBatchNorm(nn.BatchNorm2d, TwoInputModule):
 # Generators
 #############################################
 class _netG(nn.Module):
-    def __init__(self, ngpu, nz, ngf, nc):
+    def __init__(self, ngpu, nz, ngf, nc, no_cuda=False):
         super(_netG, self).__init__()
         self.ngpu = ngpu
         self.nc = nc
@@ -149,7 +149,7 @@ class _netG(nn.Module):
         coords = np.zeros((64, 64, 3), dtype=np.float32)
         coords[:, :, :2] = coords_tmp
         self.coords = torch.FloatTensor(coords)
-        if torch.cuda.is_available():
+        if torch.cuda.is_available() and not no_cuda:
             self.coords = self.coords.cuda()
 
     def forward(self, input):
