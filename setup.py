@@ -25,5 +25,5 @@ setup(name='diffrend',
       packages=packages,
       package_data=package_data,
       zip_safe=False,
-      requires=['numpy', 'tensorflow', 'scipy', 'PyQt5', 'torch']
-     )
+      requires=['numpy', 'tensorflow', 'scipy', 'PyQt5', 'torch>=0.3.0']
+      )
