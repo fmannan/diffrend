@@ -17,10 +17,8 @@ from diffrend.torch.GAN.networks import create_networks
 from diffrend.torch.GAN.parameters import Parameters
 from diffrend.torch.params import SCENE_BASIC
 from diffrend.torch.utils import tch_var_f, tch_var_l, where
-from diffrend.model import load_model
 from diffrend.torch.renderer import render
-from diffrend.utils.sample_generator import (uniform_sample_mesh,
-                                             uniform_sample_sphere)
+from diffrend.utils.sample_generator import uniform_sample_sphere
 try:
     from hyperdash import Experiment
     HYPERDASH_SUPPORTED = True
@@ -103,7 +101,7 @@ class GAN(object):
         # Define camera positions
         if self.opt.same_view:
             self.cam_pos = uniform_sample_sphere(radius=self.opt.cam_dist,
-                                                 num_samples=1)[0]
+                                                 num_samples=1)
 
         # Create dataset loader
         self.dataset_load.initialize_dataset()
