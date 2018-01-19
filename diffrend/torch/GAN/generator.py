@@ -21,10 +21,8 @@ from diffrend.model import load_model
 from diffrend.torch.renderer import render
 from diffrend.utils.sample_generator import (uniform_sample_mesh,
                                              uniform_sample_sphere)
-
 try:
     from hyperdash import Experiment
-
     HYPERDASH_SUPPORTED = True
 except ImportError:
     HYPERDASH_SUPPORTED = False
@@ -49,91 +47,21 @@ def create_scene(width, height, fovy, focal_length, n_samples,
     return scene
 
 
-def generate_samples(filename, n_samples, radius, width, height, fovy,
-                     focal_length, batch_size, cam_dist=None, cam_pos=None,
-                     verbose=False, obj=None):
-    """Generate random samples of an object from the same camera position.
-
-    Randomly generate N samples on a surface and render them. The samples
-    include position and normal, the radius is set to a constant.
-    """
-    # Check camera Parameters
-    if cam_dist is None and cam_pos is None:
-        raise ValueError('Use parameter cam_dist or cam_pos')
-    elif cam_dist is not None and cam_pos is not None:
-        raise ValueError('Use parameter cam_dist or cam_pos. No both.')
-    elif cam_dist is not None:
-        # generate camera positions on a sphere
-        cam_pos = uniform_sample_sphere(radius=cam_dist,
-                                        num_samples=batch_size)
-        single_view = False
-    else:
-        single_view = True
-
-    # Load model
-    if obj is None:
-        obj = load_model(filename, verbose=verbose)
-
-    # Create a splats rendering scene
-    large_scene = create_scene(width, height, fovy, focal_length, n_samples,
-                               radius)
-
-    # Generate camera positions on a sphere
-    data = []
-    for idx in range(batch_size):
-        # Sample points from the 3D mesh
-        v, vn = uniform_sample_mesh(obj, num_samples=n_samples)
-
-        # Normalize the vertices
-        v = (v - np.mean(v, axis=0)) / (v.max() - v.min())
-
-        # Save the splats into the rendering scene
-        large_scene['objects']['disk']['pos'] = tch_var_f(v)
-        large_scene['objects']['disk']['normal'] = tch_var_f(vn)
-
-        # Set camera position
-        if single_view:
-            large_scene['camera']['eye'] = tch_var_f(cam_pos)
-        else:
-            large_scene['camera']['eye'] = tch_var_f(cam_pos[idx])
-
-        # Render scene
-        res = render(large_scene)
-        depth = res['depth']
-        # im = res['image']
-
-        # Normalize depth image
-        cond = depth >= large_scene['camera']['far']
-        depth = where(cond, torch.min(depth), depth)
-        im_depth = ((depth - torch.min(depth)) /
-                    (torch.max(depth) - torch.min(depth)))
-
-        # Add depth image to the output structure
-        data.append(im_depth.unsqueeze(0))
-
-    return torch.stack(data)
-
-
-def calc_gradient_penalty(discriminator, real_data, fake_data, gp_lambda, no_cuda=False):
+def calc_gradient_penalty(discriminator, real_data, fake_data, gp_lambda):
     """Calculate GP."""
     assert real_data.size(0) == fake_data.size(0)
     alpha = torch.rand(real_data.size(0), 1, 1, 1)
     alpha = alpha.expand(real_data.size())
-    if not no_cuda:
-        alpha = alpha.cuda()
+    alpha = alpha.cuda()
 
     interpolates = Variable(alpha * real_data + ((1 - alpha) * fake_data),
                             requires_grad=True)
 
     disc_interpolates = discriminator(interpolates)
 
-    grad_outputs = torch.ones(disc_interpolates.size())
-    if not no_cuda:
-        grad_outputs = grad_outputs.cuda()
-
     gradients = torch.autograd.grad(
         outputs=disc_interpolates, inputs=interpolates,
-        grad_outputs=grad_outputs,
+        grad_outputs=torch.ones(disc_interpolates.size()).cuda(),
         create_graph=True, retain_graph=True, only_inputs=True)[0]
     gradients = gradients.view(gradients.size(0), -1)
     gradient_penalty = ((gradients.norm(2, dim=1) - 1) ** 2).mean() * gp_lambda
@@ -172,20 +100,16 @@ class GAN(object):
 
     def create_dataset_loader(self, ):
         """Create dataset leader."""
+        # Define camera positions
         if self.opt.same_view:
             self.cam_pos = uniform_sample_sphere(radius=self.opt.cam_dist,
                                                  num_samples=1)[0]
-            self.cam_dist = None
-        else:
-            self.cam_dist = self.opt.cam_dist
-            self.cam_pos = None
+
+        # Create dataset loader
         self.dataset_load.initialize_dataset()
         self.dataset = self.dataset_load.get_dataset()
-        self.dataset.set_camera_pos(cam_dist=self.cam_dist,
-                                    cam_pos=self.cam_pos)
-        if False:
-            self.dataset_load.initialize_dataset_loader()
-            self.dataset_loader = self.dataset_load.get_dataset_loader()
+        self.dataset_load.initialize_dataset_loader()
+        self.dataset_loader = self.dataset_load.get_dataset_loader()
 
     def create_networks(self, ):
         """Create networks."""
@@ -235,27 +159,69 @@ class GAN(object):
         self.optimizerG = optim.Adam(self.netG.parameters(), lr=self.opt.lr,
                                      betas=(self.opt.beta1, 0.999))
 
-    def get_real_sample(self, i):
+    def get_real_samples(self):
         """Get a real sample."""
-        if self.dataset is None:
-            real_samples = generate_samples(
-                self.opt.model, self.opt.n_splats, self.opt.splats_radius,
-                self.opt.width, self.opt.height, self.opt.fovy,
-                self.opt.focal_length, self.opt.batchSize,
-                cam_dist=self.cam_dist, cam_pos=self.cam_pos, verbose=False,
-                obj=None)
-        else:
+        # Load a batch of samples
+        try:
+            samples = self.data_iter.next()
+        except StopIteration:
+            del self.data_iter
+            self.data_iter = iter(self.dataset_loader)
+            samples = self.data_iter.next()
+        except AttributeError:
+            self.data_iter = iter(self.dataset_loader)
+            samples = self.data_iter.next()
+
+        # Define the camera poses
+        if not self.opt.same_view:
+            self.cam_pos = uniform_sample_sphere(
+                radius=self.opt.cam_dist, num_samples=self.opt.batchSize)
+
+        # Create a splats rendering scene
+        large_scene = create_scene(self.opt.width, self.opt.height,
+                                   self.opt.fovy, self.opt.focal_length,
+                                   self.opt.n_splats, self.opt.splats_radius)
+
+        # Render scenes
+        data = []
+        for idx in range(samples['splats']['pos'].size()[0]):
+
+            # Save the splats into the rendering scene
+            large_scene['objects']['disk']['pos'] = Variable(
+                samples['splats']['pos'][idx].cuda(), requires_grad=False)
+            large_scene['objects']['disk']['normal'] = Variable(
+                samples['splats']['normal'][idx].cuda(), requires_grad=False)
+
+            # Set camera position
             if not self.opt.same_view:
-                self.dataset.set_camera_pos(cam_dist=self.cam_dist,
-                                            cam_pos=None)
-            # real_samples = self.data_iter.next()['samples']
-            real_samples = self.dataset[i]['samples']
+                large_scene['camera']['eye'] = tch_var_f(self.cam_pos[idx])
+            else:
+                large_scene['camera']['eye'] = tch_var_f(self.cam_pos[0])
 
+            # Render scene
+            res = render(large_scene)
+
+            # Get rendered output
+            if True:
+                depth = res['depth']
+                # Normalize depth image
+                cond = depth >= large_scene['camera']['far']
+                depth = where(cond, torch.min(depth), depth)
+                im_depth = ((depth - torch.min(depth)) /
+                            (torch.max(depth) - torch.min(depth)))
+            else:
+                im = res['image']
+
+            # Add depth image to the output structure
+            data.append(im_depth.unsqueeze(0))
+
+        # Stack real samples
+        real_samples = torch.stack(data)
         self.batch_size = real_samples.size(0)
-
         if not self.opt.no_cuda:
             real_samples = real_samples.cuda()
 
+        # Set input/output variables
         self.input.resize_as_(real_samples.data).copy_(real_samples.data)
         self.label.resize_(self.batch_size).fill_(self.real_label)
         self.inputv = Variable(self.input)
@@ -263,16 +229,16 @@ class GAN(object):
 
     def generate_noise_vector(self, ):
         """Generate a noise vector."""
-        # self.noise.resize_(self.batch_size, int(self.opt.nz)).normal_(0, 1)
-        self.noise.resize_(self.batch_size, int(self.opt.nz), 1, 1).normal_(0, 1)
+        self.noise.resize_(
+            self.batch_size, int(self.opt.nz), 1, 1).normal_(0, 1)
         self.noisev = Variable(self.noise)
 
     def render_batch(self, batch, batch_size, scene):
         """Render a batch of splats."""
         # Generate camera positions on a sphere
         if not self.opt.same_view:
-            self.cam_pos = uniform_sample_sphere(radius=self.opt.cam_dist,
-                                                 num_samples=self.batch_size)
+            cam_pos = uniform_sample_sphere(radius=self.opt.cam_dist,
+                                            num_samples=self.batch_size)
 
         redered_data = []
         for idx in range(batch_size):
@@ -287,10 +253,9 @@ class GAN(object):
 
             # Set camera position
             if not self.opt.same_view:
-                scene['camera']['eye'] = tch_var_f(self.cam_pos[idx])
+                scene['camera']['eye'] = tch_var_f(cam_pos[idx])
             else:
                 scene['camera']['eye'] = tch_var_f(self.cam_pos[0])
-            # suffix = '_{}'.format(idx)
 
             # Render scene
             res = render(scene)
@@ -313,104 +278,95 @@ class GAN(object):
     def train(self, ):
         """Train networtk."""
         # Start training
-        for epoch in range(self.opt.n_iter):
-            # self.data_iter = iter(self.dataset_loader)
-            i = 0
-            while i < len(self.dataset):
-                iteration = epoch * len(self.dataset) + i
+        for iteration in range(self.opt.n_iter):
+            ############################
+            # (1) Update D network
+            ###########################
+            for j in range(self.opt.critic_iters):
+                # Train with real
+                self.netD.zero_grad()
+                self.get_real_samples()
+                real_output = self.netD(self.inputv)
+                if self.opt.criterion == 'GAN':
+                    errD_real = self.criterion(real_output, self.labelv)
+                    errD_real.backward()
+                elif self.opt.criterion == 'WGAN':
+                    errD_real = real_output.mean()
+                    errD_real.backward(self.mone)
+                D_x = real_output.data.mean()
 
-                ############################
-                # (1) Update D network
-                ###########################
-                j = 0
-                while j < self.opt.critic_iters:
-                    j += 1
-
-                    # Train with real
-                    self.netD.zero_grad()
-                    self.get_real_sample(i)
-                    i += 1
-                    real_output = self.netD(self.inputv)
-                    if self.opt.criterion == 'GAN':
-                        errD_real = self.criterion(real_output, self.labelv)
-                        errD_real.backward()
-                    elif self.opt.criterion == 'WGAN':
-                        errD_real = real_output.mean()
-                        errD_real.backward(self.mone)
-                    D_x = real_output.data.mean()
-
-                    # Train with fake
-                    self.generate_noise_vector()
-                    fake = self.netG(self.noisev)
-                    # print (fake.size())
-                    fake_rendered = self.render_batch(fake, self.batch_size,
-                                                      self.scene)
-                    labelv = Variable(self.label.fill_(self.fake_label))
-                    # Do not bp through gen
-                    fake_output = self.netD(fake_rendered.detach())
-                    if self.opt.criterion == 'WGAN':
-                        errD_fake = fake_output.mean()
-                        errD_fake.backward(self.one)
-                        errD = errD_fake - errD_real
-                    else:
-                        errD_fake = self.criterion(fake_output, labelv)
-                        errD_fake.backward()
-                        errD = errD_real + errD_fake
-                    D_G_z1 = fake_output.data.mean()
-
-                    # Compute gradient penalty
-                    if self.opt.gp != 'None':
-                        gradient_penalty = calc_gradient_penalty(
-                            self.netD, self.inputv.data, fake_rendered.data,
-                            self.opt.gp_lambda, self.opt.no_cuda)
-                        gradient_penalty.backward()
-                        errD += gradient_penalty
-
-                    self.optimizerD.step()
-
-                ############################
-                # (2) Update G network: maximize log(D(G(z)))
-                ###########################
-                self.netG.zero_grad()
+                # Train with fake
                 self.generate_noise_vector()
                 fake = self.netG(self.noisev)
+                # print (fake.size())
                 fake_rendered = self.render_batch(fake, self.batch_size,
                                                   self.scene)
-                # Fake labels are real for generator cost
-                labelv = Variable(self.label.fill_(self.real_label))
-                fake_output = self.netD(fake_rendered)
+                labelv = Variable(self.label.fill_(self.fake_label))
+                # Do not bp through gen
+                fake_output = self.netD(fake_rendered.detach())
                 if self.opt.criterion == 'WGAN':
-                    errG = fake_output.mean()
-                    errG.backward(self.mone)
+                    errD_fake = fake_output.mean()
+                    errD_fake.backward(self.one)
+                    errD = errD_fake - errD_real
                 else:
-                    errG = self.criterion(fake_output, labelv)
-                    errG.backward()
-                D_G_z2 = fake_output.data.mean()
-                self.optimizerG.step()
+                    errD_fake = self.criterion(fake_output, labelv)
+                    errD_fake.backward()
+                    errD = errD_real + errD_fake
+                D_G_z1 = fake_output.data.mean()
 
-                # Log print
-                if iteration % 5 == 0:
-                    print('\n[%d/%d] Loss_D: %.4f Loss_G: %.4f D(x): %.4f'
-                          ' D(G(z)): %.4f / %.4f' % (
-                              iteration, self.opt.n_iter, errD.data[0],
-                              errG.data[0], D_x, D_G_z1, D_G_z2))
-                    if self.exp is not None:
-                        self.exp.metric("epoch", epoch)
-                        self.exp.metric("loss D", errD.data[0])
-                        self.exp.metric("loss G", errG.data[0])
-                        self.exp.metric("D(x)", D_x)
-                        self.exp.metric("D(G(z1))", D_G_z1)
-                        self.exp.metric("D(G(z2))", D_G_z2)
-                        self.exp.metric("D(x)-D(G(z1))", D_x - D_G_z1)
+                # Compute gradient penalty
+                if self.opt.gp != 'None':
+                    gradient_penalty = calc_gradient_penalty(
+                        self.netD, self.inputv.data, fake_rendered.data,
+                        self.opt.gp_lambda)
+                    gradient_penalty.backward()
+                    errD += gradient_penalty
 
-                # Save images
-                if iteration % 5 == 0:
-                    self.save_images(iteration, self.inputv[0],
-                                     fake_rendered[0])
+                self.optimizerD.step()
 
-                # Do checkpointing
-                if iteration % 500 == 0:
-                    self.save_networks(iteration)
+            ############################
+            # (2) Update G network: maximize log(D(G(z)))
+            ###########################
+            self.netG.zero_grad()
+            self.generate_noise_vector()
+            fake = self.netG(self.noisev)
+            fake_rendered = self.render_batch(fake, self.batch_size,
+                                              self.scene)
+            # Fake labels are real for generator cost
+            labelv = Variable(self.label.fill_(self.real_label))
+            fake_output = self.netD(fake_rendered)
+            if self.opt.criterion == 'WGAN':
+                errG = fake_output.mean()
+                errG.backward(self.mone)
+            else:
+                errG = self.criterion(fake_output, labelv)
+                errG.backward()
+            D_G_z2 = fake_output.data.mean()
+            self.optimizerG.step()
+
+            # Log print
+            if iteration % 5 == 0:
+                print('\n[%d/%d] Loss_D: %.4f Loss_G: %.4f D(x): %.4f'
+                      ' D(G(z)): %.4f / %.4f' % (
+                          iteration, self.opt.n_iter, errD.data[0],
+                          errG.data[0], D_x, D_G_z1, D_G_z2))
+                if self.exp is not None:
+                    self.exp.metric("iteration", iteration)
+                    self.exp.metric("loss D", errD.data[0])
+                    self.exp.metric("loss G", errG.data[0])
+                    self.exp.metric("D(x)", D_x)
+                    self.exp.metric("D(G(z1))", D_G_z1)
+                    self.exp.metric("D(G(z2))", D_G_z2)
+                    self.exp.metric("D(x)-D(G(z1))", D_x - D_G_z1)
+
+            # Save images
+            if iteration % 5 == 0:
+                self.save_images(iteration, self.inputv[0],
+                                 fake_rendered[0])
+
+            # Do checkpointing
+            if iteration % 500 == 0:
+                self.save_networks(iteration)
 
     def save_networks(self, epoch):
         """Save networks to hard disk."""

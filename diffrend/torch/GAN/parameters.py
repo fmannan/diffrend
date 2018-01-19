@@ -8,6 +8,7 @@ import torch.backends.cudnn as cudnn
 import torch.utils.data
 from data import DIR_DATA
 
+
 class Parameters():
     """base options."""
 
@@ -27,7 +28,7 @@ class Parameters():
 
         self.parser.add_argument('--synsets', type=str, default='', help='Synsets from the shapenet dataset to use')
         self.parser.add_argument('--classes', type=str, default='airplane,microphone', help='Classes from the shapenet dataset to use')
-        #corresponding folders: 02691156, 03759954
+        # corresponding folders: 02691156, 03759954
 
         # other low-footprint objects:
         # 02773838 - bag, 83
@@ -42,10 +43,10 @@ class Parameters():
         # bowl,mug
 
         self.parser.add_argument('--model', type=str, default=DIR_DATA + '/bunny.obj')
-        self.parser.add_argument('--workers', type=int, default=1, help='number of data loading workers')
+        self.parser.add_argument('--workers', type=int, default=8, help='number of data loading workers')
 
         self.parser.add_argument('--n_iter', type=int, default=4000, help='number of iterations to train')
-        self.parser.add_argument('--batchSize', type=int, default=2, help='input batch size')
+        self.parser.add_argument('--batchSize', type=int, default=8, help='input batch size')
 
         self.parser.add_argument('--imageSize', type=int, default=64, help='the height / width of the input image to network')
 

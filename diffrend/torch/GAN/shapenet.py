@@ -1,18 +1,16 @@
 """Sapenet dataset."""
 import os
-import numpy as np
-import copy
 import json
-import torch
+import numpy as np
 from torch.utils.data import Dataset
-# from torchvision import transforms, utils
 from diffrend.model import load_model
-from diffrend.torch.params import SCENE_BASIC
-from diffrend.torch.utils import tch_var_f, tch_var_l, where
-# from analysis.gen_surf_pts.generator_anim import animate_sample_generation
-from diffrend.torch.renderer import render
 from diffrend.utils.sample_generator import (uniform_sample_mesh,
                                              uniform_sample_sphere)
+# import copy
+# import torch
+# from diffrend.torch.params import SCENE_BASIC
+# from diffrend.torch.utils import tch_var_f, tch_var_l, where
+# from diffrend.torch.renderer import render
 
 
 class ShapeNetDataset(Dataset):
@@ -52,7 +50,7 @@ class ShapeNetDataset(Dataset):
         self._get_objects_paths()
         print ("Total samples: {}".format(len(self.samples)))
 
-        self.scene = self._create_scene()
+        # self.scene = self._create_scene()
 
     def __len__(self):
         """Get dataset length."""
@@ -73,11 +71,22 @@ class ShapeNetDataset(Dataset):
         #                           num_samples=1000, out_dir=None,
         #                           resample=False, rotate_angle=360)
 
+        # Sample points from the 3D mesh
+        v, vn = uniform_sample_mesh(obj_model,
+                                    num_samples=self.opt.n_splats)
+
+        # Normalize the vertices
+        v = (v - np.mean(v, axis=0)) / (v.max() - v.min())
+
+        # Save the splats
+        splats = {'pos': v.astype(np.float32), 'normal': vn.astype(np.float32)}
+
         # Convert model to splats and render views
-        samples = self._generate_samples(obj_model)
+        # samples = self._generate_samples(obj_model)
 
         # Add model and synset to the output dictionary
-        sample = {'obj': obj_model, 'samples': samples, 'synset': synset}
+        # sample = {'obj': obj_model, 'synset': synset, 'splats': splats}
+        sample = {'synset': synset, 'splats': splats}
 
         # Transform
         if self.transform:
@@ -141,86 +150,86 @@ class ShapeNetDataset(Dataset):
             for o in os.listdir(synset_path):
                 self.samples.append([synset, o])
 
-    def _create_scene(self,):
-        """Create a semi-empty scene with camera parameters."""
-        # Create a splats rendering scene
-        scene = copy.deepcopy(SCENE_BASIC)
+    # def _create_scene(self,):
+    #     """Create a semi-empty scene with camera parameters."""
+    #     # Create a splats rendering scene
+    #     scene = copy.deepcopy(SCENE_BASIC)
+    #
+    #     # Define the camera parameters
+    #     scene['camera']['viewport'] = [0, 0, self.opt.width, self.opt.height]
+    #     scene['camera']['fovy'] = np.deg2rad(self.opt.fovy)
+    #     scene['camera']['focal_length'] = self.opt.focal_length
+    #     scene['objects']['disk']['radius'] = tch_var_f(
+    #         np.ones(self.opt.n_splats) * self.opt.splats_radius)
+    #     scene['objects']['disk']['material_idx'] = tch_var_l(
+    #         np.zeros(self.opt.n_splats, dtype=int).tolist())
+    #     scene['materials']['albedo'] = tch_var_f([[0.6, 0.6, 0.6]])
+    #     scene['tonemap']['gamma'] = tch_var_f([1.0])  # Linear output
+    #     return scene
 
-        # Define the camera parameters
-        scene['camera']['viewport'] = [0, 0, self.opt.width, self.opt.height]
-        scene['camera']['fovy'] = np.deg2rad(self.opt.fovy)
-        scene['camera']['focal_length'] = self.opt.focal_length
-        scene['objects']['disk']['radius'] = tch_var_f(
-            np.ones(self.opt.n_splats) * self.opt.splats_radius)
-        scene['objects']['disk']['material_idx'] = tch_var_l(
-            np.zeros(self.opt.n_splats, dtype=int).tolist())
-        scene['materials']['albedo'] = tch_var_f([[0.6, 0.6, 0.6]])
-        scene['tonemap']['gamma'] = tch_var_f([1.0])  # Linear output
-        return scene
-
-    def set_camera_pos(self, cam_dist=None, cam_pos=None):
-        """Set camera pose."""
-        # Check camera Parameters
-        if cam_dist is None and cam_pos is None:
-            raise ValueError('Use parameter cam_dist or cam_pos')
-        elif cam_dist is not None and cam_pos is not None:
-            raise ValueError('Use parameter cam_dist or cam_pos. No both.')
-        elif cam_dist is not None:
-            self.single_view = False
-            self.cam_pos = uniform_sample_sphere(
-                radius=cam_dist, num_samples=self.opt.batchSize)
-        else:
-            self.single_view = True
-            self.cam_pos = cam_pos
-
-    def _generate_samples(self, obj, verbose=False):
-        """Generate random samples of an object from the same camera position.
-
-        Randomly generate N samples on a surface and render them. The samples
-        include position and normal, the radius is set to a constant.
-        """
-        # Create semi-empty scene
-        # scene = self._create_scene()
-        scene = self.scene
-
-        # # generate camera positions on a sphere
-        # if not self.single_view:
-        #     self.cam_pos = uniform_sample_sphere(
-        #         radius=self.cam_dist, num_samples=self.opt.batchSize)
-
-        data = []
-        for idx in range(self.opt.batchSize):
-            # Sample points from the 3D mesh
-            v, vn = uniform_sample_mesh(obj, num_samples=self.opt.n_splats)
-
-            # Normalize the vertices
-            v = (v - np.mean(v, axis=0)) / (v.max() - v.min())
-
-            # Save the splats into the rendering scene
-            scene['objects']['disk']['pos'] = tch_var_f(v)
-            scene['objects']['disk']['normal'] = tch_var_f(vn)
-
-            # Set camera position
-            if self.single_view:
-                scene['camera']['eye'] = tch_var_f(self.cam_pos)
-            else:
-                scene['camera']['eye'] = tch_var_f(self.cam_pos[idx])
-
-            # Render scene
-            res = render(scene)
-            depth = res['depth']
-            # im = res['image']
-
-            # Normalize depth image
-            cond = depth >= self.scene['camera']['far']
-            depth = where(cond, torch.min(depth), depth)
-            im_depth = ((depth - torch.min(depth)) /
-                        (torch.max(depth) - torch.min(depth)))
-
-            # Add depth image to the output structure
-            data.append(im_depth.unsqueeze(0))
-
-        return torch.stack(data)
+    # def set_camera_pos(self, cam_dist=None, cam_pos=None):
+    #     """Set camera pose."""
+    #     # Check camera Parameters
+    #     if cam_dist is None and cam_pos is None:
+    #         raise ValueError('Use parameter cam_dist or cam_pos')
+    #     elif cam_dist is not None and cam_pos is not None:
+    #         raise ValueError('Use parameter cam_dist or cam_pos. No both.')
+    #     elif cam_dist is not None:
+    #         self.single_view = False
+    #         self.cam_pos = uniform_sample_sphere(
+    #             radius=cam_dist, num_samples=self.opt.batchSize)
+    #     else:
+    #         self.single_view = True
+    #         self.cam_pos = cam_pos
+    #
+    # def _generate_samples(self, obj, verbose=False):
+    #     """Generate random samples of an object from the same camera position.
+    #
+    #     Randomly generate N samples on a surface and render them. The samples
+    #     include position and normal, the radius is set to a constant.
+    #     """
+    #     # Create semi-empty scene
+    #     # scene = self._create_scene()
+    #     scene = self.scene
+    #
+    #     # # generate camera positions on a sphere
+    #     # if not self.single_view:
+    #     #     self.cam_pos = uniform_sample_sphere(
+    #     #         radius=self.cam_dist, num_samples=self.opt.batchSize)
+    #
+    #     data = []
+    #     for idx in range(self.opt.batchSize):
+    #         # Sample points from the 3D mesh
+    #         v, vn = uniform_sample_mesh(obj, num_samples=self.opt.n_splats)
+    #
+    #         # Normalize the vertices
+    #         v = (v - np.mean(v, axis=0)) / (v.max() - v.min())
+    #
+    #         # Save the splats into the rendering scene
+    #         scene['objects']['disk']['pos'] = tch_var_f(v)
+    #         scene['objects']['disk']['normal'] = tch_var_f(vn)
+    #
+    #         # Set camera position
+    #         if self.single_view:
+    #             scene['camera']['eye'] = tch_var_f(self.cam_pos)
+    #         else:
+    #             scene['camera']['eye'] = tch_var_f(self.cam_pos[idx])
+    #
+    #         # Render scene
+    #         res = render(scene)
+    #         depth = res['depth']
+    #         # im = res['image']
+    #
+    #         # Normalize depth image
+    #         cond = depth >= self.scene['camera']['far']
+    #         depth = where(cond, torch.min(depth), depth)
+    #         im_depth = ((depth - torch.min(depth)) /
+    #                     (torch.max(depth) - torch.min(depth)))
+    #
+    #         # Add depth image to the output structure
+    #         data.append(im_depth.unsqueeze(0))
+    #
+    #     return torch.stack(data)
 
 
 def main():
