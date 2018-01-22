@@ -78,6 +78,7 @@ class Parameters():
         self.parser.add_argument("--gp", help="Add gradient penalty", choices=['None', 'original'], default='original')
         self.parser.add_argument("--gp_lambda", help="GP lambda", type=float, default=10.)
         self.parser.add_argument("--critic_iters", type=int, default=4, help="Number of critic iterations")
+        self.parser.add_argument('--clamp', type=float, default=0.05, help='clamp the weights for WGAN')
 
         # Other parameters
         self.parser.add_argument('--no_cuda', action='store_true', default=False, help='enables cuda')

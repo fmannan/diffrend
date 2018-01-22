@@ -321,6 +321,11 @@ class GAN(object):
                     errD += gradient_penalty
 
                 self.optimizerD.step()
+                #Clamp critic weigths if not gp and if WGAN
+                if self.opt.criterion == 'WGAN' and self.opt.gp == 'None':
+                    for p in self.netD.parameters():
+                        p.data.clamp_(-self.opt.clamp, self.opt.clamp)
+
 
             ############################
             # (2) Update G network: maximize log(D(G(z)))
