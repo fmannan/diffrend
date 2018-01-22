@@ -60,12 +60,12 @@ class Parameters():
 
         # Network parameters
         self.parser.add_argument('--gen_type', type=str, default='cnn')
+        self.parser.add_argument('--gen_bias_type', type=str, default=None)
         self.parser.add_argument('--netG', default='', help="path to netG (to continue training)")
         self.parser.add_argument('--netD', default='', help="path to netD (to continue training)")
         self.parser.add_argument('--nz', type=int, default=100, help='size of the latent z vector')
         self.parser.add_argument('--ngf', type=int, default=64, help='number of features in the generator network')
         self.parser.add_argument('--ndf', type=int, default=64, help='number of features in the discriminator network')
-        self.parser.add_argument('--imageSize', type=int, default=64, help='the height / width of the input image to network')
 
         # Optimization parameters
         self.parser.add_argument('--lr', type=float, default=0.0002, help='learning rate, default=0.0002')
@@ -94,7 +94,10 @@ class Parameters():
         self.parser.add_argument('--focal_length', type=float, default=0.1, help='focal length')
 
         # Rendering parameters
-        self.parser.add_argument('--n_splats', type=int, default=1024, help='number of splats to generate')
+        self.parser.add_argument('--splats_img_size', type=int, default=32, help='the height / width of the number of generator splats')
+        self.parser.add_argument('--render_img_nc', type=int, default=1, help='Number of channels of the render image')
+        self.parser.add_argument('--render_img_size', type=int, default=64, help='Width/height of the rendering image')
+        # self.parser.add_argument('--n_splats', type=int, default=1024, help='number of splats to generate')
         self.parser.add_argument('--splats_radius', type=float, default=0.025, help='radius of the splats (fix)')
         self.parser.add_argument('--same_view', action='store_true', default=True, help='data with view fixed')
 
@@ -119,6 +122,9 @@ class Parameters():
         torch.manual_seed(self.opt.manualSeed)
         if not self.opt.no_cuda:
             torch.cuda.manual_seed_all(self.opt.manualSeed)
+
+        # Set number of splats param
+        self.opt.n_splats = self.opt.splats_img_size*self.opt.splats_img_size
 
         # Check CUDA is selected
         cudnn.benchmark = True

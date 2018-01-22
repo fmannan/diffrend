@@ -13,7 +13,10 @@ def create_networks(opt, verbose=True):
     nz = int(opt.nz)
     ngf = int(opt.ngf)
     ndf = int(opt.ndf)
-    nc = int(opt.n_splats)
+    render_img_nc = int(opt.render_img_nc)
+    splats_img_size = int(opt.splats_img_size)
+    render_img_size = int(opt.width)
+    splats_n_dims = 6
 
     # Create generator network
     if opt.gen_type == 'mlp':
@@ -21,7 +24,8 @@ def create_networks(opt, verbose=True):
     elif opt.gen_type == 'resnet':
         netG = _netG_resnet(nz, nc)
     elif opt.gen_type == 'cnn':
-        netG = _netG(ngpu, nz, ngf, nc)
+        netG = _netG(ngpu, nz, ngf, splats_n_dims, use_tanh=False,
+                     bias_type='plane')
     else:
         raise ValueError("Unknown generator")
 
@@ -107,10 +111,15 @@ class CondBatchNorm(nn.BatchNorm2d, TwoInputModule):
 # Generators
 #############################################
 class _netG(nn.Module):
-    def __init__(self, ngpu, nz, ngf, nc):
+    def __init__(self, ngpu, nz, ngf, nc, use_tanh=False, bias_type=None):
         super(_netG, self).__init__()
+        # Save parameters
         self.ngpu = ngpu
         self.nc = nc
+        self.use_tanh = use_tanh
+        self.bias_type = bias_type
+
+        # Main layers
         self.main = nn.Sequential(
             # input is Z, going into a convolution
             nn.ConvTranspose2d(nz, ngf * 8, 4, 1, 0, bias=False),
@@ -125,49 +134,39 @@ class _netG(nn.Module):
             nn.BatchNorm2d(ngf * 4),
             nn.LeakyReLU(0.2, True),
             # state size. (ngf*2) x 16 x 16
-            nn.ConvTranspose2d(ngf * 4, 6, 4, 2, 1, bias=False),
-            # nn.ConvTranspose2d(ngf * 4, ngf, 4, 2, 1, bias=False),
-            # nn.BatchNorm2d(ngf),
-            # nn.LeakyReLU(0.2, True),
+            nn.ConvTranspose2d(ngf * 4, nc, 4, 2, 1, bias=False),
             # state size. (ngf) x 32 x 32
-            # nn.ConvTranspose2d(ngf, 6, 4, 2, 1, bias=False),
-            # state size. (nc) x 64 x 64
         )
 
-        # ??
-        # self.main2 = nn.Sequential(
-        #     # input is Z, going into a convolution
-        #     nn.Linear(64 * 64 * 3, nc*6),
-        #     nn.BatchNorm1d(nc*6),
-        #     nn.LeakyReLU(0.2, True),
-        #     nn.Linear(nc*6, nc*6)
-        #     # state size. (nc) x 64 x 64
-        # )
-
         # Coordinates bias
-        coords_tmp = np.array(list(np.ndindex((64, 64)))).reshape(64, 64, 2)
-        coords = np.zeros((64, 64, 3), dtype=np.float32)
-        coords[:, :, :2] = coords_tmp
-        self.coords = torch.FloatTensor(coords)
-        if torch.cuda.is_available():
-            self.coords = self.coords.cuda()
+        if bias_type == 'plane':
+            coords_tmp = np.array(list(np.ndindex((32, 32)))).reshape(2, 32,
+                                                                      32)
+            coords = np.zeros((1, nc, 32, 32), dtype=np.float32)
+            coords[0, :2, :, :] = coords_tmp
+            self.coords = torch.FloatTensor(coords)
+            if torch.cuda.is_available():
+                self.coords = self.coords.cuda()
 
     def forward(self, input):
         if isinstance(input.data, torch.cuda.FloatTensor) and self.ngpu > 1:
-            output = nn.parallel.data_parallel(self.main, input,
-                                               range(self.ngpu))
+            out = nn.parallel.data_parallel(self.main, input, range(self.ngpu))
         else:
             # Generate the output
-            output = self.main(input)
-            out = output.view(output.size(0), 6, -1)
-            out = out.permute(0, 2, 1)
-            # return output
+            out = self.main(input)
+            if self.use_tanh:
+                out = nn.Tanh(out)
 
-            # Coordinates bias:
-            # TODO: Something like this... we have to fiddle around with this
-            # out = torch.sum(output, self.coords)
-            # out = self.main2(out.view(out.size(0), -1))
-            # out = out.view(out.size(0), self.nc, 6)
+            # Add bias to enforce locality
+            if self.bias_type is not None:
+                print(out.size())
+                print(self.coords.size())
+                out = torch.sum(out, self.coords)
+
+            # Reshape output
+            out = out.view(out.size(0), self.nc, -1)
+            out = out.permute(0, 2, 1)
+
         return out
 
 

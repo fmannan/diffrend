@@ -118,14 +118,15 @@ class GAN(object):
 
     def create_scene(self, ):
         """Create a semi-empty scene with camera parameters."""
-        self.scene = create_scene(self.opt.width, self.opt.height,
-                                  self.opt.fovy, self.opt.focal_length,
-                                  self.opt.n_splats, self.opt.splats_radius)
+        self.scene = create_scene(
+            self.opt.width, self.opt.height, self.opt.fovy,
+            self.opt.focal_length, self.opt.n_splats, self.opt.splats_radius)
 
     def create_tensors(self, ):
         """Create the tensors."""
         self.input = torch.FloatTensor(
-            self.opt.batchSize, 3, self.opt.imageSize, self.opt.imageSize)
+            self.opt.batchSize, self.opt.render_img_nc,
+            self.opt.render_img_size, self.opt.render_img_size)
         self.noise = torch.FloatTensor(
             self.opt.batchSize, int(self.opt.nz), 1, 1)
         self.fixed_noise = torch.FloatTensor(
