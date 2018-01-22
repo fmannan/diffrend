@@ -145,7 +145,7 @@ class _netG(nn.Module):
             coords_tmp = np.array(list(np.ndindex((32, 32)))).reshape(2, 32,
                                                                       32)
             coords = np.zeros((1, nc, 32, 32), dtype=np.float32)
-            coords[0, :2, :, :] = coords_tmp
+            coords[0, :2, :, :] = coords_tmp/32.
             self.coords = Variable(torch.FloatTensor(coords))
             if torch.cuda.is_available():
                 self.coords = self.coords.cuda()

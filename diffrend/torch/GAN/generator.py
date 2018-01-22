@@ -240,10 +240,12 @@ class GAN(object):
         """Generate a noise vector."""
         self.noise.resize_(
             self.batch_size, int(self.opt.nz), 1, 1).normal_(0, 1)
-        self.noisev = Variable(self.noise)
+        self.noisev = Variable(self.noise) #TODO: Add volatile=True???
 
-    def render_batch(self, batch, batch_size, scene, render_depth=True):
+    def render_batch(self, batch, render_depth=True):
         """Render a batch of splats."""
+        batch_size = batch.size()[0]
+
         # Generate camera positions on a sphere
         if not self.opt.same_view:
             cam_pos = uniform_sample_sphere(radius=self.opt.cam_dist,
@@ -258,23 +260,23 @@ class GAN(object):
             normals = batch[idx][:, 3:]
 
             # Set splats into rendering scene
-            scene['objects']['disk']['pos'] = pos
-            scene['objects']['disk']['normal'] = normals
+            self.scene['objects']['disk']['pos'] = pos
+            self.scene['objects']['disk']['normal'] = normals
 
             # Set camera position
             if not self.opt.same_view:
-                scene['camera']['eye'] = tch_var_f(cam_pos[idx])
+                self.scene['camera']['eye'] = tch_var_f(cam_pos[idx])
             else:
-                scene['camera']['eye'] = tch_var_f(self.cam_pos[0])
+                self.scene['camera']['eye'] = tch_var_f(self.cam_pos[0])
 
             # Render scene
-            res = render(scene)
+            res = render(self.scene)
 
             # Get rendered output
             if render_depth:
                 depth = res['depth']
                 # Normalize depth image
-                cond = depth >= scene['camera']['far']
+                cond = depth >= self.scene['camera']['far']
                 depth = where(cond, torch.min(depth), depth)
                 im = ((depth - torch.min(depth)) /
                       (torch.max(depth) - torch.min(depth)))
@@ -293,8 +295,20 @@ class GAN(object):
             ############################
             # (1) Update D network
             ###########################
-            for j in range(self.opt.critic_iters):
+            # # Reset required grad: they are set to False below in netG update
+            # for p in self.netD.parameters():
+            #     p.requires_grad = True
+
+            # # Modify number of critic iterations
+            # if iteration < 25 or iteration % 500 == 0:
+            #     critic_iters = 100
+            # else:
+            #     critic_iters = self.opt.critic_iters
+
+            # Train Discriminator critic_iters times
+            for j in range(self.critic_iters):
                 # Train with real
+                #################
                 self.netD.zero_grad()
                 self.get_real_samples()
                 real_output = self.netD(self.inputv)
@@ -304,25 +318,27 @@ class GAN(object):
                 elif self.opt.criterion == 'WGAN':
                     errD_real = real_output.mean()
                     errD_real.backward(self.mone)
-                D_x = real_output.data.mean()
+                else:
+                    raise ValueError('Unknown GAN criterium')
 
                 # Train with fake
+                #################
                 self.generate_noise_vector()
                 fake = self.netG(self.noisev)
-                fake_rendered = self.render_batch(fake, self.batch_size,
-                                                  self.scene)
-                labelv = Variable(self.label.fill_(self.fake_label))
+                fake_rendered = self.render_batch(fake)
                 # Do not bp through gen
-                fake_output = self.netD(fake_rendered.detach())
-                if self.opt.criterion == 'WGAN':
-                    errD_fake = fake_output.mean()
+                outD_fake = self.netD(fake_rendered.detach())
+                if self.opt.criterion == 'GAN':
+                    labelv = Variable(self.label.fill_(self.fake_label))
+                    errD_fake = self.criterion(outD_fake, labelv)
+                    errD_fake.backward()
+                    errD = errD_real + errD_fake
+                elif self.opt.criterion == 'WGAN':
+                    errD_fake = outD_fake.mean()
                     errD_fake.backward(self.one)
                     errD = errD_fake - errD_real
                 else:
-                    errD_fake = self.criterion(fake_output, labelv)
-                    errD_fake.backward()
-                    errD = errD_real + errD_fake
-                D_G_z1 = fake_output.data.mean()
+                    raise ValueError('Unknown GAN criterium')
 
                 # Compute gradient penalty
                 if self.opt.gp != 'None':
@@ -341,39 +357,43 @@ class GAN(object):
                         p.data.clamp_(-self.opt.clamp, self.opt.clamp)
 
             ############################
-            # (2) Update G network: maximize log(D(G(z)))
+            # (2) Update G network
             ###########################
+            # To avoid computation
+            # for p in self.netD.parameters():
+            #     p.requires_grad = False
             self.netG.zero_grad()
             self.generate_noise_vector()
             fake = self.netG(self.noisev)
-            fake_rendered = self.render_batch(fake, self.batch_size,
-                                              self.scene)
-            # Fake labels are real for generator cost
-            labelv = Variable(self.label.fill_(self.real_label))
-            fake_output = self.netD(fake_rendered)
-            if self.opt.criterion == 'WGAN':
-                errG = fake_output.mean()
+            fake_rendered = self.render_batch(fake)
+            outG_fake = self.netD(fake_rendered)
+            if self.opt.criterion == 'GAN':
+                # Fake labels are real for generator cost
+                labelv = Variable(self.label.fill_(self.real_label))
+                errG = self.criterion(outG_fake, labelv)
+                errG.backward()
+            elif self.opt.criterion == 'WGAN':
+                errG = outG_fake.mean()
                 errG.backward(self.mone)
             else:
-                errG = self.criterion(fake_output, labelv)
-                errG.backward()
-            D_G_z2 = fake_output.data.mean()
+                raise ValueError('Unknown GAN criterium')
             self.optimizerG.step()
 
             # Log print
             if iteration % 5 == 0:
-                print('\n[%d/%d] Loss_D: %.4f Loss_G: %.4f D(x): %.4f'
-                      ' D(G(z)): %.4f / %.4f' % (
+                Wassertein_D = (errD_real.data[0] - errD_fake.data[0])
+                print('\n[%d/%d] Loss_D: %.4f Loss_G: %.4f Loss_D_real: %.4f'
+                      ' Loss_D_fake: %.4f Wassertein D: %.4f' % (
                           iteration, self.opt.n_iter, errD.data[0],
-                          errG.data[0], D_x, D_G_z1, D_G_z2))
+                          errG.data[0], errD_real.data[0], errD_fake.data[0],
+                          Wassertein_D))
                 if self.exp is not None:
                     self.exp.metric("iteration", iteration)
                     self.exp.metric("loss D", errD.data[0])
                     self.exp.metric("loss G", errG.data[0])
-                    self.exp.metric("D(x)", D_x)
-                    self.exp.metric("D(G(z1))", D_G_z1)
-                    self.exp.metric("D(G(z2))", D_G_z2)
-                    self.exp.metric("D(x)-D(G(z1))", D_x - D_G_z1)
+                    self.exp.metric("Loss D real", errD_real.data[0])
+                    self.exp.metric("Loss D fake", errD_fake.data[0])
+                    self.exp.metric("Wassertein D", Wassertein_D)
 
             # Save images
             if iteration % 5 == 0:
