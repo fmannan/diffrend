@@ -8,7 +8,7 @@
 * [ ] Implement different generators/discriminators from DCGAN/WasserstainGAN/WasserstainGAN-GP (David)
 * [ ] Play with Discriminator parameters (David)
 * [x] Use hyperdash.io (david)
-* [ ] Try plane bias (David)
+* [x] Try plane bias (David)
 * [ ] Implement Sphere bias (David)
 * [ ] Implement Gaussian bias (Florian)
 * [ ] Init Generator to produce a sphere (Fahim)
