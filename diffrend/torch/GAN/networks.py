@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.parallel
 import torch.nn.functional as F
+from torch.autograd import Variable
 import numpy as np
 
 
@@ -13,19 +14,20 @@ def create_networks(opt, verbose=True):
     nz = int(opt.nz)
     ngf = int(opt.ngf)
     ndf = int(opt.ndf)
-    render_img_nc = int(opt.render_img_nc)
-    splats_img_size = int(opt.splats_img_size)
-    render_img_size = int(opt.width)
+    # render_img_nc = int(opt.render_img_nc)
+    # splats_img_size = int(opt.splats_img_size)
+    n_splats = int(opt.n_splats)
+    # render_img_size = int(opt.width)
     splats_n_dims = 6
 
     # Create generator network
     if opt.gen_type == 'mlp':
-        netG = _netG_mlp(ngpu, nz, ngf, nc)
+        netG = _netG_mlp(ngpu, nz, ngf, splats_n_dims, n_splats)
     elif opt.gen_type == 'resnet':
-        netG = _netG_resnet(nz, nc)
+        netG = _netG_resnet(nz, splats_n_dims, n_splats)
     elif opt.gen_type == 'cnn':
         netG = _netG(ngpu, nz, ngf, splats_n_dims, use_tanh=False,
-                     bias_type='plane')
+                     bias_type=opt.gen_bias_type)
     else:
         raise ValueError("Unknown generator")
 
@@ -144,7 +146,7 @@ class _netG(nn.Module):
                                                                       32)
             coords = np.zeros((1, nc, 32, 32), dtype=np.float32)
             coords[0, :2, :, :] = coords_tmp
-            self.coords = torch.FloatTensor(coords)
+            self.coords = Variable(torch.FloatTensor(coords))
             if torch.cuda.is_available():
                 self.coords = self.coords.cuda()
 
@@ -159,9 +161,8 @@ class _netG(nn.Module):
 
             # Add bias to enforce locality
             if self.bias_type is not None:
-                print(out.size())
-                print(self.coords.size())
-                out = torch.sum(out, self.coords)
+                coords = self.coords.expand(out.size()[0], self.nc, 32, 32)
+                out = out + coords
 
             # Reshape output
             out = out.view(out.size(0), self.nc, -1)
@@ -171,10 +172,11 @@ class _netG(nn.Module):
 
 
 class _netG_mlp(nn.Module):
-    def __init__(self, ngpu, nz, ngf, nc):
+    def __init__(self, ngpu, nz, ngf, nc, nsplats):
         super(_netG_mlp, self).__init__()
         self.ngpu = ngpu
         self.nc = nc
+        self.nspalts = nsplats
         self.main = nn.Sequential(
             # input is Z, going into a convolution
             nn.Linear(nz, ngf*4),
@@ -196,7 +198,7 @@ class _netG_mlp(nn.Module):
             nn.Linear(ngf*32, ngf*64),
             nn.LeakyReLU(0.2, True),
 
-            nn.Linear(ngf*64, nc*6)
+            nn.Linear(ngf*64, nc*nsplats)
             # nn.BatchNorm1d(ndf*4),
             # nn.LeakyReLU(0.2, True),
             # nn.Linear(ndf*4, 1)
@@ -208,64 +210,54 @@ class _netG_mlp(nn.Module):
             output = nn.parallel.data_parallel(self.main, input,
                                                range(self.ngpu))
         else:
+            input = input.view(input.size()[0], input.size()[1])
             output = self.main(input)
-            output = output.view(output.size(0), self.nc, 6)
+            output = output.view(output.size(0), self.nspalts, self.nc)
         return output
-
-
-# TODO: Change this
-DIM = 512
 
 
 class ResBlock(nn.Module):
     """Resnet block."""
 
-    def __init__(self):
+    def __init__(self, dim=512, res_weight=0.3):
         """Constructor."""
         super(ResBlock, self).__init__()
-
+        self.res_weight = res_weight
         self.res_block = nn.Sequential(
             nn.ReLU(True),
-            nn.Conv1d(DIM, DIM, 3, padding=1),
+            nn.Conv1d(dim, dim, 3, padding=1),
             nn.ReLU(True),
-            nn.Conv1d(DIM, DIM, 3, padding=1),
-            # TODO (dvb): Why two convolutions? Why no batchnorm?
+            nn.Conv1d(dim, dim, 3, padding=1),
         )
 
     def forward(self, input):
         """Forward method."""
         output = self.res_block(input)
-        return input + (0.3*output)
-        # TODO (dvd): Why 0.3???
+        return input + (self.res_weight*output)
 
 
 class _netG_resnet(nn.Module):
-    def __init__(self, nz, nc):
+    def __init__(self, nz, nc, nsplats, dim=512, res_weight=0.3):
         super(_netG_resnet, self).__init__()
-
-        self.fc1 = nn.Linear(nz, DIM*6)
+        self.dim = dim
+        self.nc = nc
+        self.fc1 = nn.Linear(nz, dim*nc)
         self.block = nn.Sequential(
-            ResBlock(),
-            ResBlock(),
-            ResBlock(),
-            ResBlock(),
-            ResBlock(),
+            ResBlock(dim, res_weight),
+            ResBlock(dim, res_weight),
+            ResBlock(dim, res_weight),
+            ResBlock(dim, res_weight),
+            ResBlock(dim, res_weight),
+            nn.Conv1d(dim, nsplats, 3, padding=1),
+            nn.BatchNorm1d(nsplats),
+            nn.Conv1d(nsplats, nsplats, 1),
         )
-        self.conv1 = nn.Conv1d(DIM, nc, 3, padding=1)
-        self.bn = nn.BatchNorm1d(nc)
-        self.conv2 = nn.Conv1d(nc, nc, 1)
-
-        # TODO (dvb): Why Softmax????
-        self.softmax = nn.Softmax()
 
     def forward(self, noise):
+        noise = noise.view(noise.size()[0], noise.size()[1])
         output = self.fc1(noise)
-        output = output.view(-1, DIM, 6)
+        output = output.view(-1, self.dim, self.nc)
         output = self.block(output)
-        output = self.conv1(output)
-
-        output = self.bn(output)
-        output = self.conv2(output)
         return output
 
 
@@ -278,25 +270,29 @@ class _netD(nn.Module):
         self.ngpu = ngpu
         self.no_sigmoid = no_sigmoid
 
-        # input is (nc) x 64 x 64
-        self.c1 = nn.Conv2d(nc, ndf, 4, 2, 1, bias=False)
-        # state size. (ndf) x 32 x 32
-        self.c2 = nn.Conv2d(ndf, ndf * 2, 4, 2, 1, bias=True)
-        # state size. (ndf*2) x 16 x 16
-        self.c3 = nn.Conv2d(ndf * 2, ndf * 2, 4, 2, 1, bias=False)
-        # state size. (ndf*4) x 8 x 8
-        self.c4 = nn.Conv2d(ndf * 2, ndf * 2, 4, 2, 1, bias=True)
-        # state size. (ndf*8) x 4 x 4
-        self.c6 = nn.Conv2d(ndf * 2, 1, 4, 1, 0, bias=False)
+        self.main = nn.Sequential(
+            # input is (nc) x 64 x 64
+            nn.Conv2d(nc, ndf, 4, 2, 1, bias=False),
+            nn.Dropout(p=0.3),
+            nn.LeakyReLU(),
+            # state size. (ndf) x 32 x 32
+            nn.Conv2d(ndf, ndf * 2, 4, 2, 1, bias=True),
+            nn.Dropout(p=0.3),
+            nn.LeakyReLU(),
+            # state size. (ndf*2) x 16 x 16
+            nn.Conv2d(ndf * 2, ndf * 2, 4, 2, 1, bias=False),
+            nn.Dropout(p=0.5),
+            nn.LeakyReLU(),
+            # state size. (ndf*4) x 8 x 8
+            nn.Conv2d(ndf * 2, ndf * 2, 4, 2, 1, bias=True),
+            nn.Dropout(p=0.5),
+            nn.LeakyReLU(),
+            # state size. (ndf*8) x 4 x 4
+            nn.Conv2d(ndf * 2, 1, 4, 1, 0, bias=False)
+        )
 
-    def forward(self,x):
-        # import ipdb; ipdb.set_trace()
-        x = F.leaky_relu(F.dropout(self.c1(x), p=0.3))
-        x = F.leaky_relu(F.dropout(self.c2(x), p=0.3))
-        x = F.leaky_relu(F.dropout(self.c3(x), p=0.5))
-        # x = F.leaky_relu(F.dropout(self.c4(x), p=0.3))
-        x = F.leaky_relu(F.dropout(self.c4(x), p=0.5))
-        x = self.c6(x)
+    def forward(self, x):
+        x = self.main(x)
         x = x.view(-1, 1).squeeze(1)
 
         if self.no_sigmoid == 1:

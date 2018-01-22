@@ -153,12 +153,22 @@ class GAN(object):
 
     def create_optimizers(self, ):
         """Create optimizers."""
-        self.optimizerD = optim.Adam(self.netD.parameters(), lr=self.opt.lr,
-                                     betas=(self.opt.beta1, 0.999))
-        self.optimizerG = optim.Adam(self.netG.parameters(), lr=self.opt.lr,
-                                     betas=(self.opt.beta1, 0.999))
+        if self.opt.optimizer == 'adam':
+            self.optimizerD = optim.Adam(self.netD.parameters(),
+                                         lr=self.opt.lr,
+                                         betas=(self.opt.beta1, 0.999))
+            self.optimizerG = optim.Adam(self.netG.parameters(),
+                                         lr=self.opt.lr,
+                                         betas=(self.opt.beta1, 0.999))
+        elif self.opt.optimizer == 'rmsprop':
+            self.optimizerD = optim.RMSprop(self.netD.parameters(),
+                                            lr=self.opt.lr)
+            self.optimizerG = optim.RMSprop(self.netG.parameters(),
+                                            lr=self.opt.lr)
+        else:
+            raise ValueError('Unknown optimizer: ' + self.opt.optimizer)
 
-    def get_real_samples(self):
+    def get_real_samples(self, render_depth=True):
         """Get a real sample."""
         # Load a batch of samples
         try:
@@ -201,18 +211,18 @@ class GAN(object):
             res = render(large_scene)
 
             # Get rendered output
-            if True:
+            if render_depth:
                 depth = res['depth']
                 # Normalize depth image
                 cond = depth >= large_scene['camera']['far']
                 depth = where(cond, torch.min(depth), depth)
-                im_depth = ((depth - torch.min(depth)) /
-                            (torch.max(depth) - torch.min(depth)))
+                im = ((depth - torch.min(depth)) /
+                      (torch.max(depth) - torch.min(depth)))
             else:
                 im = res['image']
 
             # Add depth image to the output structure
-            data.append(im_depth.unsqueeze(0))
+            data.append(im.unsqueeze(0))
 
         # Stack real samples
         real_samples = torch.stack(data)
@@ -232,7 +242,7 @@ class GAN(object):
             self.batch_size, int(self.opt.nz), 1, 1).normal_(0, 1)
         self.noisev = Variable(self.noise)
 
-    def render_batch(self, batch, batch_size, scene):
+    def render_batch(self, batch, batch_size, scene, render_depth=True):
         """Render a batch of splats."""
         # Generate camera positions on a sphere
         if not self.opt.same_view:
@@ -243,7 +253,8 @@ class GAN(object):
         for idx in range(batch_size):
             # Get splats positions and normals
             pos = batch[idx][:, :3]
-            pos = (pos - torch.mean(pos, 0)) / (torch.max(pos) - torch.min(pos))
+            pos = ((pos - torch.mean(pos, 0)) /
+                   (torch.max(pos) - torch.min(pos)))
             normals = batch[idx][:, 3:]
 
             # Set splats into rendering scene
@@ -259,18 +270,19 @@ class GAN(object):
             # Render scene
             res = render(scene)
 
-            # Take rendered and depth images
-            # im = res['image']
-            depth = res['depth']
-
-            # Normalize the depth
-            cond = depth >= scene['camera']['far']
-            depth = where(cond, torch.min(depth), depth)
-            im_depth = ((depth - torch.min(depth)) /
-                        (torch.max(depth) - torch.min(depth)))
+            # Get rendered output
+            if render_depth:
+                depth = res['depth']
+                # Normalize depth image
+                cond = depth >= scene['camera']['far']
+                depth = where(cond, torch.min(depth), depth)
+                im = ((depth - torch.min(depth)) /
+                      (torch.max(depth) - torch.min(depth)))
+            else:
+                im = res['image']
 
             # Store normalized depth into the data
-            redered_data.append(im_depth.unsqueeze(0))
+            redered_data.append(im.unsqueeze(0))
         redered_data = torch.stack(redered_data)
         return redered_data
 
@@ -297,7 +309,6 @@ class GAN(object):
                 # Train with fake
                 self.generate_noise_vector()
                 fake = self.netG(self.noisev)
-                # print (fake.size())
                 fake_rendered = self.render_batch(fake, self.batch_size,
                                                   self.scene)
                 labelv = Variable(self.label.fill_(self.fake_label))
@@ -321,12 +332,13 @@ class GAN(object):
                     gradient_penalty.backward()
                     errD += gradient_penalty
 
+                # Update weight
                 self.optimizerD.step()
-                #Clamp critic weigths if not gp and if WGAN
+
+                # Clamp critic weigths if not GP and if WGAN
                 if self.opt.criterion == 'WGAN' and self.opt.gp == 'None':
                     for p in self.netD.parameters():
                         p.data.clamp_(-self.opt.clamp, self.opt.clamp)
-
 
             ############################
             # (2) Update G network: maximize log(D(G(z)))

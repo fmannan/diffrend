@@ -68,6 +68,7 @@ class Parameters():
         self.parser.add_argument('--ndf', type=int, default=64, help='number of features in the discriminator network')
 
         # Optimization parameters
+        self.parser.add_argument('--optimizer', type=str, default='adam', help='Optimizer (adam, rmsprop)')
         self.parser.add_argument('--lr', type=float, default=0.0002, help='learning rate, default=0.0002')
         self.parser.add_argument('--beta1', type=float, default=0.5, help='beta1 for adam. default=0.5')
         self.parser.add_argument('--n_iter', type=int, default=4000, help='number of iterations to train')
@@ -77,8 +78,8 @@ class Parameters():
         self.parser.add_argument("--criterion", help="GAN Training criterion", choices=['GAN', 'WGAN'], default='WGAN')
         self.parser.add_argument("--gp", help="Add gradient penalty", choices=['None', 'original'], default='original')
         self.parser.add_argument("--gp_lambda", help="GP lambda", type=float, default=10.)
-        self.parser.add_argument("--critic_iters", type=int, default=4, help="Number of critic iterations")
-        self.parser.add_argument('--clamp', type=float, default=0.05, help='clamp the weights for WGAN')
+        self.parser.add_argument("--critic_iters", type=int, default=5, help="Number of critic iterations")
+        self.parser.add_argument('--clamp', type=float, default=0.01, help='clamp the weights for WGAN')
 
         # Other parameters
         self.parser.add_argument('--no_cuda', action='store_true', default=False, help='enables cuda')
@@ -98,7 +99,6 @@ class Parameters():
         self.parser.add_argument('--splats_img_size', type=int, default=32, help='the height / width of the number of generator splats')
         self.parser.add_argument('--render_img_nc', type=int, default=1, help='Number of channels of the render image')
         self.parser.add_argument('--render_img_size', type=int, default=64, help='Width/height of the rendering image')
-        # self.parser.add_argument('--n_splats', type=int, default=1024, help='number of splats to generate')
         self.parser.add_argument('--splats_radius', type=float, default=0.025, help='radius of the splats (fix)')
         self.parser.add_argument('--same_view', action='store_true', default=True, help='data with view fixed')
 
