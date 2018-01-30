@@ -4,7 +4,6 @@ import torch.nn.parallel
 import torch.utils.data
 import torchvision.datasets as dset
 import torchvision.transforms as transforms
-from diffrend.torch.GAN.shapenet import ShapeNetDataset
 
 
 class Dataset_load():
@@ -13,10 +12,9 @@ class Dataset_load():
     def __init__(self, opt):
         """Constructor."""
         self.opt = opt
-        self.dataset = None
-        self.dataset_loader = None
+        self.initialized = False
 
-    def initialize_dataset(self):
+    def initialize(self):
         """Initialize."""
         if self.opt.dataset in ['imagenet', 'folder', 'lfw']:
             # folder dataset
@@ -49,27 +47,15 @@ class Dataset_load():
             self.dataset = dset.FakeData(
                 image_size=(3, self.opt.imageSize, self.opt.imageSize),
                 transform=transforms.ToTensor())
-        elif self.opt.dataset == 'shapenet':
-            self.dataset = ShapeNetDataset(self.opt, transform=None)
         assert self.dataset
 
-    def initialize_dataset_loader(self, batchSize=None):
-        """Create the datset loader."""
-        if batchSize is None:
-            batchSize = self.opt.batchSize
-
-        self.dataset_loader = torch.utils.data.DataLoader(
-            self.dataset, batch_size=batchSize, shuffle=True,
+        # Load dataset
+        self.dataloader = torch.utils.data.DataLoader(
+            self.dataset, batch_size=self.opt.batchSize, shuffle=True,
             num_workers=int(self.opt.workers))
 
-    def get_dataset(self):
+    def get_dataloader(self):
         """Get the dataset."""
-        if self.dataset is None:
-            raise ValueError("Error: Init the dataset first")
-        return self.dataset
-
-    def get_dataset_loader(self):
-        """Get the dataset loader."""
-        if self.dataset_loader is None:
-            raise ValueError("Error: Init the loader first")
-        return self.dataset_loader
+        if not self.initialized:
+            self.initialize()
+        return self.dataloader
