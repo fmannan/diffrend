@@ -91,6 +91,82 @@ def render_random_splat_camera(filename, out_dir, num_samples, radius, cam_dist,
     print('Rendering time mean: {}s, std: {}s'.format(np.mean(rendering_time), np.std(rendering_time)))
 
 
+def render_sphere(out_dir, cam_pos, radius, width, height, fovy, focal_length):
+    """
+    Randomly generate N samples on a surface and render them. The samples include position and normal, the radius is set
+    to a constant.
+    """
+    sampling_time = []
+    rendering_time = []
+
+    num_samples = width * height
+    r = np.ones(num_samples) * radius
+
+    large_scene = copy.deepcopy(SCENE_BASIC)
+
+    large_scene['camera']['viewport'] = [0, 0, width, height]
+    large_scene['camera']['fovy'] = np.deg2rad(fovy)
+    large_scene['camera']['focal_length'] = focal_length
+    large_scene['objects']['disk']['radius'] = tch_var_f(r)
+    large_scene['objects']['disk']['material_idx'] = tch_var_l(np.zeros(num_samples, dtype=int).tolist())
+    large_scene['materials']['albedo'] = tch_var_f([[0.6, 0.6, 0.6]])
+    large_scene['tonemap']['gamma'] = tch_var_f([1.0])  # Linear output
+
+    x, y = np.meshgrid(np.linspace(-1, 1, width), np.linspace(-1, 1, height))
+    #z = np.sqrt(1 - np.min(np.stack((x ** 2 + y ** 2, np.ones_like(x)), axis=-1), axis=-1))
+    unit_disk_mask = (x ** 2 + y ** 2) <= 1
+    z = np.sqrt(1 - unit_disk_mask * (x ** 2 + y ** 2))
+
+    # Make a hemi-sphere bulging out of the xy-plane scene
+    z[~unit_disk_mask] = 0
+    pos = np.stack((x.ravel(), y.ravel(), z.ravel()), axis=1)
+
+    # Normals outside the sphere should be [0, 0, 1]
+    x[~unit_disk_mask] = 0
+    y[~unit_disk_mask] = 0
+    z[~unit_disk_mask] = 1
+
+    normals = np.stack((x.ravel(), y.ravel(), z.ravel()), axis=1)
+    norm = np.sqrt(np.sum(normals ** 2, axis=1))
+    normals = normals / norm[..., np.newaxis]
+
+    plt.ion()
+    plt.figure()
+    plt.imshow(pos[..., 2].reshape((height, width)))
+
+    plt.figure()
+    plt.imshow(normals[..., 2].reshape((height, width)))
+
+    large_scene['objects']['disk']['pos'] = tch_var_f(pos)
+    large_scene['objects']['disk']['normal'] = tch_var_f(normals)
+
+    large_scene['camera']['eye'] = tch_var_f(cam_pos)
+
+    # main render run
+    start_time = time()
+    res = render(large_scene)
+    rendering_time.append(time() - start_time)
+
+    im = get_data(res['image'])
+    depth = get_data(res['depth'])
+
+    depth[depth >= large_scene['camera']['far']] = depth.min()
+    im_depth = np.uint8(255. * (depth - depth.min()) / (depth.max() - depth.min()))
+
+    plt.figure()
+    plt.imshow(im)
+    plt.title('Image')
+    plt.savefig(out_dir + '/img.png')
+
+    plt.figure()
+    plt.imshow(im_depth)
+    plt.title('Depth Image')
+    plt.savefig(out_dir + '/depth.png')
+
+    # generate noisy data
+    #...
+
+
 def preset_cam_pos_0():
     return np.array([[3.4065832, -1.26789198, 4.77364021],
                      [1.73761297, -4.62854391, -3.39960033],
@@ -134,17 +210,25 @@ if __name__ == '__main__':
     parser.add_argument('--test_cam_dist', action='store_true', help='Check if the images are consistent with a'
                                                                      'camera at a fixed distance.')
     parser.add_argument('--display', action='store_true', help='Optionally display using matplotlib.')
+    parser.add_argument('--render-sphere', action='store_true', help='Only render a sphere.')
 
     args = parser.parse_args()
     print(args)
 
-    cam_pos = None
-    if args.test_cam_dist:
-        cam_pos = preset_cam_pos_0()
+    if not os.path.exists(args.out_dir):
+        os.makedirs(args.out_dir)
 
-    render_random_splat_camera(filename=args.model, out_dir=args.out_dir, radius=args.r, num_samples=args.n,
-                               cam_dist=args.cam_dist, num_views=args.nv,
-                               width=args.width, height=args.height,
-                               fovy=args.fovy, focal_length=args.f,
-                               norm_depth_image_only=args.norm_depth_image_only,
-                               cam_pos=cam_pos, b_display=args.display)
+    if args.render_sphere:
+        render_sphere(out_dir=args.out_dir, cam_pos=[0, 0, 10], radius=0.03, width=64, height=64,
+                      fovy=11.5, focal_length=args.f)
+    else:
+        cam_pos = None
+        if args.test_cam_dist:
+            cam_pos = preset_cam_pos_0()
+
+        render_random_splat_camera(filename=args.model, out_dir=args.out_dir, radius=args.r, num_samples=args.n,
+                                   cam_dist=args.cam_dist, num_views=args.nv,
+                                   width=args.width, height=args.height,
+                                   fovy=args.fovy, focal_length=args.f,
+                                   norm_depth_image_only=args.norm_depth_image_only,
+                                   cam_pos=cam_pos, b_display=args.display)
