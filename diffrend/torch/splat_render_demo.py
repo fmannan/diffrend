@@ -96,6 +96,7 @@ def render_sphere(out_dir, cam_pos, radius, width, height, fovy, focal_length):
     Randomly generate N samples on a surface and render them. The samples include position and normal, the radius is set
     to a constant.
     """
+    print('render sphere')
     sampling_time = []
     rendering_time = []
 
@@ -165,6 +166,10 @@ def render_sphere(out_dir, cam_pos, radius, width, height, fovy, focal_length):
 
     # generate noisy data
     #...
+
+    # hold matplotlib figure
+    plt.ioff()
+    plt.show()
 
 
 def preset_cam_pos_0():
