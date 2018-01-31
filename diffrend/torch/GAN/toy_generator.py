@@ -16,7 +16,7 @@ from datasets import Dataset_load
 from toy_networks import create_networks
 from utils import where
 from diffrend.torch.params import SCENE_BASIC
-from diffrend.torch.utils import tch_var_f, tch_var_l, CUDA
+from diffrend.torch.utils import tch_var_f, tch_var_l, CUDA, get_data
 from diffrend.torch.renderer import render
 from diffrend.utils.sample_generator import uniform_sample_mesh, uniform_sample_sphere
 from diffrend.model import load_model
@@ -108,64 +108,86 @@ def different_views(filename, num_samples, radius, cam_dist,  width, height,
     Randomly generate N samples on a surface and render them. The samples
     include position and normal, the radius is set to a constant.
     """
-    obj = load_model(filename, verbose=verbose)
+
+
+
+    fovy=11.5
+    num_samples = width * height
     r = np.ones(num_samples) * radius
+
     large_scene = copy.deepcopy(SCENE_BASIC)
-    fovy=11
+
     large_scene['camera']['viewport'] = [0, 0, width, height]
     large_scene['camera']['fovy'] = np.deg2rad(fovy)
     large_scene['camera']['focal_length'] = focal_length
     large_scene['objects']['disk']['radius'] = tch_var_f(r)
-    large_scene['objects']['disk']['material_idx'] = tch_var_l(
-        np.zeros(num_samples, dtype=int).tolist())
+    large_scene['objects']['disk']['material_idx'] = tch_var_l(np.zeros(num_samples, dtype=int).tolist())
     large_scene['materials']['albedo'] = tch_var_f([[0.6, 0.6, 0.6]])
     large_scene['tonemap']['gamma'] = tch_var_f([1.0])  # Linear output
 
     # generate camera positions on a sphere
-    cam_pos =   np.array([0, 0, 10])
+    cam_pos =   [0, 0, 10]
+
     data = []
     for idx in range(batch_size):
         x, y = np.meshgrid(np.linspace(-1, 1, width), np.linspace(-1, 1, height))
+        #z = np.sqrt(1 - np.min(np.stack((x ** 2 + y ** 2, np.ones_like(x)), axis=-1), axis=-1))
         unit_disk_mask = (x ** 2 + y ** 2) <= 1
         z = np.sqrt(1 - unit_disk_mask * (x ** 2 + y ** 2))
+
+        # Make a hemi-sphere bulging out of the xy-plane scene
         z[~unit_disk_mask] = 0
         pos = np.stack((x.ravel(), y.ravel(), z.ravel()), axis=1)
+
+        # Normals outside the sphere should be [0, 0, 1]
         x[~unit_disk_mask] = 0
         y[~unit_disk_mask] = 0
         z[~unit_disk_mask] = 1
+
         normals = np.stack((x.ravel(), y.ravel(), z.ravel()), axis=1)
         norm = np.sqrt(np.sum(normals ** 2, axis=1))
         normals = normals / norm[..., np.newaxis]
-        #v, vn = uniform_sample_mesh(obj, num_samples= width * height)
 
-        # normalize the vertices
-        #v = (v - np.mean(v, axis=0)) / (v.max() - v.min())
+        # plt.ion()
+        # plt.figure()
+        # plt.imshow(pos[..., 2].reshape((height, width)))
+        #
+        # plt.figure()
+        # plt.imshow(normals[..., 2].reshape((height, width)))
 
         large_scene['objects']['disk']['pos'] = tch_var_f(pos)
         large_scene['objects']['disk']['normal'] = tch_var_f(normals)
 
         large_scene['camera']['eye'] = tch_var_f(cam_pos)
-        # suffix = '_{}'.format(idx)
 
-        # Render scene
+        # main render run
+        #start_time = time()
         res = render(large_scene)
+        #rendering_time.append(time() - start_time)
 
-        # Get rendered image
-        # im = res['image']
-
-        # Get depth image
+        im = get_data(res['image'])
+        # depth = get_data(res['depth'])
+        #
+        # depth[depth >= large_scene['camera']['far']] = depth.min()
+        # im_depth = np.uint8(255. * (depth - depth.min()) / (depth.max() - depth.min()))
         depth = res['depth']
 
-        # Normalize depth image.
-        # TODO: Used several times. Better move to a function
+        # import ipdb; ipdb.set_trace()
+
+        # Normalize depth image
         cond = depth >= large_scene['camera']['far']
         depth = where(cond, torch.min(depth), depth)
         # depth[depth >= large_scene['camera']['far']] = torch.min(depth)
         im_depth = ((depth - torch.min(depth)) /
                     (torch.max(depth) - torch.min(depth)))
 
+        # Add depth image to the output structure
         data.append(im_depth.unsqueeze(0))
+
+
     return torch.stack(data)
+
+
 
 
 ############################
@@ -240,16 +262,16 @@ optimizerD = optim.Adam(netD.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
 optimizerG = optim.Adam(netG.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
 
 # Create splats rendering scene
-if opt.same_view:
-    cam_pos = np.array([0, 0, 10])
-r = np.ones(opt.n) * opt.r
+fovy=11.5
+num_samples = opt.width * opt.height
+r = np.ones(num_samples) * opt.r
 large_scene = copy.deepcopy(SCENE_BASIC)
+
 large_scene['camera']['viewport'] = [0, 0, opt.width, opt.height]
-large_scene['camera']['fovy'] = np.deg2rad(11)
+large_scene['camera']['fovy'] = np.deg2rad(fovy)
 large_scene['camera']['focal_length'] = opt.f
 large_scene['objects']['disk']['radius'] = tch_var_f(r)
-large_scene['objects']['disk']['material_idx'] = tch_var_l(
-    np.zeros(opt.n, dtype=int).tolist())
+large_scene['objects']['disk']['material_idx'] = tch_var_l(np.zeros(num_samples, dtype=int).tolist())
 large_scene['materials']['albedo'] = tch_var_f([[0.6, 0.6, 0.6]])
 large_scene['tonemap']['gamma'] = tch_var_f([1.0])  # Linear output
 # large_scene['camera']['eye'] = tch_var_f(cam_pos[0])
@@ -321,10 +343,8 @@ for epoch in range(opt.niter):
             large_scene['objects']['disk']['pos'] = temp
             large_scene['objects']['disk']['normal'] = fake[idx][:, 1:]
             #large_scene['camera']['eye'] = tch_var_f(cam_pos[idx])
-            if not opt.same_view:
-                large_scene['camera']['eye'] = tch_var_f(cam_pos)
-            else:
-                large_scene['camera']['eye'] = tch_var_f(cam_pos)
+
+            large_scene['camera']['eye'] = tch_var_f(cam_pos)
 
 
             suffix = '_{}'.format(idx)
