@@ -32,71 +32,7 @@ from data import DIR_DATA
 CRITIC_ITERS=4
 
 
-def same_view(filename,  num_samples, radius, width, height, fovy,
-              focal_length, cam_pos, batch_size, verbose=False):
-    """Generate random samples of an object from the same camera position.
 
-    Randomly generate N samples on a surface and render them. The samples
-    include position and normal, the radius is set to a constant.
-    """
-    # Load model
-    obj = load_model(filename, verbose=verbose)
-
-    # Set the splats radius
-    r = np.ones(num_samples) * radius
-
-    # Create a splats rendering scene
-    large_scene = copy.deepcopy(SCENE_BASIC)
-
-    # Define the camera parameters
-    large_scene['camera']['viewport'] = [0, 0, width, height]
-    large_scene['camera']['fovy'] = np.deg2rad(fovy)
-    large_scene['camera']['focal_length'] = focal_length
-    large_scene['objects']['disk']['radius'] = tch_var_f(r)
-    large_scene['objects']['disk']['material_idx'] = tch_var_l(
-        np.zeros(num_samples, dtype=int).tolist())
-    large_scene['materials']['albedo'] = tch_var_f([[0.6, 0.6, 0.6]])
-    large_scene['tonemap']['gamma'] = tch_var_f([1.0])  # Linear output
-
-    # Generate camera positions on a sphere
-    data = []
-    for idx in range(batch_size):
-        # Sample points from the 3D mesh
-        v, vn = uniform_sample_mesh(obj, num_samples=num_samples)
-
-        # Normalize the vertices
-        v = (v - np.mean(v, axis=0)) / (v.max() - v.min())
-
-        # Save the splats into the rendering scene
-        large_scene['objects']['disk']['pos'] = tch_var_f(v)
-        large_scene['objects']['disk']['normal'] = tch_var_f(vn)
-
-        # TODO: This should be outside?
-        large_scene['camera']['eye'] = tch_var_f(cam_pos)
-        # suffix = '_{}'.format(idx)
-
-        # Render scene
-        res = render(large_scene)
-
-        # Get render image from render.
-        # im = res['image']
-
-        # Get depth image from render.
-        depth = res['depth']
-
-        # import ipdb; ipdb.set_trace()
-
-        # Normalize depth image
-        cond = depth >= large_scene['camera']['far']
-        depth = where(cond, torch.min(depth), depth)
-        # depth[depth >= large_scene['camera']['far']] = torch.min(depth)
-        im_depth = ((depth - torch.min(depth)) /
-                    (torch.max(depth) - torch.min(depth)))
-
-        # Add depth image to the output structure
-        data.append(im_depth.unsqueeze(0))
-
-    return torch.stack(data)
 
 
 # TODO: This function is the same as the previous one except for one line. Can
@@ -148,28 +84,15 @@ def different_views(filename, num_samples, radius, cam_dist,  width, height,
         norm = np.sqrt(np.sum(normals ** 2, axis=1))
         normals = normals / norm[..., np.newaxis]
 
-        # plt.ion()
-        # plt.figure()
-        # plt.imshow(pos[..., 2].reshape((height, width)))
-        #
-        # plt.figure()
-        # plt.imshow(normals[..., 2].reshape((height, width)))
 
         large_scene['objects']['disk']['pos'] = tch_var_f(pos)
         large_scene['objects']['disk']['normal'] = tch_var_f(normals)
 
         large_scene['camera']['eye'] = tch_var_f(cam_pos)
 
-        # main render run
-        #start_time = time()
         res = render(large_scene)
-        #rendering_time.append(time() - start_time)
 
-        im = get_data(res['image'])
-        # depth = get_data(res['depth'])
-        #
-        # depth[depth >= large_scene['camera']['far']] = depth.min()
-        # im_depth = np.uint8(255. * (depth - depth.min()) / (depth.max() - depth.min()))
+        im =res['image']
         depth = res['depth']
 
         # import ipdb; ipdb.set_trace()
@@ -391,51 +314,7 @@ for epoch in range(opt.niter):
     ###########################
 
     netG.zero_grad()
-    # noise.resize_(batch_size, int(opt.nz)).normal_(0, 1)
-    # noisev = Variable(noise)
-    # fake = netG(noisev)
-    # data=[]
-    # #cam_pos = uniform_sample_sphere(radius=args.cam_dist, num_samples=batch_size)
-    # if not args.same_view:
-    #     cam_pos = uniform_sample_sphere(radius=args.cam_dist,
-    #                                     num_samples=batch_size)
-    # #import ipdb; ipdb.set_trace()
-    # for idx in range(batch_size):
-    #
-    #     #import ipdb; ipdb.set_trace()
-    #     # normalize the vertices
-    #     temp = (fake[idx][:, :3] - torch.mean(fake[idx][:, :3], 0))/(torch.max(fake[idx][:, :3]) - torch.min(fake[idx][:, :3]))
-    #
-    #     large_scene['objects']['disk']['pos'] = temp
-    #     large_scene['objects']['disk']['normal'] = fake[idx][:, 3:]
-    #     #large_scene['camera']['eye'] = tch_var_f(cam_pos[idx])
-    #     if not args.same_view:
-    #         large_scene['camera']['eye'] = tch_var_f(cam_pos[idx])
-    #     else:
-    #         large_scene['camera']['eye'] = tch_var_f(cam_pos[0])
-    #
-    #
-    #     suffix = '_{}'.format(idx)
-    #
-    #     # main render run
-    #     res = render(large_scene)
-    #     if CUDA:
-    #         im = res['image']
-    #     else:
-    #         im = res['image']
-    #
-    #     if CUDA:
-    #         depth = res['depth']
-    #     else:
-    #         depth = res['depth']
-    #
-    #     cond = depth >= large_scene['camera']['far']
-    #     depth = where(cond, torch.min(depth), depth)
-    #     im_depth =(depth - torch.min(depth)) / (torch.max(depth) - torch.min(depth))
-    #     data.append(im_depth.unsqueeze(0))
-    #
-    #
-    # data=torch.stack(data)
+
     #Fake labels are real for generator cost
     labelv = Variable(label.fill_(real_label))
     fake_output = netD(data)
