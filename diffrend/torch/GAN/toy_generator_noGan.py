@@ -218,7 +218,8 @@ for epoch in range(opt.niter):
     fake_normals=torch.stack(fake_normals)
 
     data=torch.stack(data)
-    gen_loss=((torch.abs(fake_pos.view(batch_size,-1)-real_pos.view(batch_size,-1))).sum(1)+ (1-fake_normals.view(batch_size,-1) * real_normals.view(batch_size,-1)).sum(1)).mean()
+    #import ipdb; ipdb.set_trace()
+    gen_loss=((torch.abs(fake_pos.view(batch_size,-1)-real_pos.view(batch_size,-1))).sum(1)+ ((1-fake_normals * real_normals).sum(2).squeeze()).sum(1)).mean()
 
     netG.zero_grad()
 
