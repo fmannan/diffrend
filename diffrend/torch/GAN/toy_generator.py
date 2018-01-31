@@ -73,16 +73,19 @@ def different_views(filename, num_samples, radius, cam_dist,  width, height,
 
         # Make a hemi-sphere bulging out of the xy-plane scene
         z[~unit_disk_mask] = 0
+        z_old=z
+        z=z+np.random.normal(0,0.01,z.shape)
         pos = np.stack((x.ravel(), y.ravel(), z.ravel()), axis=1)
 
         # Normals outside the sphere should be [0, 0, 1]
         x[~unit_disk_mask] = 0
         y[~unit_disk_mask] = 0
-        z[~unit_disk_mask] = 1
+        z_old[~unit_disk_mask] = 1
 
-        normals = np.stack((x.ravel(), y.ravel(), z.ravel()), axis=1)
+        normals = np.stack((x.ravel(), y.ravel(), z_old.ravel()), axis=1)
         norm = np.sqrt(np.sum(normals ** 2, axis=1))
         normals = normals / norm[..., np.newaxis]
+        normals=normals+np.random.normal(0,0.01,normals.shape)
 
 
         large_scene['objects']['disk']['pos'] = tch_var_f(pos)
@@ -228,7 +231,7 @@ for epoch in range(opt.niter):
 
         real_output = netD(inputv)
         if opt.criterion == 'GAN':
-            print('BCE targets: %.4f Loss_G: %.4f' % (real_output.data[0], labelv.data[0]))
+            #print('BCE targets: %.4f Loss_G: %.4f' % (real_output.data[0], labelv.data[0]))
             errD_real = criterion(real_output, labelv)
             errD_real.backward()
         if opt.criterion == 'WGAN':
