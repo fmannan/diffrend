@@ -384,5 +384,5 @@ class _netD(nn.Module):
         if self.no_sigmoid==1:
             return x
         else:
-            print("using sigmoid")
+            #print("using sigmoid")
             return F.sigmoid(x)
