@@ -101,16 +101,12 @@ def different_views(filename, num_samples, radius, cam_dist,  width, height,
         # import ipdb; ipdb.set_trace()
 
         # Normalize depth image
-        cond = depth >= large_scene['camera']['far']
-        depth = where(cond, torch.min(depth), depth)
-        # depth[depth >= large_scene['camera']['far']] = torch.min(depth)
-        im_depth = ((depth - torch.min(depth)) /
-                    (torch.max(depth) - torch.min(depth)))
+
 
         # Add depth image to the output structure
-        data.append(im_depth.unsqueeze(0))
+        data.append(im.unsqueeze(0))
 
-
+        #import ipdb; ipdb.set_trace()
     return torch.stack(data)
 
 
@@ -220,8 +216,9 @@ for epoch in range(opt.niter):
             real_cpu = different_views(opt.model, opt.n, opt.r, opt.cam_dist,
                                        opt.width, opt.height, opt.fovy, opt.f,
                                        opt.batchSize)
-
         batch_size = real_cpu.size(0)
+        real_cpu=real_cpu.squeeze()
+
         if not opt.no_cuda:
             real_cpu = real_cpu.cuda()
         input.resize_as_(real_cpu.data).copy_(real_cpu.data)
@@ -229,7 +226,7 @@ for epoch in range(opt.niter):
         inputv = Variable(input)
         labelv = Variable(label)
 
-        real_output = netD(inputv)
+        real_output = netD(inputv.permute(0, 3, 1, 2))
         if opt.criterion == 'GAN':
             #print('BCE targets: %.4f Loss_G: %.4f' % (real_output.data[0], labelv.data[0]))
             errD_real = criterion(real_output, labelv)
@@ -244,6 +241,9 @@ for epoch in range(opt.niter):
         noise.resize_(batch_size, int(opt.nz)).normal_(0, 1)
         noisev = Variable(noise)
         fake = netG(noisev)
+        # fake_normals_norm = torch.sqrt(torch.sum(fake[:, :, 1:] *fake[:, :, 1:] , dim=-1))
+        # #print(fake_normals_norm.size(), fake_normals.size())
+        # fake_normals = fake[:, :, 1:] / fake_normals_norm[:, :,  np.newaxis]
         #######################
         #processig generator output to get image
         ########################
@@ -280,15 +280,14 @@ for epoch in range(opt.niter):
             im = res['image']
             depth = res['depth']
 
-            cond = depth >= large_scene['camera']['far']
-            depth = where(cond, torch.min(depth), depth)
-            im_depth =(depth - torch.min(depth)) / (torch.max(depth) - torch.min(depth))
-            data.append(im_depth.unsqueeze(0))
+
+            data.append(im.unsqueeze(0))
 
 
         data=torch.stack(data)
+        data=data.squeeze()
         labelv = Variable(label.fill_(fake_label))
-        fake_output = netD(data.detach())  # Do not backpropagate through generator
+        fake_output = netD(data.permute(0, 3, 1, 2).detach())  # Do not backpropagate through generator
         if opt.criterion == 'WGAN':
             errD_fake = fake_output.mean()
 
@@ -304,7 +303,7 @@ for epoch in range(opt.niter):
         if opt.gp != 'None':
 
             gradient_penalty = calc_gradient_penalty(
-            netD, inputv.data, data.data
+            netD, inputv.permute(0, 3, 1, 2).data, data.permute(0, 3, 1, 2).data
             )
             gradient_penalty.backward()
             errD += gradient_penalty
@@ -320,7 +319,7 @@ for epoch in range(opt.niter):
 
     #Fake labels are real for generator cost
     labelv = Variable(label.fill_(real_label))
-    fake_output = netD(data)
+    fake_output = netD(data.permute(0, 3, 1, 2))
     if opt.criterion == 'WGAN':
         errG = fake_output.mean()
         errG.backward(mone)
