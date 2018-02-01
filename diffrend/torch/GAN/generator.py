@@ -240,7 +240,7 @@ class GAN(object):
         """Generate a noise vector."""
         self.noise.resize_(
             self.batch_size, int(self.opt.nz), 1, 1).normal_(0, 1)
-        self.noisev = Variable(self.noise) #TODO: Add volatile=True???
+        self.noisev = Variable(self.noise)  # TODO: Add volatile=True???
 
     def render_batch(self, batch, render_depth=True):
         """Render a batch of splats."""
@@ -306,7 +306,7 @@ class GAN(object):
             #     critic_iters = self.opt.critic_iters
 
             # Train Discriminator critic_iters times
-            for j in range(self.critic_iters):
+            for j in range(self.opt.critic_iters):
                 # Train with real
                 #################
                 self.netD.zero_grad()

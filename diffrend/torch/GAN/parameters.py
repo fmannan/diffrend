@@ -43,7 +43,7 @@ class Parameters():
         self.parser.add_argument('--dataset', type=str, default='shapenet', help='dataset name')
         self.parser.add_argument('--root_dir', type=str, default=default_root, help='dataset root directory')
         self.parser.add_argument('--synsets', type=str, default='', help='Synsets from the shapenet dataset to use')
-        self.parser.add_argument('--classes', type=str, default='airplane,microphone', help='Classes from the shapenet dataset to use')
+        self.parser.add_argument('--classes', type=str, default='bowl', help='Classes from the shapenet dataset to use')
         self.parser.add_argument('--workers', type=int, default=8, help='number of data loading workers')
         # corresponding folders: 02691156, 03759954
 
@@ -59,20 +59,26 @@ class Parameters():
         # bowl,mug
 
         # Network parameters
-        self.parser.add_argument('--gen_type', type=str, default='cnn')
-        self.parser.add_argument('--gen_bias_type', type=str, default=None)
-        self.parser.add_argument('--netG', default='', help="path to netG (to continue training)")
-        self.parser.add_argument('--netD', default='', help="path to netD (to continue training)")
-        self.parser.add_argument('--nz', type=int, default=100, help='size of the latent z vector')
+        self.parser.add_argument('--gen_type', type=str, default='dcgan', help='One of: mlp, cnn, dcgan, resnet')
+        self.parser.add_argument('--gen_norm', type=str, default='batchnorm', help='One of: None, batchnorm, instancenorm')
         self.parser.add_argument('--ngf', type=int, default=64, help='number of features in the generator network')
+        self.parser.add_argument('--gen_nextra_layers', type=int, default=3, help='number of extra layers in the generator network')
+        self.parser.add_argument('--gen_bias_type', type=str, default=None, help='One of: None, plane')
+        self.parser.add_argument('--netG', default='', help="path to netG (to continue training)")
+
+        self.parser.add_argument('--disc_type', type=str, default='dcgan', help='One of: cnn, dcgan')
+        self.parser.add_argument('--disc_norm', type=str, default='None', help='One of: None, batchnorm, instancenorm')
         self.parser.add_argument('--ndf', type=int, default=64, help='number of features in the discriminator network')
+        self.parser.add_argument('--disc_nextra_layers', type=int, default=0, help='number of extra layers in the discriminator network')
+        self.parser.add_argument('--nz', type=int, default=100, help='size of the latent z vector')
+        self.parser.add_argument('--netD', default='', help="path to netD (to continue training)")
 
         # Optimization parameters
         self.parser.add_argument('--optimizer', type=str, default='adam', help='Optimizer (adam, rmsprop)')
-        self.parser.add_argument('--lr', type=float, default=0.0002, help='learning rate, default=0.0002')
-        self.parser.add_argument('--beta1', type=float, default=0.5, help='beta1 for adam. default=0.5')
+        self.parser.add_argument('--lr', type=float, default=0.0001, help='learning rate, default=0.0002')
+        self.parser.add_argument('--beta1', type=float, default=0.0, help='beta1 for adam. default=0.5')
         self.parser.add_argument('--n_iter', type=int, default=4000, help='number of iterations to train')
-        self.parser.add_argument('--batchSize', type=int, default=8, help='input batch size')
+        self.parser.add_argument('--batchSize', type=int, default=2, help='input batch size')
 
         # GAN parameters
         self.parser.add_argument("--criterion", help="GAN Training criterion", choices=['GAN', 'WGAN'], default='WGAN')
@@ -99,8 +105,8 @@ class Parameters():
         self.parser.add_argument('--splats_img_size', type=int, default=32, help='the height / width of the number of generator splats')
         self.parser.add_argument('--render_img_nc', type=int, default=1, help='Number of channels of the render image')
         self.parser.add_argument('--render_img_size', type=int, default=64, help='Width/height of the rendering image')
-        self.parser.add_argument('--splats_radius', type=float, default=0.025, help='radius of the splats (fix)')
-        self.parser.add_argument('--same_view', action='store_true', default=True, help='data with view fixed')
+        self.parser.add_argument('--splats_radius', type=float, default=0.05, help='radius of the splats (fix)')
+        self.parser.add_argument('--same_view', action='store_true', default=False, help='data with view fixed')
 
     def parse(self):
         """Parse."""
