@@ -180,9 +180,8 @@ for epoch in range(opt.niter):
     noisev = Variable(noise)
     fake = netG(noisev)
     fake_normals_norm = torch.sqrt(torch.sum(fake[:, :, 1:] *fake[:, :, 1:] , dim=-1))
-    import ipdb; ipdb.set_trace()
     #print(fake_normals_norm.size(), fake_normals.size())
-    fake_normals = fake[:, :, 1:] / fake_normals_norm[:, :, :, np.newaxis]
+    fake_normals = fake[:, :, 1:] / fake_normals_norm[:, :,  np.newaxis]
     #######################
     #processig generator output to get image
     ########################
