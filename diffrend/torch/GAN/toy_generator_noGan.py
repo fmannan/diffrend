@@ -216,10 +216,18 @@ for epoch in range(opt.niter):
         fake_normals.append(temp_normal.unsqueeze(0))
     fake_pos=torch.stack(fake_pos)
     fake_normals=torch.stack(fake_normals)
-
+    
     data=torch.stack(data)
     #import ipdb; ipdb.set_trace()
-    gen_loss=((torch.abs(fake_pos.view(batch_size,-1)-real_pos.view(batch_size,-1))).sum(1)+ ((1-fake_normals * real_normals).sum(2).squeeze()).sum(1)).mean()
+
+    fake_normals_norm = torch.sqrt(torch.sum(fake_normals * fake_normals, dim=-1))
+    #print(fake_normals_norm.size(), fake_normals.size())
+    fake_normals = fake_normals / fake_normals_norm[:, :, :, np.newaxis]
+    ssd_pos = torch.sum(torch.abs(fake_pos - real_pos), dim=-1)
+    normal_loss = torch.sum(1 - torch.sum(fake_normals * real_normals, dim=-1), dim=0)
+    #print(ssd_pos.size(), normal_loss.size())
+    #gen_loss=((torch.abs(fake_pos-real_pos).view(batch_size,-1)).sum(1)+ ((1-torch.sum(fake_normals * real_normals, dim=-1))).sum(1)).mean()
+    gen_loss = torch.mean(ssd_pos + normal_loss)
 
     netG.zero_grad()
 
