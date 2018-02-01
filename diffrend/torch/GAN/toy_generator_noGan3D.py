@@ -179,14 +179,16 @@ for epoch in range(opt.niter):
     noise.resize_(batch_size, int(opt.nz)).normal_(0, 1)
     noisev = Variable(noise)
     fake = netG(noisev)
+    fake_normals_norm = torch.sqrt(torch.sum(fake[:, :,1:] *fake[:, :,1:] , dim=-1))
+    #print(fake_normals_norm.size(), fake_normals.size())
+    fake_normals = fake[:, :,1:] / fake_normals_norm[:, :, :, np.newaxis]
     #######################
     #processig generator output to get image
     ########################
 
     data=[]
     cam_pos = [0, 0, 10]
-    fake_pos=[]
-    fake_normals=[]
+
     for idx in range(batch_size):
         # normalize the vertices
         x, y = np.meshgrid(np.linspace(-1, 1,  opt.width), np.linspace(-1, 1, opt.height))
@@ -196,9 +198,9 @@ for epoch in range(opt.niter):
         #temp = (fake[idx][:, :3] - torch.mean(fake[idx][:, :3], 0))/(torch.max(fake[idx][:, :3]) - torch.min(fake[idx][:, :3]))
 
         large_scene['objects']['disk']['pos'] = temp
-        fake_normals_norm = torch.sqrt(torch.sum(fake[idx][:, 1:] * fake[idx][:, 1:], dim=-1))
-        #print(fake_normals_norm.size(), fake_normals.size())
-        fake[idx][:, 1:] = fake[idx][:, 1:] / fake_normals_norm[ :, :, np.newaxis]
+        # fake_normals_norm = torch.sqrt(torch.sum(fake[idx][:, 1:] * fake[idx][:, 1:], dim=-1))
+        # #print(fake_normals_norm.size(), fake_normals.size())
+        # fake[idx][:, 1:] = fake[idx][:, 1:] / fake_normals_norm[ :, :, np.newaxis]
         large_scene['objects']['disk']['normal'] = fake[idx][:, 1:]
         temp_normal=fake[idx][:, 1:]
         #large_scene['camera']['eye'] = tch_var_f(cam_pos[idx])
@@ -221,7 +223,7 @@ for epoch in range(opt.niter):
     data=torch.stack(data)
     #import ipdb; ipdb.set_trace()
 
-    
+
 
     mse_criterion = nn.MSELoss().cuda()
     gen_loss=mse_criterion(data, real_cpu)
