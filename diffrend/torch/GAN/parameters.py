@@ -49,7 +49,7 @@ class Parameters():
         self.parser.add_argument('--fovy', type=float, default=15.0, help='Field of view in the vertical direction')
         self.parser.add_argument('--f', type=float, default=0.1, help='focal length')
         self.parser.add_argument('--same_view', action='store_true', default=False, help='data with view fixed')
-        self.parser.add_argument("--criterion", help="GAN Training criterion", choices=['GAN', 'WGAN'], default='GAN')
+        self.parser.add_argument("--criterion", help="GAN Training criterion", choices=['GAN', 'WGAN'], default='WGAN')
         self.parser.add_argument("--gp", help="Add gradient penalty", choices=['None', 'original'], default='original')
         self.parser.add_argument("--gp_lambda", help="GP lambda", type=float, default=10.)
 
