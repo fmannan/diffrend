@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 from torch.autograd import Variable
-
+# TODO: SPLIT THIS INTO UTILS AND OPS (like diffrend.numpy)
 CPU_ONLY = False
 if torch.cuda.is_available() and not CPU_ONLY:
     CUDA = True

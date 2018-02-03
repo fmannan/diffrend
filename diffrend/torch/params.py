@@ -1,8 +1,5 @@
 import numpy as np
-import torch
 from diffrend.torch.utils import tch_var_f, tch_var_l
-
-OUTPUT_FOLDER = "output/"
 
 
 # Starter scene for rendering splats

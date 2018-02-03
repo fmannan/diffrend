@@ -1,4 +1,4 @@
-from diffrend.torch.params import OUTPUT_FOLDER, SCENE_BASIC, SCENE_1
+from diffrend.torch.params import SCENE_BASIC, SCENE_1
 from diffrend.torch.renderer import render
 from diffrend.torch.utils import tch_var_f, tch_var_l, CUDA, get_data
 import torch.nn as nn
@@ -166,7 +166,7 @@ if __name__ == '__main__':
                         help='Only render the normalized depth image.')
     parser.add_argument('--backface_culling', action='store_true', help='Filter out objects that are facing away from'
                                                                         'the camera.')
-    parser.add_argument('--out_dir', type=str, default=OUTPUT_FOLDER)
+    parser.add_argument('--out_dir', type=str, default='./output')
     parser.add_argument('--model_filename', type=str, default=DIR_DATA + '/bunny.splat',
                         help='Input model filename needed for scalability testing')
     parser.add_argument('--display', action='store_true', help='Display result using matplotlib.')

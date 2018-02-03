@@ -1,6 +1,7 @@
 from diffrend.torch.params import SCENE_BASIC
 from diffrend.torch.utils import tch_var_f, tch_var_l, get_data
 from diffrend.torch.renderer import render
+from diffrend.numpy.ops import normalize as np_normalize
 from diffrend.utils.sample_generator import uniform_sample_mesh, uniform_sample_sphere
 from diffrend.model import load_model
 from data import DIR_DATA
@@ -91,7 +92,8 @@ def render_random_splat_camera(filename, out_dir, num_samples, radius, cam_dist,
     print('Rendering time mean: {}s, std: {}s'.format(np.mean(rendering_time), np.std(rendering_time)))
 
 
-def render_sphere(out_dir, cam_pos, radius, width, height, fovy, focal_length):
+def render_sphere(out_dir, cam_pos, radius, width, height, fovy, focal_length, num_views, std_z=0.01, std_normal=0.01,
+                  b_display=False):
     """
     Randomly generate N samples on a surface and render them. The samples include position and normal, the radius is set
     to a constant.
@@ -127,16 +129,15 @@ def render_sphere(out_dir, cam_pos, radius, width, height, fovy, focal_length):
     y[~unit_disk_mask] = 0
     z[~unit_disk_mask] = 1
 
-    normals = np.stack((x.ravel(), y.ravel(), z.ravel()), axis=1)
-    norm = np.sqrt(np.sum(normals ** 2, axis=1))
-    normals = normals / norm[..., np.newaxis]
+    normals = np_normalize(np.stack((x.ravel(), y.ravel(), z.ravel()), axis=1))
 
-    plt.ion()
-    plt.figure()
-    plt.imshow(pos[..., 2].reshape((height, width)))
+    if b_display:
+        plt.ion()
+        plt.figure()
+        plt.imshow(pos[..., 2].reshape((height, width)))
 
-    plt.figure()
-    plt.imshow(normals[..., 2].reshape((height, width)))
+        plt.figure()
+        plt.imshow(normals[..., 2].reshape((height, width)))
 
     large_scene['objects']['disk']['pos'] = tch_var_f(pos)
     large_scene['objects']['disk']['normal'] = tch_var_f(normals)
@@ -154,18 +155,60 @@ def render_sphere(out_dir, cam_pos, radius, width, height, fovy, focal_length):
     depth[depth >= large_scene['camera']['far']] = depth.min()
     im_depth = np.uint8(255. * (depth - depth.min()) / (depth.max() - depth.min()))
 
-    plt.figure()
-    plt.imshow(im)
-    plt.title('Image')
-    plt.savefig(out_dir + '/img.png')
+    if b_display:
+        plt.figure()
+        plt.imshow(im)
+        plt.title('Image')
+        plt.savefig(out_dir + '/fig_img_orig.png')
 
-    plt.figure()
-    plt.imshow(im_depth)
-    plt.title('Depth Image')
-    plt.savefig(out_dir + '/depth.png')
+        plt.figure()
+        plt.imshow(im_depth)
+        plt.title('Depth Image')
+        plt.savefig(out_dir + '/fig_depth_orig.png')
+
+    imsave(out_dir + '/img_orig.png', im)
+    imsave(out_dir + '/depth_orig.png', im_depth)
 
     # generate noisy data
-    #...
+    if b_display:
+        h1 = plt.figure()
+        h2 = plt.figure()
+    noisy_pos = pos
+    for view_idx in range(num_views):
+        noisy_pos[..., 2] = pos[..., 2] + std_z * np.random.randn(num_samples)
+        noisy_normals = np_normalize(normals + std_normal * np.random.randn(num_samples, 3))
+
+        large_scene['objects']['disk']['pos'] = tch_var_f(noisy_pos)
+        large_scene['objects']['disk']['normal'] = tch_var_f(noisy_normals)
+
+        large_scene['camera']['eye'] = tch_var_f(cam_pos)
+
+        # main render run
+        start_time = time()
+        res = render(large_scene)
+        rendering_time.append(time() - start_time)
+
+        im = get_data(res['image'])
+        depth = get_data(res['depth'])
+
+        depth[depth >= large_scene['camera']['far']] = depth.min()
+        im_depth = np.uint8(255. * (depth - depth.min()) / (depth.max() - depth.min()))
+
+        suffix_str = '{:05d}'.format(view_idx)
+
+        if b_display:
+            plt.figure(h1.number)
+            plt.imshow(im)
+            plt.title('Image')
+            plt.savefig(out_dir + '/fig_img_' + suffix_str + '.png')
+
+            plt.figure(h2.number)
+            plt.imshow(im_depth)
+            plt.title('Depth Image')
+            plt.savefig(out_dir + '/fig_depth_' + suffix_str + '.png')
+
+        imsave(out_dir + '/img_' + suffix_str + '.png', im)
+        imsave(out_dir + '/depth_' + suffix_str + '.png', im_depth)
 
     # hold matplotlib figure
     plt.ioff()
@@ -225,7 +268,7 @@ if __name__ == '__main__':
 
     if args.render_sphere:
         render_sphere(out_dir=args.out_dir, cam_pos=[0, 0, 10], radius=0.03, width=64, height=64,
-                      fovy=11.5, focal_length=args.f)
+                      fovy=11.5, focal_length=args.f, num_views=args.nv)
     else:
         cam_pos = None
         if args.test_cam_dist:
