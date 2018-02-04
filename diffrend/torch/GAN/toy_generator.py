@@ -16,7 +16,7 @@ from datasets import Dataset_load
 from toy_networks import create_networks
 from utils import where
 from diffrend.torch.params import SCENE_BASIC
-from diffrend.torch.utils import tch_var_f, tch_var_l, CUDA, get_data
+from diffrend.torch.utils import tch_var_f, tch_var_l, CUDA, get_data, normalize
 from diffrend.torch.renderer import render
 from diffrend.utils.sample_generator import uniform_sample_mesh, uniform_sample_sphere
 from diffrend.model import load_model
@@ -27,6 +27,7 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.misc import imsave
+import torch.nn.functional as F
 
 from data import DIR_DATA
 CRITIC_ITERS=4
@@ -252,6 +253,8 @@ for epoch in range(opt.niter):
         # generate camera positions on a sphere
 
         data=[]
+        pos_array=[]
+        normal_array=[]
         #cam_pos = uniform_sample_sphere(radius=args.cam_dist, num_samples=batch_size)
         if not opt.same_view:
             cam_pos = [0, 0, 10]
@@ -281,11 +284,27 @@ for epoch in range(opt.niter):
             depth = res['depth']
 
 
-            data.append(im.unsqueeze(0))
+            data.append(im)
+            pos_array.append(temp)
+            normal_array.append(fake[idx][:, 1:])
 
-
+        eye=tch_var_f(cam_pos)
         data=torch.stack(data)
-        data=data.squeeze()
+        normal_array=torch.stack(normal_array)
+        pos_array=torch.stack(pos_array)
+        #import ipdb; ipdb.set_trace()
+        cam_dir=normalize(eye[np.newaxis, np.newaxis, :] - pos_array)
+
+        towards_cam_loss=torch.mean(torch.sum( F.relu(-torch.sum(normal_array * cam_dir, dim=-1)), dim=-1))
+
+        gray_img = torch.mean(data, dim=-1)
+
+        dx = gray_img[:, :, 1:] - gray_img[:, :, :-1]
+        dy = gray_img[:, 1:, :] - gray_img[:, :-1, :]
+        grad_img = torch.abs(dx) + torch.abs(dy)
+        image_gradient_loss = torch.mean(grad_img)
+        #data=data.squeeze()
+
         labelv = Variable(label.fill_(fake_label))
         fake_output = netD(data.permute(0, 3, 1, 2).detach())  # Do not backpropagate through generator
         if opt.criterion == 'WGAN':
@@ -322,6 +341,7 @@ for epoch in range(opt.niter):
     fake_output = netD(data.permute(0, 3, 1, 2))
     if opt.criterion == 'WGAN':
         errG = fake_output.mean()
+        errG+= opt.toward_cam * towards_cam_loss + opt.im_grad * image_gradient_loss
         errG.backward(mone)
     else:
         errG = criterion(fake_output, labelv)
