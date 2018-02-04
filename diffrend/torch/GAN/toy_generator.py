@@ -242,9 +242,9 @@ for epoch in range(opt.niter):
         noise.resize_(batch_size, int(opt.nz)).normal_(0, 1)
         noisev = Variable(noise)
         fake = netG(noisev)
-        # fake_normals_norm = torch.sqrt(torch.sum(fake[:, :, 1:] *fake[:, :, 1:] , dim=-1))
+        fake_normals_norm = torch.sqrt(torch.sum(fake[:, :, 1:] *fake[:, :, 1:] , dim=-1))
         # #print(fake_normals_norm.size(), fake_normals.size())
-        # fake_normals = fake[:, :, 1:] / fake_normals_norm[:, :,  np.newaxis]
+        fake_normals = fake[:, :, 1:] / fake_normals_norm[:, :,  np.newaxis]
         #######################
         #processig generator output to get image
         ########################
