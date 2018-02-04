@@ -79,7 +79,7 @@ def nonzero_divide(x, y):
 def normalize(u):
     denom = norm_p(u, 2)
     if u.dim() > 1:
-        denom = denom[:, np.newaxis]
+        denom = denom[..., np.newaxis]
     # TODO: nonzero_divide for rows with norm = 0
     return u / denom
 
