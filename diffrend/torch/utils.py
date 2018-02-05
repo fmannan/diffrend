@@ -1,6 +1,8 @@
 import numpy as np
 import torch
 from torch.autograd import Variable
+from diffrend.utils.utils import get_param_value
+
 # TODO: SPLIT THIS INTO UTILS AND OPS (like diffrend.numpy)
 CPU_ONLY = False
 if torch.cuda.is_available() and not CPU_ONLY:
@@ -84,17 +86,18 @@ def normalize(u):
     return u / denom
 
 
-def point_along_ray(eye, ray_dir, ray_dist):
+def point_along_ray(ray_orig, ray_dir, ray_dist):
     """Find the point along the ray_dir at distance ray_dist
-    :param eye: 4-element vector or 3-element vector
+    :param ray_orig: 4-element vector or 3-element vector or [N x 3] matrix
     :param ray_dir: [4 x N] matrix with N rays and each ray being [x, y, z, 0] direction or [3 x N]
     :param ray_dist: [M x N] matrix with M objects and N rays
     :return: [M x N x 4] intersection points or [M x N x 3]
     """
-    return eye[np.newaxis, np.newaxis, :] + ray_dist[:, :, np.newaxis] * ray_dir.transpose(1, 0)[np.newaxis, ...]
+    #return ray_orig[np.newaxis, np.newaxis, :] + ray_dist[:, :, np.newaxis] * ray_dir.transpose(1, 0)[np.newaxis, ...]
+    return ray_orig[np.newaxis, ...] + ray_dist[:, :, np.newaxis] * ray_dir.transpose(1, 0)[np.newaxis, ...]
 
 
-def ray_sphere_intersection(eye, ray_dir, sphere, **kwargs):
+def ray_sphere_intersection(ray_orig, ray_dir, sphere, **kwargs):
     """Bundle of rays intersected with a batch of spheres
     :param eye:
     :param ray_dir:
@@ -102,12 +105,13 @@ def ray_sphere_intersection(eye, ray_dir, sphere, **kwargs):
     :return:
     """
     pos = sphere['pos'][:, :3]
-    pos_tilde = eye[:3] - pos
+    pos_tilde = ray_orig[np.newaxis, ...] - pos[:, np.newaxis, :]
+    #pos_tilde = ray_orig - pos
     radius = sphere['radius']
 
     a = torch.sum(ray_dir ** 2, dim=0)
-    b = 2 * torch.matmul(pos_tilde, ray_dir)
-    c = (torch.sum(pos_tilde ** 2, dim=1) - radius ** 2)[:, np.newaxis]
+    b = 2 * torch.sum(pos_tilde * ray_dir.permute(1, 0)[np.newaxis, ...], dim=-1)
+    c = (torch.sum(pos_tilde ** 2, dim=-1) - radius[:, np.newaxis] ** 2)
 
     d_sqr = b ** 2 - 4 * a * c
     intersection_mask = d_sqr >= 0
@@ -128,16 +132,15 @@ def ray_sphere_intersection(eye, ray_dir, sphere, **kwargs):
     ray_dist, _ = torch.min(torch.stack((t1, t2), dim=2), dim=2)
     ray_dist = where(intersection_mask, ray_dist, 1001)
 
-    intersection_pts = point_along_ray(eye, ray_dir, ray_dist)
+    intersection_pts = point_along_ray(ray_orig, ray_dir, ray_dist)
 
-    normals = intersection_pts - pos[:, np.newaxis, :]
-    normals /= torch.sqrt(torch.sum(normals ** 2, dim=-1))[:, :, np.newaxis]
+    normals = normalize(intersection_pts - pos[:, np.newaxis, :])
 
     return {'intersect': intersection_pts, 'normal': normals, 'ray_distance': ray_dist,
             'intersection_mask': intersection_mask}
 
 
-def ray_plane_intersection(eye, ray_dir, plane, **kwargs):
+def ray_plane_intersection(ray_orig, ray_dir, plane, **kwargs):
     """Intersection a bundle of rays with a batch of planes
     :param eye: Camera's center of projection
     :param ray_dir: Ray direction
@@ -153,9 +156,9 @@ def ray_plane_intersection(eye, ray_dir, plane, **kwargs):
     # check for denom = 0
     intersection_mask = torch.abs(denom) > 0
 
-    ray_dist = (dist.unsqueeze(-1) - torch.mm(normal, eye.unsqueeze(-1))) / denom
+    ray_dist = (dist.unsqueeze(-1) - torch.mm(normal, ray_orig.permute(1, 0))) / denom
 
-    intersection_pts = point_along_ray(eye, ray_dir, ray_dist)
+    intersection_pts = point_along_ray(ray_orig, ray_dir, ray_dist)
 
     if 'disable_normals' in kwargs and kwargs['disable_normals']:
         normals = None
@@ -167,8 +170,8 @@ def ray_plane_intersection(eye, ray_dir, plane, **kwargs):
             'intersection_mask': intersection_mask}
 
 
-def ray_disk_intersection(eye, ray_dir, disks, **kwargs):
-    result = ray_plane_intersection(eye, ray_dir, disks, **kwargs)
+def ray_disk_intersection(ray_orig, ray_dir, disks, **kwargs):
+    result = ray_plane_intersection(ray_orig, ray_dir, disks, **kwargs)
     intersection_pts = result['intersect']
     normals = result['normal']
     ray_dist = result['ray_distance']
@@ -185,19 +188,19 @@ def ray_disk_intersection(eye, ray_dir, disks, **kwargs):
             'intersection_mask': intersection_mask}
 
 
-def ray_triangle_intersection(eye, ray_dir, triangles, **kwargs):
+def ray_triangle_intersection(ray_orig, ray_dir, triangles, **kwargs):
     """Intersection of a bundle of rays with a batch of triangles.
     Assumes that the triangles vertices are specified as F x 3 x 4 matrix where F is the number of faces and
     the normals for all faces are precomputed and in a matrix of size F x 4 (i.e., similar to the normals for other
     geometric primitives). Note that here the number of faces F is the same as number of primitives M.
-    :param eye:
+    :param ray_orig:
     :param ray_dir:
     :param triangles:
     :return:
     """
 
     planes = {'pos': triangles['face'][:, 0, :], 'normal': triangles['normal']}
-    result = ray_plane_intersection(eye, ray_dir, planes)
+    result = ray_plane_intersection(ray_orig, ray_dir, planes)
     intersection_pts = result['intersect']  # M x N x 4 matrix where M is the number of objects and N pixels.
     normals = result['normal'][..., :3]  # M x N x 4
     ray_dist = result['ray_distance']
@@ -313,17 +316,17 @@ def generate_rays(camera):
     viewport = np.array(camera['viewport'])
     W, H = viewport[2] - viewport[0], viewport[3] - viewport[1]
     aspect_ratio = W / H
+
+    x, y = np.meshgrid(np.linspace(-1, 1, W), np.linspace(1, -1, H))
+    n_pixels = x.size
+
     fovy = np.array(camera['fovy'])
     focal_length = np.array(camera['focal_length'])
     h = np.tan(fovy / 2) * 2 * focal_length
     w = h * aspect_ratio
 
-    x, y = np.meshgrid(np.linspace(-1, 1, W), np.linspace(1, -1, H))
-
     x *= w / 2
     y *= h / 2
-
-    n_pixels = x.size
 
     x = tch_var_f(x.ravel())
     y = tch_var_f(y.ravel())
@@ -332,15 +335,24 @@ def generate_rays(camera):
     at = camera['at'][:3]
     up = camera['up'][:3]
 
-    ray_dir = torch.stack((x, y, tch_var_f(-np.ones(n_pixels) * focal_length)), dim=0)
-    inv_view_matrix = lookat_rot_inv(eye=eye, at=at, up=up)
 
-    ray_dir = torch.mm(inv_view_matrix, ray_dir)
+    proj_type = camera['proj_type']
+    if proj_type == 'ortho' or proj_type == 'orthographic':
+        ray_dir = normalize(at - eye)[:, np.newaxis]
+        ray_orig = torch.stack((x, y, tch_var_f(np.zeros(n_pixels)), tch_var_f(np.ones(n_pixels))), dim=0)
+        inv_view_matrix = lookat_inv(eye=eye, at=at, up=up)
+        ray_orig = torch.mm(inv_view_matrix, ray_orig)
+        ray_orig = (ray_orig[:3] / ray_orig[3][np.newaxis, :]).permute(1, 0)
+    elif proj_type == 'persp' or proj_type == 'perspective':
+        ray_orig = eye[np.newaxis, :]
+        ray_dir = torch.stack((x, y, tch_var_f(-np.ones(n_pixels) * focal_length)), dim=0)
+        inv_view_matrix = lookat_rot_inv(eye=eye, at=at, up=up)
+        ray_dir = torch.mm(inv_view_matrix, ray_dir)
 
-    # normalize ray direction
-    ray_dir /= torch.sqrt(torch.sum(ray_dir ** 2, dim=0))
+        # normalize ray direction
+        ray_dir /= torch.sqrt(torch.sum(ray_dir ** 2, dim=0))
 
-    return eye, ray_dir, H, W
+    return ray_orig, ray_dir, H, W
 
 
 def ray_object_intersections(eye, ray_dir, scene_objects, **kwargs):

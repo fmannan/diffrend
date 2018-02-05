@@ -30,7 +30,7 @@ def render(scene, **params):
     # Construct rays from the camera's eye position through the screen
     # coordinates
     camera = scene['camera']
-    eye, ray_dir, H, W = generate_rays(camera)
+    ray_orig, ray_dir, H, W = generate_rays(camera)
     H = int(H)
     W = int(W)
 
@@ -43,11 +43,11 @@ def render(scene, **params):
         # Labels are stored in the key 'backface'
         # Note that doing this before ray object intersection test reduces memory but may not result in correct
         # rendering, e.g, when an object is occluded by a back-face.
-        scene_objects = backface_labeler(eye, scene_objects)
+        scene_objects = backface_labeler(ray_orig, scene_objects)
 
     # Ray-object intersections
     disable_normals = get_param_value('norm_depth_image_only', params, False)
-    obj_intersections, ray_dist, normals, material_idx = ray_object_intersections(eye, ray_dir, scene_objects,
+    obj_intersections, ray_dist, normals, material_idx = ray_object_intersections(ray_orig, ray_dir, scene_objects,
                                                                                   disable_normals=disable_normals)
     num_objects = obj_intersections.size()[0]
     # Valid distances

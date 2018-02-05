@@ -1,4 +1,4 @@
-from diffrend.torch.params import SCENE_BASIC, SCENE_1
+from diffrend.torch.params import SCENE_BASIC, SCENE_1, SCENE_2
 from diffrend.torch.renderer import render
 from diffrend.torch.utils import tch_var_f, tch_var_l, CUDA, get_data
 import torch.nn as nn
@@ -40,14 +40,16 @@ def render_scene(scene, output_folder, norm_depth_image_only=False, backface_cul
     depth = get_data(res['depth'])
     depth[depth >= scene['camera']['far']] = np.inf
     print(depth.min(), depth.max())
-    if plot_res:
+    if plot_res and depth.min() != np.inf:
         plt.figure()
         plt.imshow(depth)
         plt.title('Depth Image')
         plt.savefig(output_folder + '/img_depth_torch.png')
 
+    if plot_res:
         plt.ioff()
         plt.show()
+
     return res
 
 
@@ -170,6 +172,7 @@ if __name__ == '__main__':
     parser.add_argument('--model_filename', type=str, default=DIR_DATA + '/bunny.splat',
                         help='Input model filename needed for scalability testing')
     parser.add_argument('--display', action='store_true', help='Display result using matplotlib.')
+    parser.add_argument('--ortho', action='store_true', help='Use Orthographic Projection.')
 
     args = parser.parse_args()
     print(args)
@@ -177,6 +180,8 @@ if __name__ == '__main__':
         args.render = True
 
     scene = SCENE_1
+    if args.ortho:
+        scene['camera']['proj_type'] = 'ortho'
     if args.render:
         res = render_scene(scene, args.out_dir, args.norm_depth_image_only, backface_culling=args.backface_culling,
                            plot_res=args.display)
