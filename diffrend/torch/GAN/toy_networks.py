@@ -41,9 +41,9 @@ def create_networks(opt):
     else:
 
         if opt.criterion == 'WGAN':
-            netD = _netD(ngpu, 1, ndf,1)
+            netD = _netD(ngpu, 3, ndf,1)
         else:
-            netD = _netD(ngpu, 1, ndf)
+            netD = _netD(ngpu, 3, ndf)
     netD.apply(weights_init)
     if opt.netD != '':
         netD.load_state_dict(torch.load(opt.netD))
@@ -167,7 +167,7 @@ class _netG_mlp(nn.Module):
             nn.Linear(ngf*32,ngf*70),
             nn.LeakyReLU(0.2, True),
 
-            nn.Linear(ngf*70,nc*4)
+            nn.Linear(ngf*70,nc*3)
             # nn.BatchNorm1d(ndf*4),
             # nn.LeakyReLU(0.2, True),
             #
@@ -182,7 +182,7 @@ class _netG_mlp(nn.Module):
                                                range(self.ngpu))
         else:
             output = self.main(input)
-            output=output.view(output.size(0),self.nc,4)
+            output=output.view(output.size(0),self.nc,3)
         return output
 
 # class _netG_mlp(nn.Module):
