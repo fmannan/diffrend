@@ -23,7 +23,7 @@ class Parameters():
         username = getpass.getuser()
         if username == 'dvazquez' or username == 'root':
             default_root = '/home/dvazquez/datasets/shapenet/ShapeNetCore.v2'
-            # default_root = '/mnt/AIDATA/home/dvazquez/datasets/shapenet/ShapeNetCore.v2'
+            # default_root = '/mnt/home/dvazquez/datasets/shapenet/ShapeNetCore.v2'
             default_out = './render_samples/'
         elif username == 'florian':
             default_root = '/data/lisa/data/ShapeNetCore.v2'
@@ -45,6 +45,7 @@ class Parameters():
         self.parser.add_argument('--synsets', type=str, default='', help='Synsets from the shapenet dataset to use')
         self.parser.add_argument('--classes', type=str, default='bowl', help='Classes from the shapenet dataset to use')
         self.parser.add_argument('--workers', type=int, default=8, help='number of data loading workers')
+        self.parser.add_argument('--toy_example', action='store_true', default=True, help='Use toy example')
         # corresponding folders: 02691156, 03759954
 
         # other low-footprint objects:
@@ -62,9 +63,11 @@ class Parameters():
         self.parser.add_argument('--gen_type', type=str, default='dcgan', help='One of: mlp, cnn, dcgan, resnet')
         self.parser.add_argument('--gen_norm', type=str, default='batchnorm', help='One of: None, batchnorm, instancenorm')
         self.parser.add_argument('--ngf', type=int, default=64, help='number of features in the generator network')
-        self.parser.add_argument('--gen_nextra_layers', type=int, default=3, help='number of extra layers in the generator network')
+        self.parser.add_argument('--gen_nextra_layers', type=int, default=0, help='number of extra layers in the generator network')
         self.parser.add_argument('--gen_bias_type', type=str, default=None, help='One of: None, plane')
         self.parser.add_argument('--netG', default='', help="path to netG (to continue training)")
+        self.parser.add_argument('--fix_splat_pos', action='store_true', default=True, help='X and Y coordinates are fix')
+        self.parser.add_argument('--norm_sph_coord', action='store_true', default=True, help='Use spherical coordinates for the normal')
 
         self.parser.add_argument('--disc_type', type=str, default='dcgan', help='One of: cnn, dcgan')
         self.parser.add_argument('--disc_norm', type=str, default='None', help='One of: None, batchnorm, instancenorm')
@@ -98,15 +101,15 @@ class Parameters():
         self.parser.add_argument('--height', type=int, default=64)
         self.parser.add_argument('--cam_dist', type=float, default=5.0, help='Camera distance from the center of the object')
         self.parser.add_argument('--nv', type=int, default=10, help='Number of views to generate')
-        self.parser.add_argument('--fovy', type=float, default=15.0, help='Field of view in the vertical direction')
+        self.parser.add_argument('--fovy', type=float, default=11.5, help='Field of view in the vertical direction. Default: 15.0')
         self.parser.add_argument('--focal_length', type=float, default=0.1, help='focal length')
 
         # Rendering parameters
         self.parser.add_argument('--splats_img_size', type=int, default=32, help='the height / width of the number of generator splats')
-        self.parser.add_argument('--render_img_nc', type=int, default=1, help='Number of channels of the render image')
+        self.parser.add_argument('--render_type', type=str, default='img', help='render the image or the depth map [img, depth]')
         self.parser.add_argument('--render_img_size', type=int, default=64, help='Width/height of the rendering image')
         self.parser.add_argument('--splats_radius', type=float, default=0.05, help='radius of the splats (fix)')
-        self.parser.add_argument('--same_view', action='store_true', default=False, help='data with view fixed')
+        self.parser.add_argument('--same_view', action='store_true', default=True, help='data with view fixed')
 
     def parse(self):
         """Parse."""
@@ -120,6 +123,14 @@ class Parameters():
             os.makedirs(self.opt.out_dir)
         except OSError:
             pass
+
+        # Set render number of channels
+        if self.opt.render_type == 'img':
+            self.opt.render_img_nc = 3
+        elif self.opt.render_type == 'depth':
+            self.opt.render_img_nc = 1
+        else:
+            raise ValueError('Unknown rendering type')
 
         # Set random seed
         if self.opt.manualSeed is None:

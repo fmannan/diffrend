@@ -28,7 +28,14 @@ def create_networks(opt, verbose=True):
     splats_img_size = int(opt.splats_img_size)
     n_splats = int(opt.n_splats)
     render_img_size = int(opt.width)
-    splats_n_dims = 6
+    if opt.fix_splat_pos:
+        splats_n_dims = 1
+    else:
+        splats_n_dims = 3
+    if opt.norm_sph_coord:
+        splats_n_dims += 2
+    else:
+        splats_n_dims += 3
 
     # Create generator network
     if opt.gen_type == 'mlp':
@@ -38,7 +45,7 @@ def create_networks(opt, verbose=True):
                      bias_type=opt.gen_bias_type)
     elif opt.gen_type == 'dcgan':
         netG = DCGAN_G(splats_img_size, nz, splats_n_dims, ngf, ngpu,
-                       n_extra_layers=gen_nextra_layers, use_tanh=True,
+                       n_extra_layers=gen_nextra_layers, use_tanh=False,
                        norm=gen_norm)
     elif opt.gen_type == 'resnet':
         netG = _netG_resnet(nz, splats_n_dims, n_splats)
