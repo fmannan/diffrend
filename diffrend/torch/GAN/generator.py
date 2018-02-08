@@ -15,15 +15,16 @@ from torch.autograd import Variable
 from diffrend.torch.GAN.datasets import Dataset_load
 from diffrend.torch.GAN.networks import create_networks
 from diffrend.torch.GAN.parameters import Parameters
+from diffrend.torch.GAN.utils import make_dot
 from diffrend.torch.params import SCENE_BASIC
 from diffrend.torch.utils import tch_var_f, tch_var_l, where
 from diffrend.torch.renderer import render
 from diffrend.utils.sample_generator import uniform_sample_sphere
-try:
-    from hyperdash import Experiment
-    HYPERDASH_SUPPORTED = True
-except ImportError:
-    HYPERDASH_SUPPORTED = False
+# try: # temporarily
+#     from hyperdash import Experiment
+#     HYPERDASH_SUPPORTED = True
+# except ImportError:
+HYPERDASH_SUPPORTED = False
 
 
 def create_scene(width, height, fovy, focal_length, n_samples,
@@ -153,6 +154,11 @@ class GAN(object):
 
     def create_optimizers(self, ):
         """Create optimizers."""
+
+        # model_parameters = filter(lambda p: p.requires_grad, self.netG.parameters())
+        # params = sum([np.prod(p.size()) for p in model_parameters])
+        # print("trainable parameters:",params)
+
         if self.opt.optimizer == 'adam':
             self.optimizerD = optim.Adam(self.netD.parameters(),
                                          lr=self.opt.lr,
@@ -367,6 +373,10 @@ class GAN(object):
             fake = self.netG(self.noisev)
             fake_rendered = self.render_batch(fake)
             outG_fake = self.netD(fake_rendered)
+            dot = make_dot(fake)
+            # dot.render('teeest/gen.gv', view=True)
+            # quit()
+
             if self.opt.criterion == 'GAN':
                 # Fake labels are real for generator cost
                 labelv = Variable(self.label.fill_(self.real_label))
