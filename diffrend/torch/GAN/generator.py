@@ -11,6 +11,7 @@ import torch.nn.parallel
 import torch.optim as optim
 import torch.utils.data
 from torch.autograd import Variable
+import torch.nn.functional as F
 
 from diffrend.torch.GAN.datasets import Dataset_load
 from diffrend.torch.GAN.networks import create_networks
@@ -25,6 +26,23 @@ from diffrend.utils.sample_generator import uniform_sample_sphere
 #     HYPERDASH_SUPPORTED = True
 # except ImportError:
 HYPERDASH_SUPPORTED = False
+
+
+def sph2cart_unit(u):
+    """Convert from spherical units to cartesian units.
+
+    :param u: N x 2 in [phi, theta]
+    :param phi: azimuth, i.e., angle between x-axis and xy proj of vector
+    r * sin(theta)
+    :param theta:  inclination, i.e., angle between vector and z-axis
+    :return: [x, y, z]
+    """
+    phi, theta = u[..., 0], u[..., 1]
+    sinth = torch.sin(theta)
+    x = sinth * torch.cos(phi)
+    y = sinth * torch.sin(phi)
+    z = torch.cos(theta)
+    return torch.stack((x, y, z), dim=-1)
 
 
 def create_scene(width, height, fovy, focal_length, n_samples,
@@ -101,8 +119,12 @@ class GAN(object):
         """Create dataset leader."""
         # Define camera positions
         if self.opt.same_view:
-            self.cam_pos = uniform_sample_sphere(radius=self.opt.cam_dist,
-                                                 num_samples=1)
+            if not self.opt.toy_example:
+                self.cam_pos = uniform_sample_sphere(radius=self.opt.cam_dist,
+                                                     num_samples=1)
+            else:
+                arrays = [np.asarray([0., 0., 10.]) for _ in range(self.opt.batchSize)]
+                self.cam_pos = np.stack(arrays, axis=0)
 
         # Create dataset loader
         self.dataset_load.initialize_dataset()
@@ -174,18 +196,65 @@ class GAN(object):
         else:
             raise ValueError('Unknown optimizer: ' + self.opt.optimizer)
 
-    def get_real_samples(self, render_depth=True):
+    def generate_toy_samples(self,):
+        """Create a scene of a plane and a hemisphere."""
+        pos_vec = []
+        normal_vec = []
+        for idx in range(self.opt.batchSize):
+            # Create a mesh grid in the xy-plane
+            x, y = np.meshgrid(np.linspace(-1, 1, self.opt.splats_img_size),
+                               np.linspace(-1, 1, self.opt.splats_img_size))
+            unit_disk_mask = (x ** 2 + y ** 2) <= 1
+            z = np.sqrt(1 - unit_disk_mask * (x ** 2 + y ** 2))
+
+            # Make a hemi-sphere bulging out of the xy-plane scene
+            z[~unit_disk_mask] = 0
+            z_old = z
+            z = z + np.random.normal(0, 0.01, z.shape)
+            pos = np.stack((x.ravel(), y.ravel(), z.ravel()), axis=1)
+
+            # Normals outside the sphere should be [0, 0, 1]
+            x[~unit_disk_mask] = 0
+            y[~unit_disk_mask] = 0
+            z_old[~unit_disk_mask] = 1
+
+            normals = np.stack((x.ravel(), y.ravel(), z_old.ravel()), axis=1)
+            norm = np.sqrt(np.sum(normals ** 2, axis=1))
+            normals = normals / norm[..., np.newaxis]
+            normals = normals + np.random.normal(0, 0.01, normals.shape)
+
+            # Stack results
+            pos_vec.append(torch.from_numpy(pos.astype(np.float32)))
+            normal_vec.append(torch.from_numpy(normals.astype(np.float32)))
+
+        # Save the splats
+        splats = {'pos': torch.stack(pos_vec),
+                  'normal': torch.stack(normal_vec)}
+
+        # Add model and synset to the output dictionary
+        sample = {'synset': None, 'splats': splats}
+
+        # print ('Real Min', splats['pos'][:, :, :1].min(),
+        #        'Max', splats['pos'][:, :, :1].max(),
+        #        'Mean', splats['pos'][:, :, :1].mean())
+
+        return sample
+
+    def get_real_samples(self):
         """Get a real sample."""
-        # Load a batch of samples
-        try:
-            samples = self.data_iter.next()
-        except StopIteration:
-            del self.data_iter
-            self.data_iter = iter(self.dataset_loader)
-            samples = self.data_iter.next()
-        except AttributeError:
-            self.data_iter = iter(self.dataset_loader)
-            samples = self.data_iter.next()
+        if not self.opt.toy_example:
+            # Load a batch of samples
+            try:
+                samples = self.data_iter.next()
+            except StopIteration:
+                del self.data_iter
+                self.data_iter = iter(self.dataset_loader)
+                samples = self.data_iter.next()
+            except AttributeError:
+                self.data_iter = iter(self.dataset_loader)
+                samples = self.data_iter.next()
+        else:
+            samples = self.generate_toy_samples()
 
         # Define the camera poses
         if not self.opt.same_view:
@@ -217,19 +286,19 @@ class GAN(object):
             res = render(large_scene)
 
             # Get rendered output
-            if render_depth:
+            if self.opt.render_img_nc == 1:
                 depth = res['depth']
                 # Normalize depth image
                 cond = depth >= large_scene['camera']['far']
                 depth = where(cond, torch.min(depth), depth)
                 im = ((depth - torch.min(depth)) /
                       (torch.max(depth) - torch.min(depth)))
+                im = im.unsqueeze(0)
             else:
-                im = res['image']
+                im = res['image'].permute(2, 0, 1)
 
             # Add depth image to the output structure
-            data.append(im.unsqueeze(0))
-
+            data.append(im)
         # Stack real samples
         real_samples = torch.stack(data)
         self.batch_size = real_samples.size(0)
@@ -248,7 +317,7 @@ class GAN(object):
             self.batch_size, int(self.opt.nz), 1, 1).normal_(0, 1)
         self.noisev = Variable(self.noise)  # TODO: Add volatile=True???
 
-    def render_batch(self, batch, render_depth=True):
+    def render_batch(self, batch):
         """Render a batch of splats."""
         batch_size = batch.size()[0]
 
@@ -257,13 +326,30 @@ class GAN(object):
             cam_pos = uniform_sample_sphere(radius=self.opt.cam_dist,
                                             num_samples=self.batch_size)
 
+        # print ('Gen Min', F.tanh(batch[:, :, :1]).min().cpu().data.numpy(),
+        #        'Max', F.tanh(batch[:, :, :1]).max().cpu().data.numpy(),
+        #        'Mean', F.tanh(batch[:, :, :1]).mean().cpu().data.numpy())
         redered_data = []
         for idx in range(batch_size):
             # Get splats positions and normals
-            pos = batch[idx][:, :3]
-            pos = ((pos - torch.mean(pos, 0)) /
-                   (torch.max(pos) - torch.min(pos)))
-            normals = batch[idx][:, 3:]
+            if not self.opt.fix_splat_pos:
+                pos = batch[idx][:, :3]
+                pos = ((pos - torch.mean(pos, 0)) /
+                       (torch.max(pos) - torch.min(pos)))
+                normals = batch[idx][:, 3:]
+            else:
+                x, y = np.meshgrid(
+                    np.linspace(-1, 1, self.opt.splats_img_size),
+                    np.linspace(-1, 1, self.opt.splats_img_size))
+                pos = np.stack((x.ravel(), y.ravel()), axis=1)
+                pos = tch_var_f(pos)
+                # TODO: Thanh here?
+                pos = torch.cat([pos, F.tanh(batch[idx][:, :1])], 1)
+                if self.opt.norm_sph_coord:
+                    # TODO: Sigmoid here?
+                    normals = sph2cart_unit(np.pi * F.sigmoid(batch[idx][:, 1:]))
+                else:
+                    normals = batch[idx][:, 1:]
 
             # Set splats into rendering scene
             self.scene['objects']['disk']['pos'] = pos
@@ -279,18 +365,19 @@ class GAN(object):
             res = render(self.scene)
 
             # Get rendered output
-            if render_depth:
+            if self.opt.render_img_nc == 1:
                 depth = res['depth']
                 # Normalize depth image
                 cond = depth >= self.scene['camera']['far']
                 depth = where(cond, torch.min(depth), depth)
                 im = ((depth - torch.min(depth)) /
                       (torch.max(depth) - torch.min(depth)))
+                im = im.unsqueeze(0)
             else:
-                im = res['image']
+                im = res['image'].permute(2, 0, 1)
 
             # Store normalized depth into the data
-            redered_data.append(im.unsqueeze(0))
+            redered_data.append(im)
         redered_data = torch.stack(redered_data)
         return redered_data
 
@@ -423,10 +510,16 @@ class GAN(object):
 
     def save_images(self, epoch, input, output):
         """Save images."""
-        imsave(self.opt.out_dir + '/input' + str(epoch) + '.png',
-               np.uint8(255. * input.cpu().data.numpy().squeeze()))
-        imsave(self.opt.out_dir + '/output' + str(epoch) + '.png',
-               np.uint8(255. * output.cpu().data.numpy().squeeze()))
+        if self.opt.render_img_nc == 1:
+            imsave(self.opt.out_dir + '/input' + str(epoch) + '.png',
+                   np.uint8(255. * input.cpu().data.numpy().squeeze()))
+            imsave(self.opt.out_dir + '/output' + str(epoch) + '.png',
+                   np.uint8(255. * output.cpu().data.numpy().squeeze()))
+        else:
+            imsave(self.opt.out_dir + '/input' + str(epoch) + '.png',
+                   np.uint8(255. * input.cpu().data.numpy().transpose((1, 2, 0))))
+            imsave(self.opt.out_dir + '/output' + str(epoch) + '.png',
+                   np.uint8(255. * output.cpu().data.numpy().transpose((1, 2, 0))))
 
 
 def main():
