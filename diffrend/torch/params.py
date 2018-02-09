@@ -12,7 +12,7 @@ SCENE_BASIC = {
         'eye': tch_var_f([0.0, 1.0, 10.0, 1.0]),
         'up': tch_var_f([0.0, 1.0, 0.0, 0.0]),
         'at': tch_var_f([0.0, 0.0, 0.0, 1.0]),
-        'near': 1.0,
+        'near': 0.01,
         'far': 1000.0,
     },
     'lights': {

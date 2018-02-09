@@ -15,7 +15,8 @@ from scipy.misc import imsave
 
 
 def render_random_splat_camera(filename, out_dir, num_samples, radius, cam_dist, num_views, width, height,
-                               fovy, focal_length, norm_depth_image_only, cam_pos=None, b_display=False):
+                               fovy, focal_length, norm_depth_image_only, theta_range=[0, np.pi],
+                               phi_range=[0, 2 * np.pi], cam_pos=None, cam_lookat=None, b_display=False):
     """
     Randomly generate N samples on a surface and render them. The samples include position and normal, the radius is set
     to a constant.
@@ -47,9 +48,10 @@ def render_random_splat_camera(filename, out_dir, num_samples, radius, cam_dist,
 
     # generate camera positions on a sphere
     if cam_pos is None:
-        cam_pos = uniform_sample_sphere(radius=cam_dist, num_samples=num_views)
-    obj_center = np.mean(v, axis=0)
-    large_scene['camera']['at'] = tch_var_f(obj_center)
+        cam_pos = uniform_sample_sphere(radius=cam_dist, num_samples=num_views,
+                                        theta_range=theta_range, phi_range=phi_range)
+    lookat = cam_lookat if cam_lookat is not None else np.mean(v, axis=0)
+    large_scene['camera']['at'] = tch_var_f(lookat)
 
     if b_display:
         plt.figure()
@@ -259,9 +261,16 @@ if __name__ == '__main__':
                                                                      'camera at a fixed distance.')
     parser.add_argument('--display', action='store_true', help='Optionally display using matplotlib.')
     parser.add_argument('--render-sphere', action='store_true', help='Only render a sphere.')
+    parser.add_argument('--theta', nargs=2, type=float, default=[0, 180], help='angle from z-axis')
+    parser.add_argument('--phi', nargs=2, type=float, default=[0, 2 * 180], help='angle from x-axis')
+    parser.add_argument('--cam_pos', nargs=3, type=float, help='Camera position.')
+    parser.add_argument('--at', nargs=3, type=float, help='Camera lookat position.')
 
     args = parser.parse_args()
     print(args)
+
+    theta = np.deg2rad(args.theta)
+    phi = np.deg2rad(args.phi)
 
     if not os.path.exists(args.out_dir):
         os.makedirs(args.out_dir)
@@ -270,7 +279,10 @@ if __name__ == '__main__':
         render_sphere(out_dir=args.out_dir, cam_pos=[0, 0, 10], radius=0.03, width=64, height=64,
                       fovy=11.5, focal_length=args.f, num_views=args.nv)
     else:
-        cam_pos = None
+        cam_pos = args.cam_pos
+        print(cam_pos)
+        if cam_pos is not None:
+            cam_pos = np.array([cam_pos])
         if args.test_cam_dist:
             cam_pos = preset_cam_pos_0()
 
@@ -279,4 +291,5 @@ if __name__ == '__main__':
                                    width=args.width, height=args.height,
                                    fovy=args.fovy, focal_length=args.f,
                                    norm_depth_image_only=args.norm_depth_image_only,
-                                   cam_pos=cam_pos, b_display=args.display)
+                                   theta_range=args.theta, phi_range=args.phi,
+                                   cam_pos=cam_pos, cam_lookat=args.at, b_display=args.display)
