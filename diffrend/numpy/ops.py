@@ -31,7 +31,12 @@ def axis_angle_matrix(axis, angle):
 
 
 def rotate_axis_angle(axis, angle, vec):
-    return np.matmul(axis_angle_matrix(axis, angle), vec)
+    if vec.ndim == 1:
+        return np.matmul(axis_angle_matrix(axis, angle)[:3, :3], vec)
+    elif vec.ndim == 2:
+        return np.matmul(axis_angle_matrix(axis, angle)[:3, :3], vec[..., :3].T).T
+    else:
+        raise ValueError('Not Implemented')
 
 
 def crossprod_matrix(v):
