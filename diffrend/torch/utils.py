@@ -243,15 +243,15 @@ def lookat(eye, at, up):
     :return:
     """
     if up.size()[-1] == 4:
-        assert up.data.numpy()[3] == 0
+        assert get_data(up)[3] == 0
         up = up[:3]
 
     if eye.size()[-1] == 4:
-        assert abs(eye.data.numpy()[3]) > 0
+        assert abs(get_data(eye)[3]) > 0
         eye = eye[:3] / eye[3]
 
     if at.size()[-1] == 4:
-        assert abs(at.data.numpy()[3]) > 0
+        assert abs(get_data(at)[3]) > 0
         at = at[:3] / at[3]
 
     z = (eye - at)
