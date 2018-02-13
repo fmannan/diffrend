@@ -195,8 +195,6 @@ class GAN(object):
             raise ValueError('Unknown optimizer: ' + self.opt.optimizer)
 
 
-
-
     def get_real_samples(self):
         """Get a real sample."""
         if not self.opt.toy_example:
@@ -309,8 +307,14 @@ class GAN(object):
                     normals = batch[idx][:, 1:]
 
             # Set splats into rendering scene
+            if 'sphere' in self.scene['objects']:
+                del self.scene['objects']['sphere']
+            if 'triangle' in self.scene['objects']:
+                del self.scene['objects']['triangle']
+
             if 'disk' not in self.scene['objects']:
                 self.scene['objects'] = {'disk': {'pos': None, 'normal': None, 'material_idx': None}}
+
             self.scene['objects']['disk']['pos'] = pos
             self.scene['objects']['disk']['normal'] = normals
             self.scene['objects']['disk']['material_idx'] = tch_var_l(np.ones(x.ravel().size))
