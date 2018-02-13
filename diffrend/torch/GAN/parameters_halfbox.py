@@ -30,7 +30,7 @@ class Parameters():
             # default_root = '/data/lisa/data/ShapeNetCore.v2'
             # default_root = '/media/florian/8BAA-82D3/shapenet'
             default_out = './render_samples/'
-        elif username == 'fahim':
+        elif username == 'fahim' or username == 'fmannan':
             default_root = '/data/lisa/data/ShapeNetCore.v2'
             default_out = './render_samples/'
         elif username == 'mudumbas':

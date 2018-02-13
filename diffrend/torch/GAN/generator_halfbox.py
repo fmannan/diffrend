@@ -309,8 +309,11 @@ class GAN(object):
                     normals = batch[idx][:, 1:]
 
             # Set splats into rendering scene
+            if 'disk' not in self.scene['objects']:
+                self.scene['objects'] = {'disk': {'pos': None, 'normal': None, 'material_idx': None}}
             self.scene['objects']['disk']['pos'] = pos
             self.scene['objects']['disk']['normal'] = normals
+            self.scene['objects']['disk']['material_idx'] = tch_var_l(np.ones(x.ravel().size))
 
             # Set camera position
             if not self.opt.same_view:
@@ -494,7 +497,7 @@ def main():
             exp.param(key, val)
 
     # Create dataset loader
-    dataset_load = Dataset_load(opt)
+    dataset_load = None #Dataset_load(opt)
 
     # Create GAN
     gan = GAN(opt, dataset_load, exp)

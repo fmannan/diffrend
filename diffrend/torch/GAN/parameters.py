@@ -29,7 +29,7 @@ class Parameters():
             default_root = '/data/lisa/data/ShapeNetCore.v2'
             # default_root = '/media/florian/8BAA-82D3/shapenet'
             default_out = './render_samples/'
-        elif username == 'fahim':
+        elif username == 'fahim' or username == 'fmannan':
             default_root = '/data/lisa/data/ShapeNetCore.v2'
             default_out = './render_samples/'
         elif username == 'sai':
@@ -37,7 +37,9 @@ class Parameters():
             default_out = './render_samples/'
             # default_out = '/data/lisa/data/sai/renderer_bunny_64_sameview_check_separatefake'
         else:
-            raise ValueError('Add the route for the dataset of your system')
+            default_root = None
+            default_out = None
+            #raise ValueError('Add the route for the dataset of your system')
 
         # Dataset parameters
         self.parser.add_argument('--dataset', type=str, default='shapenet', help='dataset name')

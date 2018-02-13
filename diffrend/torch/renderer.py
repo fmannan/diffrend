@@ -216,7 +216,7 @@ def render_splats_NDC(scene, **params):
     frag_albedo = torch.index_select(materials, 0, material_idx)
 
     # Fragment shading
-    light_dir = light_pos_CC[:, np.newaxis, :] - frag_pos
+    light_dir = light_pos_CC[:, np.newaxis, :3] - frag_pos[:, :3]
     light_dir_norm = torch.sqrt(torch.sum(light_dir ** 2, dim=-1))[:, :, np.newaxis]
     light_dir /= light_dir_norm  # TODO: nonzero_divide
 
