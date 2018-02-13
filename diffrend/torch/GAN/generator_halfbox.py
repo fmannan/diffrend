@@ -6,7 +6,7 @@ import numpy as np
 from scipy.misc import imsave
 import os
 import sys
-#sys.path.append('../../..')
+
 import torch
 import torch.nn as nn
 import torch.nn.parallel
@@ -21,7 +21,7 @@ from diffrend.torch.GAN.parameters_halfbox import Parameters
 from diffrend.torch.GAN.utils import make_dot
 from diffrend.torch.params import SCENE_BASIC,  SCENE_SPHERE_HALFBOX
 from diffrend.torch.utils import tch_var_f, tch_var_l, where, get_data
-from diffrend.torch.renderer import render, render_splats_NDC
+from diffrend.torch.renderer import render, render_splats_NDC, render_splats_along_ray
 from diffrend.utils.sample_generator import uniform_sample_sphere
 from diffrend.torch.ops import sph2cart_unit
 # try: # temporarily
@@ -279,7 +279,7 @@ class GAN(object):
             x, y = np.meshgrid(
                 np.linspace(-1, 1, self.opt.splats_img_size),
                 np.linspace(-1, 1, self.opt.splats_img_size))
-        self.scene['objects']['disk']['material_idx'] = tch_var_l(np.ones(self.opt.splats_img_size * self.opt.splats_img_size))
+        self.scene['objects']['disk']['material_idx'] = tch_var_l(np.zeros(self.opt.splats_img_size * self.opt.splats_img_size))
         for idx in range(batch_size):
             # Get splats positions and normals
             if not self.opt.fix_splat_pos:
@@ -291,7 +291,10 @@ class GAN(object):
                 pos = np.stack((x.ravel(), y.ravel()), axis=1)
                 pos = tch_var_f(pos)
                 # TODO: Thanh here?
-                pos = torch.cat([pos, F.tanh(batch[idx][:, :1])], 1)
+                #pos = torch.cat([pos, F.tanh(batch[idx][:, :1])], 1) # for NDC
+                #pos = torch.cat([pos, -torch.abs(batch[idx][:, :1])], 1)  # for along-ray
+                #pos = torch.cat([pos, -F.relu(batch[idx][:, :1])], 1)  # for along-ray but not explicitly < -f (can it learn to be < -f?)
+                pos = torch.cat([pos, -self.scene['camera']['focal_length']-F.relu(batch[idx][:, :1])], 1)  # for along-ray
                 if self.opt.norm_sph_coord:
                     # TODO: Sigmoid here?
                     #phi_theta = F.sigmoid(batch[idx][:, 1:]) * tch_var_f([2 * np.pi, np.pi / 2.])[np.newaxis, :]
@@ -311,7 +314,8 @@ class GAN(object):
                 self.scene['camera']['eye'] = tch_var_f(self.cam_pos[0])
 
             # Render scene
-            res = render_splats_NDC(self.scene)
+            #res = render_splats_NDC(self.scene)
+            res = render_splats_along_ray(self.scene)
 
             # Get rendered output
             if self.opt.render_img_nc == 1:

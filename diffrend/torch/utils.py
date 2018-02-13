@@ -335,7 +335,6 @@ def generate_rays(camera):
     at = camera['at'][:3]
     up = camera['up'][:3]
 
-
     proj_type = camera['proj_type']
     if proj_type == 'ortho' or proj_type == 'orthographic':
         ray_dir = normalize(at - eye)[:, np.newaxis]

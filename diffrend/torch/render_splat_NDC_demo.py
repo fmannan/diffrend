@@ -212,7 +212,6 @@ def test_sphere_splat_NDC(out_dir, cam_pos, width, height, fovy, focal_length,  
     pos_CC = torch.matmul(tch_var_f(pos), Mcam.transpose(1, 0))
     pos_NDC = torch.matmul(pos_CC, Mproj.transpose(1, 0))
 
-
     large_scene['objects']['disk']['pos'] = pos_NDC / pos_NDC[..., 3][:, np.newaxis]
     large_scene['objects']['disk']['normal'] = tch_var_f(normals)
 

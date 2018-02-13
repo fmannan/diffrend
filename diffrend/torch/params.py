@@ -325,6 +325,6 @@ SCENE_SPHERE_HALFBOX = {
     },
     'tonemap': {
         'type': 'gamma',
-        'gamma': tch_var_f([0.8])
+        'gamma': tch_var_f([1.0])
     },
 }
