@@ -6,7 +6,7 @@ import numpy as np
 from scipy.misc import imsave
 import os
 import sys
-sys.path.append('../../..')
+#sys.path.append('../../..')
 import torch
 import torch.nn as nn
 import torch.nn.parallel
@@ -18,7 +18,7 @@ import torch.nn.functional as F
 from diffrend.torch.GAN.datasets import Dataset_load
 from diffrend.torch.GAN.networks import create_networks
 from diffrend.torch.GAN.parameters_halfbox import Parameters
-#from diffrend.torch.GAN.utils import make_dot
+from diffrend.torch.GAN.utils import make_dot
 from diffrend.torch.params import SCENE_BASIC,  SCENE_SPHERE_HALFBOX
 from diffrend.torch.utils import tch_var_f, tch_var_l, where, get_data
 from diffrend.torch.renderer import render, render_splats_NDC
