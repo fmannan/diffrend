@@ -103,13 +103,13 @@ class Parameters():
         self.parser.add_argument('--cam_dist', type=float, default=4.0, help='Camera distance from the center of the object')
         self.parser.add_argument('--nv', type=int, default=10, help='Number of views to generate')
         self.parser.add_argument('--angle', type=int, default=5, help='cam angle')
-        self.parser.add_argument('--fovy', type=float, default=11.5, help='Field of view in the vertical direction. Default: 15.0')
+        self.parser.add_argument('--fovy', type=float, default=45, help='Field of view in the vertical direction. Default: 15.0')
         self.parser.add_argument('--focal_length', type=float, default=0.1, help='focal length')
         self.parser.add_argument('--theta', nargs=2, type=float,default=None, help='Angle in degrees from the z-axis.')
         self.parser.add_argument('--phi', nargs=2, type=float,default=None, help='Angle in degrees from the x-axis.')
-        self.parser.add_argument('--axis', nargs=3, type=float, default=[.8, .5, 1],help='Axis for random camera position.')
+        self.parser.add_argument('--axis', nargs=3, type=float, default=[2, 1, 2],help='Axis for random camera position.')
         self.parser.add_argument('--cam_pos', nargs=3, type=float, help='Camera position.')
-        self.parser.add_argument('--at', nargs=3, default=[0, .4, 0],type=float, help='Camera lookat position.')
+        self.parser.add_argument('--at', nargs=3, default=[0, .8, 0],type=float, help='Camera lookat position.')
         self.parser.add_argument('--sphere-halfbox', action='store_true', help='Renders demo sphere-halfbox')
         self.parser.add_argument('--norm_depth_image_only', action='store_true', default=False, help='Render on the normalized'
                                                                                             ' depth image.')
@@ -121,8 +121,7 @@ class Parameters():
         self.parser.add_argument('--render_type', type=str, default='img', help='render the image or the depth map [img, depth]')
         self.parser.add_argument('--render_img_size', type=int, default=64, help='Width/height of the rendering image')
         self.parser.add_argument('--splats_radius', type=float, default=0.05, help='radius of the splats (fix)')
-        # self.parser.add_argument('--same_view', action='store_true', default=False, help='data with view fixed')
-        self.parser.add_argument('--same_view', action='store_true', default=True, help='data with view fixed') # before we add conditioning on cam pose, this is necessary
+        self.parser.add_argument('--same_view', action='store_true', help='data with view fixed') # before we add conditioning on cam pose, this is necessary
 
     def parse(self):
         """Parse."""

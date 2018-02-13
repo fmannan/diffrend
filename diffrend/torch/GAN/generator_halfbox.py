@@ -214,8 +214,8 @@ class GAN(object):
         # Define the camera poses
         if not self.opt.same_view:
             self.cam_pos = uniform_sample_sphere(radius=self.opt.cam_dist, num_samples=self.opt.batchSize,
-                                        axis=self.opt.axis, angle=self.opt.angle,
-                                        theta_range=self.opt.theta_range, phi_range=self.opt.phi_range)
+                                                 axis=self.opt.axis, angle=np.deg2rad(self.opt.angle),
+                                                 theta_range=self.opt.theta, phi_range=self.opt.phi)
 
         # Create a splats rendering scene
         large_scene = create_scene(self.opt.width, self.opt.height,
