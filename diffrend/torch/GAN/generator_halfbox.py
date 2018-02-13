@@ -23,29 +23,12 @@ from diffrend.torch.params import SCENE_BASIC,  SCENE_SPHERE_HALFBOX
 from diffrend.torch.utils import tch_var_f, tch_var_l, where, get_data
 from diffrend.torch.renderer import render, render_splats_NDC
 from diffrend.utils.sample_generator import uniform_sample_sphere
+from diffrend.torch.ops import sph2cart_unit
 # try: # temporarily
 #     from hyperdash import Experiment
 #     HYPERDASH_SUPPORTED = True
 # except ImportError:
 HYPERDASH_SUPPORTED = False
-
-
-def sph2cart_unit(u):
-    """Convert from spherical units to cartesian units.
-
-    :param u: N x 2 in [phi, theta]
-    :param phi: azimuth, i.e., angle between x-axis and xy proj of vector
-    r * sin(theta)
-    :param theta:  inclination, i.e., angle between vector and z-axis
-    :return: [x, y, z]
-    """
-    phi, theta = u[..., 0], u[..., 1]
-    theta=theta*0.5
-    sinth = torch.sin(theta)
-    x = sinth * torch.cos(phi)
-    y = sinth * torch.sin(phi)
-    z = torch.cos(theta)
-    return torch.stack((x, y, z), dim=-1)
 
 
 def create_scene(width, height, fovy, focal_length, n_samples,
@@ -283,7 +266,20 @@ class GAN(object):
         # print ('Gen Min', F.tanh(batch[:, :, :1]).min().cpu().data.numpy(),
         #        'Max', F.tanh(batch[:, :, :1]).max().cpu().data.numpy(),
         #        'Mean', F.tanh(batch[:, :, :1]).mean().cpu().data.numpy())
-        redered_data = []
+        rendered_data = []
+        # Set splats into rendering scene
+        if 'sphere' in self.scene['objects']:
+            del self.scene['objects']['sphere']
+        if 'triangle' in self.scene['objects']:
+            del self.scene['objects']['triangle']
+
+        if 'disk' not in self.scene['objects']:
+            self.scene['objects'] = {'disk': {'pos': None, 'normal': None, 'material_idx': None}}
+        if self.opt.fix_splat_pos:
+            x, y = np.meshgrid(
+                np.linspace(-1, 1, self.opt.splats_img_size),
+                np.linspace(-1, 1, self.opt.splats_img_size))
+        self.scene['objects']['disk']['material_idx'] = tch_var_l(np.ones(self.opt.splats_img_size * self.opt.splats_img_size))
         for idx in range(batch_size):
             # Get splats positions and normals
             if not self.opt.fix_splat_pos:
@@ -292,32 +288,21 @@ class GAN(object):
                        (torch.max(pos) - torch.min(pos)))
                 normals = batch[idx][:, 3:]
             else:
-                x, y = np.meshgrid(
-                    np.linspace(-1, 1, self.opt.splats_img_size),
-                    np.linspace(-1, 1, self.opt.splats_img_size))
                 pos = np.stack((x.ravel(), y.ravel()), axis=1)
                 pos = tch_var_f(pos)
                 # TODO: Thanh here?
                 pos = torch.cat([pos, F.tanh(batch[idx][:, :1])], 1)
                 if self.opt.norm_sph_coord:
                     # TODO: Sigmoid here?
-                    normals = sph2cart_unit(np.pi * F.sigmoid(batch[idx][:, 1:]))
-
+                    #phi_theta = F.sigmoid(batch[idx][:, 1:]) * tch_var_f([2 * np.pi, np.pi / 2.])[np.newaxis, :]
+                    phi = F.sigmoid(batch[idx][:, 1]) * 2 * np.pi
+                    theta = F.tanh(batch[idx][:, 2]) * np.pi / 2
+                    normals = sph2cart_unit(torch.stack((phi, theta), dim=1))
                 else:
                     normals = batch[idx][:, 1:]
 
-            # Set splats into rendering scene
-            if 'sphere' in self.scene['objects']:
-                del self.scene['objects']['sphere']
-            if 'triangle' in self.scene['objects']:
-                del self.scene['objects']['triangle']
-
-            if 'disk' not in self.scene['objects']:
-                self.scene['objects'] = {'disk': {'pos': None, 'normal': None, 'material_idx': None}}
-
             self.scene['objects']['disk']['pos'] = pos
             self.scene['objects']['disk']['normal'] = normals
-            self.scene['objects']['disk']['material_idx'] = tch_var_l(np.ones(x.ravel().size))
 
             # Set camera position
             if not self.opt.same_view:
@@ -341,9 +326,9 @@ class GAN(object):
                 im = res['image'].permute(2, 0, 1)
 
             # Store normalized depth into the data
-            redered_data.append(im)
-        redered_data = torch.stack(redered_data)
-        return redered_data
+            rendered_data.append(im)
+        rendered_data = torch.stack(rendered_data)
+        return rendered_data
 
     def train(self, ):
         """Train networtk."""
