@@ -4,7 +4,9 @@ from __future__ import absolute_import
 import copy
 import numpy as np
 from scipy.misc import imsave
-
+import os
+import sys
+sys.path.append('../../..')
 import torch
 import torch.nn as nn
 import torch.nn.parallel
@@ -15,8 +17,8 @@ import torch.nn.functional as F
 
 from diffrend.torch.GAN.datasets import Dataset_load
 from diffrend.torch.GAN.networks import create_networks
-from diffrend.torch.GAN.parameters import Parameters
-from diffrend.torch.GAN.utils import make_dot
+from diffrend.torch.GAN.parameters_halfbox import Parameters
+#from diffrend.torch.GAN.utils import make_dot
 from diffrend.torch.params import SCENE_BASIC,  SCENE_SPHERE_HALFBOX
 from diffrend.torch.utils import tch_var_f, tch_var_l, where, get_data
 from diffrend.torch.renderer import render, render_splats_NDC
@@ -123,10 +125,10 @@ class GAN(object):
                 self.cam_pos = np.stack(arrays, axis=0)
 
         # Create dataset loader
-        self.dataset_load.initialize_dataset()
-        self.dataset = self.dataset_load.get_dataset()
-        self.dataset_load.initialize_dataset_loader()
-        self.dataset_loader = self.dataset_load.get_dataset_loader()
+        #self.dataset_load.initialize_dataset()
+        #self.dataset = self.dataset_load.get_dataset()
+        #self.dataset_load.initialize_dataset_loader()
+        #self.dataset_loader = self.dataset_load.get_dataset_loader()
 
     def create_networks(self, ):
         """Create networks."""
@@ -212,6 +214,7 @@ class GAN(object):
         #     samples = self.generate_toy_samples()
 
         # Define the camera poses
+        import ipdb;ipdb.set_trace()
         if not self.opt.same_view:
             self.cam_pos = uniform_sample_sphere(radius=self.opt.cam_dist, num_samples=self.opt.batchSize,
                                         axis=self.opt.axis, angle=self.opt.angle,

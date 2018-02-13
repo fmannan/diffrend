@@ -33,7 +33,7 @@ class Parameters():
         elif username == 'fahim':
             default_root = '/data/lisa/data/ShapeNetCore.v2'
             default_out = './render_samples/'
-        elif username == 'sai':
+        elif username == 'mudumbas':
             default_root = '/data/lisa/data/ShapeNetCore.v2'
             default_out = './render_samples/'
             # default_out = '/data/lisa/data/sai/renderer_bunny_64_sameview_check_separatefake'
@@ -107,9 +107,9 @@ class Parameters():
         self.parser.add_argument('--focal_length', type=float, default=0.1, help='focal length')
         self.parser.add_argument('--theta', nargs=2, type=float,default=None, help='Angle in degrees from the z-axis.')
         self.parser.add_argument('--phi', nargs=2, type=float,default=None, help='Angle in degrees from the x-axis.')
-        self.parser.add_argument('--axis', nargs=3, type=float, deault=[.8, .5, 1],help='Axis for random camera position.')
+        self.parser.add_argument('--axis', nargs=3, type=float, default=[.8, .5, 1],help='Axis for random camera position.')
         self.parser.add_argument('--cam_pos', nargs=3, type=float, help='Camera position.')
-        self.parser.add_argument('--at', nargs=3, deault=[0, .4, 0],type=float, help='Camera lookat position.')
+        self.parser.add_argument('--at', nargs=3, default=[0, .4, 0],type=float, help='Camera lookat position.')
         self.parser.add_argument('--sphere-halfbox', action='store_true', help='Renders demo sphere-halfbox')
         self.parser.add_argument('--norm_depth_image_only', action='store_true', default=False, help='Render on the normalized'
                                                                                             ' depth image.')
