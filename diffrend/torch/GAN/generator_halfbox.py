@@ -214,7 +214,6 @@ class GAN(object):
         #     samples = self.generate_toy_samples()
 
         # Define the camera poses
-        import ipdb;ipdb.set_trace()
         if not self.opt.same_view:
             self.cam_pos = uniform_sample_sphere(radius=self.opt.cam_dist, num_samples=self.opt.batchSize,
                                         axis=self.opt.axis, angle=self.opt.angle,
@@ -224,12 +223,12 @@ class GAN(object):
         large_scene = create_scene(self.opt.width, self.opt.height,
                                    self.opt.fovy, self.opt.focal_length,
                                    self.opt.n_splats)
-        lookat = cam_lookat if cam_lookat is not None else [0.0, 0.0, 0.0, 1.0]
+        lookat = self.opt.at if self.opt.at is not None else [0.0, 0.0, 0.0, 1.0]
         large_scene['camera']['at'] = tch_var_f(lookat)
 
         # Render scenes
         data = []
-        for idx in range(batch_size):
+        for idx in range(self.opt.batchSize):
 
             # Set camera position
             if not self.opt.same_view:
