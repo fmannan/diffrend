@@ -134,8 +134,8 @@ def load_obj(filename, verbose=True):
             v.append([float(x) for x in line[1:]])
         if line[0] == 'f':
             # Note the conversion from 1-based to 0-based index
-            # Note skyping normals and texture index and avoiding extra spaces
-            f.append([(int(x.split('/')[0]) - 1) for x in line[1:] if x])
+            # Note skipping normals and texture index and avoiding extra spaces
+            f.append([int(x.split('/')[0]) - 1 for x in line[1:] if x])
 
     if verbose:
         print('Vertex count: {}'.format(len(v)))

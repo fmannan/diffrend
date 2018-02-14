@@ -55,7 +55,6 @@ def net_0(x, is_training, **params):
             net = slim.fully_connected(x, 4096, scope='fc1', normalizer_fn=slim.batch_norm)
             net = slim.fully_connected(net, 100, scope='fc2')
             net = slim.fully_connected(net, params['output_size'], scope='out', activation_fn=None, normalizer_fn=None)
-
     return net
 
 
@@ -70,10 +69,37 @@ def fc_net(x, is_training, **params):
     return net
 
 
+def conv_gen_0(x, is_training, **params):
+    N = params['input_size']
+    x = tf.reshape(x, (N, 1, 1, -1))
+    with tf.variable_scope('generator'):
+        with slim.arg_scope([slim.batch_norm, slim.dropout], is_training=is_training):
+            x = slim.conv2d(x, 25, (1, 1))
+            x = tf.reshape(x, (N, 5, 5, 1))
+            x = slim.conv2d(x, 49, (3, 3), padding='VALID')
+            x = slim.fully_connected(x, params['output_size'], scope='out', activation_fn=None, normalizer_fn=None)
+    return x
+
+
+def conv_gen_1(x, is_training, **params):
+    N = params['input_size']
+    x = tf.reshape(x, (N, 1, 1, -1))
+    with tf.variable_scope('generator'):
+        with slim.arg_scope([slim.batch_norm, slim.dropout], is_training=is_training):
+            x = slim.conv2d(x, 25, (1, 1))
+            x = tf.reshape(x, (N, 5, 5, 1))
+            x = slim.conv2d(x, 49, (3, 3), padding='SAME')
+            x = tf.reshape(x, (N, 7, 7, -1))
+            x = slim.conv2d(x, 81, (3, 3), padding='VALID')
+            x = slim.fully_connected(x, params['output_size'], scope='out', activation_fn=None, normalizer_fn=None)
+    return x
+
+
 if __name__ == '__main__':
     input_size = 1000  # batch of inputs
     rand_noise_size = 100  # dimension of the input space
-    output_size = 1000 * 3  # generate 1000 points
+    num_points = 1000
+    output_size = num_points * 3  # generate 1000 points
 
     lr = 1e-4
 
@@ -82,28 +108,34 @@ if __name__ == '__main__':
     net_2_spec = [1024, 8192, 4096, 100]
 
     net_spec = net_2_spec
+    fc_net_fn = lambda x: fc_net(x, layers=net_spec, is_training=True, output_size=output_size)
+    #conv_net_fn = lambda x: conv_gen_0(x, is_training=True, input_size=input_size, output_size=output_size)
+    conv_net_fn = lambda x: conv_gen_1(x, is_training=True, input_size=input_size, output_size=output_size)
+    network_fn = fc_net_fn  #conv_net_fn  #
 
-    obj_fn = point_on_circle_xy_loss  #point_on_sphere_loss  #point_on_disk_xy_loss #
+    obj_fn = point_on_sphere_loss  #point_on_circle_xy_loss  #point_on_disk_xy_loss #
 
     graph = tf.Graph()
     with graph.as_default():
         X = tf.placeholder(dtype=tf.float32, shape=[input_size, rand_noise_size])
 
-        pts = fc_net(X, layers=net_spec, is_training=True, output_size=output_size)
-        pts = tf.reshape(pts, (input_size, -1, 3))
+        pts = network_fn(X)
+        print(input_size, output_size)
+        pts = tf.reshape(pts, (input_size, num_points, 3))
+        print(pts)
 
         loss = tf.reduce_mean(obj_fn(pts, radius=1., scale=10))
 
         opt = tf.train.AdamOptimizer(learning_rate=lr).minimize(loss)
 
-    max_iter = 4000
+    max_iter = 7000
     print_interval = 100
     loss_per_iter = []
     err_per_iter = []
     best_loss = np.inf
     best_config = dict()
 
-    IMG_DIR = './circle_res'
+    IMG_DIR = './sphere_res_conv_gen_1_v0_1' #'./circle_res_conv_2'
     if not os.path.exists(IMG_DIR):
         os.mkdir(IMG_DIR)
 
