@@ -35,7 +35,7 @@ class Parameters():
             default_out = './render_samples/'
         elif username == 'mudumbas':
             default_root = '/data/lisa/data/ShapeNetCore.v2'
-            default_out = './render_samples/'
+            default_out = '/data/lisa/data/sai'
             # default_out = '/data/lisa/data/sai/renderer_bunny_64_sameview_check_separatefake'
         else:
             raise ValueError('Add the route for the dataset of your system')
@@ -69,8 +69,8 @@ class Parameters():
         self.parser.add_argument('--netG', default='', help="path to netG (to continue training)")
         self.parser.add_argument('--fix_splat_pos', action='store_true', default=True, help='X and Y coordinates are fix')
         self.parser.add_argument('--norm_sph_coord', action='store_true', default=True, help='Use spherical coordinates for the normal')
-
-        self.parser.add_argument('--disc_type', type=str, default='dcgan', help='One of: cnn, dcgan')
+        self.parser.add_argument('--max_gnorm', type=float, default=400., help='max grad norm to which it will be clipped (if exceeded)')
+        self.parser.add_argument('--disc_type', type=str, default='cnn', help='One of: cnn, dcgan')
         self.parser.add_argument('--disc_norm', type=str, default='None', help='One of: None, batchnorm, instancenorm')
         self.parser.add_argument('--ndf', type=int, default=64, help='number of features in the discriminator network')
         self.parser.add_argument('--disc_nextra_layers', type=int, default=0, help='number of extra layers in the discriminator network')
@@ -96,6 +96,7 @@ class Parameters():
         self.parser.add_argument('--ngpu', type=int, default=1, help='number of GPUs to use')
         self.parser.add_argument('--manualSeed', type=int, help='manual seed')
         self.parser.add_argument('--out_dir', type=str, default=default_out)
+        self.parser.add_argument('--name', type=str, default='',required=False)
 
         # Camera parameters
         self.parser.add_argument('--width', type=int, default=64)

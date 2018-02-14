@@ -6,7 +6,6 @@ import numpy as np
 from scipy.misc import imsave
 import os
 import sys
-
 import torch
 import torch.nn as nn
 import torch.nn.parallel
@@ -77,7 +76,7 @@ class GAN(object):
         self.real_label = 1
         self.fake_label = 0
         self.dataset_load = dataset_load
-
+        
         # Create dataset loader
         self.create_dataset_loader()
 
@@ -393,7 +392,7 @@ class GAN(object):
                         self.opt.gp_lambda)
                     gradient_penalty.backward()
                     errD += gradient_penalty
-
+                gnorm_D = torch.nn.utils.clip_grad_norm(self.netD.parameters(), self.opt.max_gnorm)
                 # Update weight
                 self.optimizerD.step()
 
@@ -427,6 +426,7 @@ class GAN(object):
                 errG.backward(self.mone)
             else:
                 raise ValueError('Unknown GAN criterium')
+            gnorm_G = torch.nn.utils.clip_grad_norm(self.netG.parameters(), self.opt.max_gnorm)
             self.optimizerG.step()
 
             # Log print
