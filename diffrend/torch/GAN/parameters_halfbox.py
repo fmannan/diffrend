@@ -70,7 +70,7 @@ class Parameters():
         self.parser.add_argument('--fix_splat_pos', action='store_true', default=True, help='X and Y coordinates are fix')
         self.parser.add_argument('--norm_sph_coord', action='store_true', default=True, help='Use spherical coordinates for the normal')
         self.parser.add_argument('--max_gnorm', type=float, default=400., help='max grad norm to which it will be clipped (if exceeded)')
-        self.parser.add_argument('--disc_type', type=str, default='cnn', help='One of: cnn, dcgan')
+        self.parser.add_argument('--disc_type', type=str, default='dcgan', help='One of: cnn, dcgan')
         self.parser.add_argument('--disc_norm', type=str, default='None', help='One of: None, batchnorm, instancenorm')
         self.parser.add_argument('--ndf', type=int, default=64, help='number of features in the discriminator network')
         self.parser.add_argument('--disc_nextra_layers', type=int, default=0, help='number of extra layers in the discriminator network')
