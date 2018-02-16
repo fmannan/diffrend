@@ -63,7 +63,7 @@ class Parameters():
         # Network parameters
         self.parser.add_argument('--gen_type', type=str, default='dcgan', help='One of: mlp, cnn, dcgan, resnet') # try resnet :)
         self.parser.add_argument('--gen_norm', type=str, default='batchnorm', help='One of: None, batchnorm, instancenorm')
-        self.parser.add_argument('--ngf', type=int, default=64, help='number of features in the generator network')
+        self.parser.add_argument('--ngf', type=int, default=90, help='number of features in the generator network')
         self.parser.add_argument('--gen_nextra_layers', type=int, default=0, help='number of extra layers in the generator network')
         self.parser.add_argument('--gen_bias_type', type=str, default=None, help='One of: None, plane')
         self.parser.add_argument('--netG', default='', help="path to netG (to continue training)")
@@ -81,7 +81,7 @@ class Parameters():
         self.parser.add_argument('--optimizer', type=str, default='adam', help='Optimizer (adam, rmsprop)')
         self.parser.add_argument('--lr', type=float, default=0.0001, help='learning rate, default=0.0002')
         self.parser.add_argument('--beta1', type=float, default=0.0, help='beta1 for adam. default=0.5')
-        self.parser.add_argument('--n_iter', type=int, default=4000, help='number of iterations to train')
+        self.parser.add_argument('--n_iter', type=int, default=40000, help='number of iterations to train')
         self.parser.add_argument('--batchSize', type=int, default=2, help='input batch size')
 
         # GAN parameters
