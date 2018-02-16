@@ -76,7 +76,7 @@ class GAN(object):
         self.real_label = 1
         self.fake_label = 0
         self.dataset_load = dataset_load
-        
+
         # Create dataset loader
         self.create_dataset_loader()
 
@@ -259,8 +259,9 @@ class GAN(object):
 
         # Generate camera positions on a sphere
         if not self.opt.same_view:
-            cam_pos = uniform_sample_sphere(radius=self.opt.cam_dist,
-                                            num_samples=self.batch_size)
+            cam_pos = uniform_sample_sphere(radius=self.opt.cam_dist, num_samples=self.opt.batchSize,
+                                                 axis=self.opt.axis, angle=np.deg2rad(self.opt.angle),
+                                                 theta_range=self.opt.theta, phi_range=self.opt.phi)
 
         # print ('Gen Min', F.tanh(batch[:, :, :1]).min().cpu().data.numpy(),
         #        'Max', F.tanh(batch[:, :, :1]).max().cpu().data.numpy(),
@@ -310,7 +311,7 @@ class GAN(object):
             if not self.opt.same_view:
                 self.scene['camera']['eye'] = tch_var_f(cam_pos[idx])
             else:
-                self.scene['camera']['eye'] = tch_var_f(self.cam_pos[0])
+                self.scene['camera']['eye'] = tch_var_f(cam_pos[0])
 
             # Render scene
             #res = render_splats_NDC(self.scene)

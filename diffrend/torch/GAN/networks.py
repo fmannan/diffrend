@@ -514,14 +514,14 @@ class _netD(nn.Module):
 
             nn.LeakyReLU(),
             # state size. (ndf*4) x 8 x 8
-            nn.Conv2d(ndf * 8, ndf * 8, 4, 2, 1, bias=True),
+            nn.Conv2d(ndf * 8, ndf * 10, 4, 2, 1, bias=True),
 
             nn.LeakyReLU(),
             # state size. (ndf*8) x 4 x 4
-            nn.Conv2d(ndf * 8, ndf * 8, 4, 1, 0, bias=True),
+            nn.Conv2d(ndf * 10, ndf * 10, 4, 1, 0, bias=True),
 
             nn.LeakyReLU(),
-            nn.Conv2d(ndf * 8, 1, 1, 1, 0, bias=True)
+            nn.Conv2d(ndf * 10, 1, 1, 1, 0, bias=True)
         )
 
     def forward(self, x):
@@ -597,7 +597,9 @@ class DCGAN_D(nn.Module):
         for t in range(n_extra_layers):
             main.add_module('extra-layers-{0}.{1}.conv'.format(t, cndf),
                             nn.Conv2d(cndf, cndf, 3, 1, 1, bias=False))
-
+            if norm is not None:
+                main.add_module('extra-layers-{0}.{1}.batchnorm'.format(
+                    t, cndf), nn.BatchNorm2d(cndf))
             main.add_module('extra-layers-{0}.{1}.relu'.format(t, cndf),
                             nn.LeakyReLU(0.2, inplace=True))
 
@@ -606,7 +608,9 @@ class DCGAN_D(nn.Module):
             out_feat = cndf * 2
             main.add_module('pyramid.{0}-{1}.conv'.format(in_feat, out_feat),
                             nn.Conv2d(in_feat, out_feat, 4, 2, 1, bias=False))
-
+            if norm is not None:
+                main.add_module('pyramid.{0}.batchnorm'.format(out_feat),
+                                nn.BatchNorm2d(out_feat))
             main.add_module('pyramid.{0}.relu'.format(out_feat),
                             nn.LeakyReLU(0.2, inplace=True))
             cndf = cndf * 2
