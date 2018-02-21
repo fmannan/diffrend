@@ -3,7 +3,7 @@ import os
 import json
 import numpy as np
 from torch.utils.data import Dataset
-from diffrend.model import load_model
+from diffrend.model import load_model, obj_to_triangle_spec
 from diffrend.utils.sample_generator import (uniform_sample_mesh,
                                              uniform_sample_sphere)
 # import copy
@@ -71,22 +71,33 @@ class ShapeNetDataset(Dataset):
         #                           num_samples=1000, out_dir=None,
         #                           resample=False, rotate_angle=360)
 
-        # Sample points from the 3D mesh
-        v, vn = uniform_sample_mesh(obj_model,
-                                    num_samples=self.opt.n_splats)
+        if self.opt.use_mesh:
+            # normalize the vertices
+            v = obj_model['v']
+            axis_range = np.max(v, axis=0) - np.min(v, axis=0)
+            v = (v - np.mean(v, axis=0)) / max(axis_range)  # Normalize to make the largest spread 1
+            obj_model['v'] = v
+            mesh = obj_to_triangle_spec(obj_model)
+            meshes = {'face': mesh['face'].astype(np.float32),
+                      'normal': mesh['normal'].astype(np.float32)}
+            sample = {'synset': synset, 'mesh': meshes}
+        else:
+            # Sample points from the 3D mesh
+            v, vn = uniform_sample_mesh(obj_model,
+                                        num_samples=self.opt.n_splats)
+            # Normalize the vertices
+            v = (v - np.mean(v, axis=0)) / (v.max() - v.min())
 
-        # Normalize the vertices
-        v = (v - np.mean(v, axis=0)) / (v.max() - v.min())
+            # Save the splats
+            splats = {'pos': v.astype(np.float32),
+                      'normal': vn.astype(np.float32)}
 
-        # Save the splats
-        splats = {'pos': v.astype(np.float32), 'normal': vn.astype(np.float32)}
+            # Convert model to splats and render views
+            # samples = self._generate_samples(obj_model)
 
-        # Convert model to splats and render views
-        # samples = self._generate_samples(obj_model)
-
-        # Add model and synset to the output dictionary
-        # sample = {'obj': obj_model, 'synset': synset, 'splats': splats}
-        sample = {'synset': synset, 'splats': splats}
+            # Add model and synset to the output dictionary
+            # sample = {'obj': obj_model, 'synset': synset, 'splats': splats}
+            sample = {'synset': synset, 'splats': splats}
 
         # Transform
         if self.transform:

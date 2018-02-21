@@ -48,7 +48,7 @@ class Parameters():
         self.parser.add_argument('--synsets', type=str, default='', help='Synsets from the shapenet dataset to use')
         self.parser.add_argument('--classes', type=str, default='bowl', help='Classes from the shapenet dataset to use')
         self.parser.add_argument('--workers', type=int, default=8, help='number of data loading workers')
-        self.parser.add_argument('--toy_example', action='store_true', default=True, help='Use toy example')
+        self.parser.add_argument('--toy_example', action='store_true', default=False, help='Use toy example')
         # corresponding folders: 02691156, 03759954
 
         # other low-footprint objects:

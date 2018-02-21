@@ -46,7 +46,8 @@ class Parameters():
         self.parser.add_argument('--synsets', type=str, default='', help='Synsets from the shapenet dataset to use')
         self.parser.add_argument('--classes', type=str, default='bowl', help='Classes from the shapenet dataset to use')
         self.parser.add_argument('--workers', type=int, default=8, help='number of data loading workers')
-        self.parser.add_argument('--toy_example', action='store_true', default=True, help='Use toy example')
+        self.parser.add_argument('--toy_example', action='store_true', default=False, help='Use toy example')
+        self.parser.add_argument('--use_mesh', action='store_true', default=True, help='Render dataset with meshes')
         # corresponding folders: 02691156, 03759954
 
         # other low-footprint objects:
@@ -104,13 +105,13 @@ class Parameters():
         self.parser.add_argument('--cam_dist', type=float, default=4.0, help='Camera distance from the center of the object')
         self.parser.add_argument('--nv', type=int, default=10, help='Number of views to generate')
         self.parser.add_argument('--angle', type=int, default=5, help='cam angle')
-        self.parser.add_argument('--fovy', type=float, default=45, help='Field of view in the vertical direction. Default: 15.0')
+        self.parser.add_argument('--fovy', type=float, default=20, help='Field of view in the vertical direction. Default: 15.0')
         self.parser.add_argument('--focal_length', type=float, default=0.1, help='focal length')
-        self.parser.add_argument('--theta', nargs=2, type=float,default=None, help='Angle in degrees from the z-axis.')
-        self.parser.add_argument('--phi', nargs=2, type=float,default=None, help='Angle in degrees from the x-axis.')
+        self.parser.add_argument('--theta', nargs=2, type=float, default=None, help='Angle in degrees from the z-axis.')
+        self.parser.add_argument('--phi', nargs=2, type=float, default=None, help='Angle in degrees from the x-axis.')
         self.parser.add_argument('--axis', nargs=3, type=float, default=[2, 1, 2],help='Axis for random camera position.')
         self.parser.add_argument('--cam_pos', nargs=3, type=float, help='Camera position.')
-        self.parser.add_argument('--at', nargs=3, default=[0, .8, 0],type=float, help='Camera lookat position.')
+        self.parser.add_argument('--at', nargs=3, default=[0, 0, 0], type=float, help='Camera lookat position.')
         self.parser.add_argument('--sphere-halfbox', action='store_true', help='Renders demo sphere-halfbox')
         self.parser.add_argument('--norm_depth_image_only', action='store_true', default=False, help='Render on the normalized'
                                                                                             ' depth image.')
@@ -118,7 +119,7 @@ class Parameters():
                                                                      'camera at a fixed distance.')
 
         # Rendering parameters
-        self.parser.add_argument('--splats_img_size', type=int, default=32, help='the height / width of the number of generator splats')
+        self.parser.add_argument('--splats_img_size', type=int, default=64, help='the height / width of the number of generator splats')
         self.parser.add_argument('--render_type', type=str, default='img', help='render the image or the depth map [img, depth]')
         self.parser.add_argument('--render_img_size', type=int, default=64, help='Width/height of the rendering image')
         self.parser.add_argument('--splats_radius', type=float, default=0.05, help='radius of the splats (fix)')

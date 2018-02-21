@@ -18,7 +18,7 @@ from diffrend.torch.GAN.datasets import Dataset_load
 from diffrend.torch.GAN.networks import create_networks
 from diffrend.torch.GAN.parameters_halfbox import Parameters
 from diffrend.torch.GAN.utils import make_dot
-from diffrend.torch.params import SCENE_BASIC,  SCENE_SPHERE_HALFBOX
+from diffrend.torch.params import SCENE_BASIC, SCENE_SPHERE_HALFBOX
 from diffrend.torch.utils import tch_var_f, tch_var_l, where, get_data
 from diffrend.torch.renderer import render, render_splats_NDC, render_splats_along_ray
 from diffrend.utils.sample_generator import uniform_sample_sphere
@@ -107,10 +107,11 @@ class GAN(object):
                 self.cam_pos = np.stack(arrays, axis=0)
 
         # Create dataset loader
-        #self.dataset_load.initialize_dataset()
-        #self.dataset = self.dataset_load.get_dataset()
-        #self.dataset_load.initialize_dataset_loader()
-        #self.dataset_loader = self.dataset_load.get_dataset_loader()
+        if not self.opt.toy_example:
+            self.dataset_load.initialize_dataset()
+            self.dataset = self.dataset_load.get_dataset()
+            self.dataset_load.initialize_dataset_loader(1)  # TODO: This is a hack!!!!
+            self.dataset_loader = self.dataset_load.get_dataset_loader()
 
     def create_networks(self, ):
         """Create networks."""
@@ -156,11 +157,6 @@ class GAN(object):
 
     def create_optimizers(self, ):
         """Create optimizers."""
-
-        # model_parameters = filter(lambda p: p.requires_grad, self.netG.parameters())
-        # params = sum([np.prod(p.size()) for p in model_parameters])
-        # print("trainable parameters:",params)
-
         if self.opt.optimizer == 'adam':
             self.optimizerD = optim.Adam(self.netD.parameters(),
                                          lr=self.opt.lr,
@@ -176,9 +172,8 @@ class GAN(object):
         else:
             raise ValueError('Unknown optimizer: ' + self.opt.optimizer)
 
-
-    def get_real_samples(self):
-        """Get a real sample."""
+    def get_samples(self):
+        """Get samples."""
         if not self.opt.toy_example:
             # Load a batch of samples
             try:
@@ -193,11 +188,18 @@ class GAN(object):
         # else:
         #     samples = self.generate_toy_samples()
 
+        return samples
+
+    def get_real_samples(self):
+        """Get a real sample."""
+        # samples = self.get_samples()
+
         # Define the camera poses
         if not self.opt.same_view:
-            self.cam_pos = uniform_sample_sphere(radius=self.opt.cam_dist, num_samples=self.opt.batchSize,
-                                                 axis=self.opt.axis, angle=np.deg2rad(self.opt.angle),
-                                                 theta_range=self.opt.theta, phi_range=self.opt.phi)
+            self.cam_pos = uniform_sample_sphere(
+                radius=self.opt.cam_dist, num_samples=self.opt.batchSize,
+                axis=self.opt.axis, angle=np.deg2rad(self.opt.angle),
+                theta_range=self.opt.theta, phi_range=self.opt.phi)
 
         # Create a splats rendering scene
         large_scene = create_scene(self.opt.width, self.opt.height,
@@ -209,6 +211,49 @@ class GAN(object):
         # Render scenes
         data = []
         for idx in range(self.opt.batchSize):
+            # Save the splats into the rendering scene
+            if not self.opt.toy_example:
+                if self.opt.use_mesh:
+                    if 'sphere' in large_scene['objects']:
+                        del large_scene['objects']['sphere']
+                    if 'disk' in large_scene['objects']:
+                        del large_scene['objects']['disk']
+                    if 'triangle' not in large_scene['objects']:
+                        large_scene['objects'] = {
+                            'triangle': {'face': None, 'normal': None,
+                                         'material_idx': None}}
+
+                    # TODO: Solve this hack!!!!!!
+                    while True:
+                        samples = self.get_samples()
+                        if samples['mesh']['face'][0].size(0) <= 4000:
+                            break
+                    # print (samples['mesh']['face'][0].size())
+                    large_scene['objects']['triangle']['material_idx'] = tch_var_l(
+                        np.zeros(samples['mesh']['face'][0].shape[0], dtype=int).tolist())
+                    large_scene['objects']['triangle']['face'] = Variable(
+                        samples['mesh']['face'][0].cuda(), requires_grad=False)
+                    large_scene['objects']['triangle']['normal'] = Variable(
+                        samples['mesh']['normal'][0].cuda(),
+                        requires_grad=False)
+                else:
+                    if 'sphere' in large_scene['objects']:
+                        del large_scene['objects']['sphere']
+                    if 'triangle' in large_scene['objects']:
+                        del large_scene['objects']['triangle']
+                    if 'disk' not in large_scene['objects']:
+                        large_scene['objects'] = {'disk': {'pos': None,
+                                                           'normal': None,
+                                                           'material_idx': None}}
+                    large_scene['objects']['disk']['radius'] = tch_var_f(
+                        np.ones(self.opt.n_splats) * self.opt.splats_radius)
+                    large_scene['objects']['disk']['material_idx'] = tch_var_l(
+                        np.zeros(self.opt.n_splats, dtype=int).tolist())
+                    large_scene['objects']['disk']['pos'] = Variable(
+                        samples['splats']['pos'][idx].cuda(), requires_grad=False)
+                    large_scene['objects']['disk']['normal'] = Variable(
+                        samples['splats']['normal'][idx].cuda(),
+                        requires_grad=False)
 
             # Set camera position
             if not self.opt.same_view:
@@ -217,9 +262,8 @@ class GAN(object):
                 large_scene['camera']['eye'] = tch_var_f(self.cam_pos[0])
 
             # Render scene
-            res = render(large_scene,norm_depth_image_only=self.opt.norm_depth_image_only)
-
-
+            res = render(large_scene,
+                         norm_depth_image_only=self.opt.norm_depth_image_only)
 
             # Get rendered output
             if self.opt.render_img_nc == 1:
@@ -259,27 +303,25 @@ class GAN(object):
 
         # Generate camera positions on a sphere
         if not self.opt.same_view:
-            cam_pos = uniform_sample_sphere(radius=self.opt.cam_dist, num_samples=self.opt.batchSize,
-                                                 axis=self.opt.axis, angle=np.deg2rad(self.opt.angle),
-                                                 theta_range=self.opt.theta, phi_range=self.opt.phi)
+            cam_pos = uniform_sample_sphere(
+                radius=self.opt.cam_dist, num_samples=self.opt.batchSize,
+                axis=self.opt.axis, angle=np.deg2rad(self.opt.angle),
+                theta_range=self.opt.theta, phi_range=self.opt.phi)
 
-        # print ('Gen Min', F.tanh(batch[:, :, :1]).min().cpu().data.numpy(),
-        #        'Max', F.tanh(batch[:, :, :1]).max().cpu().data.numpy(),
-        #        'Mean', F.tanh(batch[:, :, :1]).mean().cpu().data.numpy())
         rendered_data = []
         # Set splats into rendering scene
         if 'sphere' in self.scene['objects']:
             del self.scene['objects']['sphere']
         if 'triangle' in self.scene['objects']:
             del self.scene['objects']['triangle']
-
         if 'disk' not in self.scene['objects']:
-            self.scene['objects'] = {'disk': {'pos': None, 'normal': None, 'material_idx': None}}
+            self.scene['objects'] = {'disk': {'pos': None, 'normal': None,
+                                              'material_idx': None}}
         if self.opt.fix_splat_pos:
-            x, y = np.meshgrid(
-                np.linspace(-1, 1, self.opt.splats_img_size),
-                np.linspace(-1, 1, self.opt.splats_img_size))
-        self.scene['objects']['disk']['material_idx'] = tch_var_l(np.zeros(self.opt.splats_img_size * self.opt.splats_img_size))
+            x, y = np.meshgrid(np.linspace(-1, 1, self.opt.splats_img_size),
+                               np.linspace(-1, 1, self.opt.splats_img_size))
+        self.scene['objects']['disk']['material_idx'] = tch_var_l(
+            np.zeros(self.opt.splats_img_size * self.opt.splats_img_size))
         for idx in range(batch_size):
             # Get splats positions and normals
             if not self.opt.fix_splat_pos:
@@ -291,13 +333,13 @@ class GAN(object):
                 pos = np.stack((x.ravel(), y.ravel()), axis=1)
                 pos = tch_var_f(pos)
                 # TODO: Thanh here?
-                #pos = torch.cat([pos, F.tanh(batch[idx][:, :1])], 1) # for NDC
-                #pos = torch.cat([pos, -torch.abs(batch[idx][:, :1])], 1)  # for along-ray
-                #pos = torch.cat([pos, -F.relu(batch[idx][:, :1])], 1)  # for along-ray but not explicitly < -f (can it learn to be < -f?)
+                # pos = torch.cat([pos, F.tanh(batch[idx][:, :1])], 1) # for NDC
+                # pos = torch.cat([pos, -torch.abs(batch[idx][:, :1])], 1)  # for along-ray
+                # pos = torch.cat([pos, -F.relu(batch[idx][:, :1])], 1)  # for along-ray but not explicitly < -f (can it learn to be < -f?)
                 pos = torch.cat([pos, -self.scene['camera']['focal_length']-F.relu(batch[idx][:, :1])], 1)  # for along-ray
                 if self.opt.norm_sph_coord:
                     # TODO: Sigmoid here?
-                    #phi_theta = F.sigmoid(batch[idx][:, 1:]) * tch_var_f([2 * np.pi, np.pi / 2.])[np.newaxis, :]
+                    # phi_theta = F.sigmoid(batch[idx][:, 1:]) * tch_var_f([2 * np.pi, np.pi / 2.])[np.newaxis, :]
                     phi = F.sigmoid(batch[idx][:, 1]) * 2 * np.pi
                     theta = F.tanh(batch[idx][:, 2]) * np.pi / 2
                     normals = sph2cart_unit(torch.stack((phi, theta), dim=1))
@@ -314,7 +356,7 @@ class GAN(object):
                 self.scene['camera']['eye'] = tch_var_f(cam_pos[0])
 
             # Render scene
-            #res = render_splats_NDC(self.scene)
+            # res = render_splats_NDC(self.scene)
             res = render_splats_along_ray(self.scene)
 
             # Get rendered output
@@ -393,7 +435,8 @@ class GAN(object):
                         self.opt.gp_lambda)
                     gradient_penalty.backward()
                     errD += gradient_penalty
-                gnorm_D = torch.nn.utils.clip_grad_norm(self.netD.parameters(), self.opt.max_gnorm)
+                gnorm_D = torch.nn.utils.clip_grad_norm(self.netD.parameters(),
+                                                        self.opt.max_gnorm)
                 # Update weight
                 self.optimizerD.step()
 
@@ -427,7 +470,8 @@ class GAN(object):
                 errG.backward(self.mone)
             else:
                 raise ValueError('Unknown GAN criterium')
-            gnorm_G = torch.nn.utils.clip_grad_norm(self.netG.parameters(), self.opt.max_gnorm)
+            gnorm_G = torch.nn.utils.clip_grad_norm(self.netG.parameters(),
+                                                    self.opt.max_gnorm)
             self.optimizerG.step()
 
             # Log print
@@ -491,7 +535,10 @@ def main():
             exp.param(key, val)
 
     # Create dataset loader
-    dataset_load = None #Dataset_load(opt)
+    if opt.toy_example:
+        dataset_load = None
+    else:
+        dataset_load = Dataset_load(opt)
 
     # Create GAN
     gan = GAN(opt, dataset_load, exp)
