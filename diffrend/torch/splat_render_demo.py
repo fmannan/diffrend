@@ -108,7 +108,8 @@ def render_random_camera(filename, out_dir, num_samples, radius, cam_dist, num_v
         imsave(out_dir + '/depth' + suffix + '.png', im_depth)
 
     # Timing statistics
-    print('Sampling time mean: {}s, std: {}s'.format(np.mean(sampling_time), np.std(sampling_time)))
+    if not use_mesh:
+        print('Sampling time mean: {}s, std: {}s'.format(np.mean(sampling_time), np.std(sampling_time)))
     print('Rendering time mean: {}s, std: {}s'.format(np.mean(rendering_time), np.std(rendering_time)))
 
 

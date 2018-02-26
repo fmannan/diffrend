@@ -219,6 +219,10 @@ def sph2cart_vec(u):
     x = sinth * np.cos(phi) * radius
     y = sinth * np.sin(phi) * radius
     z = np.cos(theta) * radius
+    if x.ndim == 1:
+        x = x[..., np.newaxis]
+        y = y[..., np.newaxis]
+        z = z[..., np.newaxis]
     return np.concatenate((x, y, z), axis=-1)
 
 
@@ -267,5 +271,17 @@ def test_backface_culling():
     np.testing.assert_equal(new_obj['f'], np.array([[0, 2, 1]]))
 
 
+def test_sph2cart_vec():
+    phi = np.linspace(np.deg2rad(30), np.deg2rad(60), 100)
+    theta = np.ones_like(phi) * np.deg2rad(45)
+    cam_dist = np.ones_like(phi) * 10
+
+    sph_coords = np.stack((cam_dist, phi, theta), axis=1)
+    cart_coords = sph2cart_vec(sph_coords)
+    #print(cart_coords.shape)
+
+
 if __name__ == '__main__':
     test_backface_culling()
+
+

@@ -115,6 +115,7 @@ class Parameters():
         self.parser.add_argument('--sphere-halfbox', action='store_true', help='Renders demo sphere-halfbox')
         self.parser.add_argument('--norm_depth_image_only', action='store_true', default=False, help='Render on the normalized'
                                                                                             ' depth image.')
+        self.parser.add_argument('--mesh', action='store_true', help='Render as mesh if enabled.')
         self.parser.add_argument('--test_cam_dist', action='store_true', help='Check if the images are consistent with a'
                                                                      'camera at a fixed distance.')
 
