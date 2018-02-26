@@ -11,12 +11,13 @@ import os
 from time import time
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.misc import imsave
+from imageio import imsave
 
 
 def render_random_camera(filename, out_dir, num_samples, radius, cam_dist, num_views, width, height,
-                               fovy, focal_length, norm_depth_image_only, theta_range=None, phi_range=None,
-                               axis=None, angle=None, cam_pos=None, cam_lookat=None, use_mesh=False, b_display=False):
+                         fovy, focal_length, norm_depth_image_only, theta_range=None, phi_range=None,
+                         axis=None, angle=None, cam_pos=None, cam_lookat=None, use_mesh=False,
+                         double_sided=False, b_display=False):
     """
     Randomly generate N samples on a surface and render them. The samples include position and normal, the radius is set
     to a constant.
@@ -86,10 +87,10 @@ def render_random_camera(filename, out_dir, num_samples, radius, cam_dist, num_v
 
         # main render run
         start_time = time()
-        res = render(scene, norm_depth_image_only=norm_depth_image_only)
+        res = render(scene, norm_depth_image_only=norm_depth_image_only, double_sided=double_sided)
         rendering_time.append(time() - start_time)
 
-        im = get_data(res['image'])
+        im = np.uint8(255. * get_data(res['image']))
         depth = get_data(res['depth'])
 
         depth[depth >= scene['camera']['far']] = depth.min()
@@ -255,7 +256,7 @@ def render_sphere_halfbox(out_dir, cam_pos, width, height, fovy, focal_length, n
     scene['camera']['at'] = tch_var_f(lookat)
 
     res = render(scene)
-    im = get_data(res['image'])
+    im = np.uint8(255. * get_data(res['image']))
     depth = get_data(res['depth'])
 
     depth[depth >= scene['camera']['far']] = depth.min()
@@ -284,7 +285,7 @@ def render_sphere_halfbox(out_dir, cam_pos, width, height, fovy, focal_length, n
         # main render run
         res = render(scene, norm_depth_image_only=norm_depth_image_only)
 
-        im = get_data(res['image'])
+        im = np.uint8(255. * get_data(res['image']))
         depth = get_data(res['depth'])
 
         depth[depth >= scene['camera']['far']] = depth.min()
@@ -354,7 +355,8 @@ if __name__ == '__main__':
     parser.add_argument('--cam_pos', nargs=3, type=float, help='Camera position.')
     parser.add_argument('--at', nargs=3, type=float, help='Camera lookat position.')
     parser.add_argument('--mesh', action='store_true', help='Render mesh if enabled.')
-    parser.add_argument('--sphere-halfbox', action='store_true', help='Renders demo sphere-halfbox')
+    parser.add_argument('--sphere-halfbox', action='store_true', help='Renders demo sphere-halfbox.')
+    parser.add_argument('--double-sided', action='store_true', help='Render double-sided triangles.')
 
     args = parser.parse_args()
     print(args)
@@ -400,4 +402,4 @@ if __name__ == '__main__':
                              norm_depth_image_only=args.norm_depth_image_only,
                              theta_range=args.theta, phi_range=args.phi,
                              axis=axis, angle=angle, cam_pos=cam_pos, cam_lookat=args.at,
-                             use_mesh=args.mesh, b_display=args.display)
+                             use_mesh=args.mesh, b_display=args.display, double_sided=args.double_sided)
