@@ -100,8 +100,8 @@ class Parameters():
         self.parser.add_argument('--name', type=str, default='',required=False)
 
         # Camera parameters
-        self.parser.add_argument('--width', type=int, default=64)
-        self.parser.add_argument('--height', type=int, default=64)
+        self.parser.add_argument('--width', type=int, default=128)
+        self.parser.add_argument('--height', type=int, default=128)
         self.parser.add_argument('--cam_dist', type=float, default=4.0, help='Camera distance from the center of the object')
         self.parser.add_argument('--nv', type=int, default=10, help='Number of views to generate')
         self.parser.add_argument('--angle', type=int, default=5, help='cam angle')
@@ -119,9 +119,9 @@ class Parameters():
                                                                      'camera at a fixed distance.')
 
         # Rendering parameters
-        self.parser.add_argument('--splats_img_size', type=int, default=64, help='the height / width of the number of generator splats')
+        self.parser.add_argument('--splats_img_size', type=int, default=128, help='the height / width of the number of generator splats')
         self.parser.add_argument('--render_type', type=str, default='img', help='render the image or the depth map [img, depth]')
-        self.parser.add_argument('--render_img_size', type=int, default=64, help='Width/height of the rendering image')
+        self.parser.add_argument('--render_img_size', type=int, default=128, help='Width/height of the rendering image')
         self.parser.add_argument('--splats_radius', type=float, default=0.05, help='radius of the splats (fix)')
         self.parser.add_argument('--same_view', action='store_true', help='data with view fixed') # before we add conditioning on cam pose, this is necessary
 
