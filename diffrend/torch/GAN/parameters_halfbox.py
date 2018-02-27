@@ -23,6 +23,7 @@ class Parameters():
         username = getpass.getuser()
         if username == 'dvazquez' or username == 'root':
             default_root = '/home/dvazquez/datasets/shapenet/ShapeNetCore.v2'
+            default_root = './my_data/'
             # default_root = '/mnt/home/dvazquez/datasets/shapenet/ShapeNetCore.v2'
             default_out = './render_samples/'
         elif username == 'florian':
@@ -41,7 +42,7 @@ class Parameters():
             raise ValueError('Add the route for the dataset of your system')
 
         # Dataset parameters
-        self.parser.add_argument('--dataset', type=str, default='shapenet', help='dataset name: [shapenet, objects_folder]')
+        self.parser.add_argument('--dataset', type=str, default='objects_folder', help='dataset name: [shapenet, objects_folder]')
         self.parser.add_argument('--root_dir', type=str, default=default_root, help='dataset root directory')
         self.parser.add_argument('--synsets', type=str, default='', help='Synsets from the shapenet dataset to use')
         self.parser.add_argument('--classes', type=str, default='bowl', help='Classes from the shapenet dataset to use')
