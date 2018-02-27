@@ -5,6 +5,7 @@ import torch.utils.data
 import torchvision.datasets as dset
 import torchvision.transforms as transforms
 from diffrend.torch.GAN.shapenet import ShapeNetDataset
+from diffrend.torch.GAN.objects_folder import ObjectsFolderDataset
 
 
 class Dataset_load():
@@ -51,6 +52,8 @@ class Dataset_load():
                 transform=transforms.ToTensor())
         elif self.opt.dataset == 'shapenet':
             self.dataset = ShapeNetDataset(self.opt, transform=None)
+        elif self.opt.dataset == 'objects_folder':
+            self.dataset = ObjectsFolderDataset(self.opt, transform=None)
         assert self.dataset
 
     def initialize_dataset_loader(self, batchSize=None):
