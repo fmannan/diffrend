@@ -23,6 +23,7 @@ class Parameters():
         username = getpass.getuser()
         if username == 'dvazquez' or username == 'root':
             default_root = '/home/dvazquez/datasets/shapenet/ShapeNetCore.v2'
+            default_root = './my_data/'
             # default_root = '/mnt/home/dvazquez/datasets/shapenet/ShapeNetCore.v2'
             default_out = './render_samples/'
         elif username == 'florian':
@@ -41,7 +42,7 @@ class Parameters():
             raise ValueError('Add the route for the dataset of your system')
 
         # Dataset parameters
-        self.parser.add_argument('--dataset', type=str, default='shapenet', help='dataset name')
+        self.parser.add_argument('--dataset', type=str, default='objects_folder', help='dataset name: [shapenet, objects_folder]')
         self.parser.add_argument('--root_dir', type=str, default=default_root, help='dataset root directory')
         self.parser.add_argument('--synsets', type=str, default='', help='Synsets from the shapenet dataset to use')
         self.parser.add_argument('--classes', type=str, default='bowl', help='Classes from the shapenet dataset to use')
@@ -100,8 +101,8 @@ class Parameters():
         self.parser.add_argument('--name', type=str, default='',required=False)
 
         # Camera parameters
-        self.parser.add_argument('--width', type=int, default=64)
-        self.parser.add_argument('--height', type=int, default=64)
+        self.parser.add_argument('--width', type=int, default=128)
+        self.parser.add_argument('--height', type=int, default=128)
         self.parser.add_argument('--cam_dist', type=float, default=4.0, help='Camera distance from the center of the object')
         self.parser.add_argument('--nv', type=int, default=10, help='Number of views to generate')
         self.parser.add_argument('--angle', type=int, default=5, help='cam angle')
@@ -120,9 +121,9 @@ class Parameters():
                                                                      'camera at a fixed distance.')
 
         # Rendering parameters
-        self.parser.add_argument('--splats_img_size', type=int, default=64, help='the height / width of the number of generator splats')
+        self.parser.add_argument('--splats_img_size', type=int, default=128, help='the height / width of the number of generator splats')
         self.parser.add_argument('--render_type', type=str, default='img', help='render the image or the depth map [img, depth]')
-        self.parser.add_argument('--render_img_size', type=int, default=64, help='Width/height of the rendering image')
+        self.parser.add_argument('--render_img_size', type=int, default=128, help='Width/height of the rendering image')
         self.parser.add_argument('--splats_radius', type=float, default=0.05, help='radius of the splats (fix)')
         self.parser.add_argument('--same_view', action='store_true', help='data with view fixed') # before we add conditioning on cam pose, this is necessary
 
