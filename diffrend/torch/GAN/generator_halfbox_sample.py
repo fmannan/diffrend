@@ -21,7 +21,7 @@ from diffrend.torch.GAN.cnetworks import create_networks
 from diffrend.torch.GAN.parameters_halfbox import Parameters
 from diffrend.torch.GAN.utils import make_dot
 from diffrend.torch.params import SCENE_BASIC,  SCENE_SPHERE_HALFBOX
-from diffrend.torch.utils import tch_var_f, tch_var_l, where, get_data, normalize
+from diffrend.torch.utils import tch_var_f, tch_var_l, where, get_data, normalize, cam_to_world
 from diffrend.torch.renderer import render, render_splats_NDC, render_splats_along_ray
 from diffrend.utils.sample_generator import uniform_sample_sphere
 from diffrend.torch.ops import sph2cart_unit
@@ -295,6 +295,8 @@ class GAN(object):
         #        'Mean', F.tanh(batch[:, :, :1]).mean().cpu().data.numpy())
         rendered_data = []
         rendered_data_cond = []
+        rendered_res_world = []
+        scenes=[]
         # Set splats into rendering scene
         if 'sphere' in self.scene['objects']:
             del self.scene['objects']['sphere']
@@ -342,11 +344,13 @@ class GAN(object):
                 self.scene['camera']['eye'] = batch_cond[idx]
             else:
                 self.scene['camera']['eye'] = batch_cond[0]
-            # view_dir = normalize(self.scene['camera']['at'] - self.scene['camera']['eye'])
+
             # Render scene
             #res = render_splats_NDC(self.scene)
             res = render_splats_along_ray(self.scene)
-
+            #import ipdb; ipdb.set_trace()
+            res_world = cam_to_world(pos=res['pos'], normal=res['normal'], camera=self.scene['camera'])
+            # print("out of cam-to-world")
             # Get rendered output
             if self.opt.render_img_nc == 1:
                 depth = res['depth']
@@ -362,7 +366,19 @@ class GAN(object):
             # Store normalized depth into the data
             rendered_data.append(im)
             rendered_data_cond.append(self.scene['camera']['eye'])
+            rendered_res_world.append(res_world)
+            scenes.append(self.scene)
+        print("out of forloop")
         rendered_data = torch.stack(rendered_data)
+        #rendered_res_world = torch.stack(rendered_res_world)
+        #scenes=torch.stack(scenes)
+        # out_file = os.path.join("/data/lisa/data/sai","generator_output"+".npy")
+        # np.save(out_file,batch)
+        print("saved batch")
+        out_file2 = os.path.join("/data/lisa/data/sai","scene_output"+".npy")
+        np.save(out_file2,scenes)
+        out_file3 = os.path.join("/data/lisa/data/sai","res_world"+".npy")
+        np.save(out_file3,rendered_res_world)
         #rendered_data_cond = torch.stack(torch.cat([large_scene['camera']['eye'],view_dir]))
         return rendered_data
 
@@ -373,118 +389,11 @@ class GAN(object):
         open(self.opt.gen_model_path, 'rb'
         )
         ))
-
+        iteration=0
         self.netD.load_state_dict(torch.load(
         open(self.opt.dis_model_path, 'rb'
          )
          ))
-
-        # for iteration in range(self.opt.n_iter):
-        #     ############################
-        #     # (1) Update D network
-        #     ###########################
-        #     # # Reset required grad: they are set to False below in netG update
-        #     # for p in self.netD.parameters():
-        #     #     p.requires_grad = True
-        #
-        #     # # Modify number of critic iterations
-        #     # if iteration < 25 or iteration % 500 == 0:
-        #     #     critic_iters = 100
-        #     # else:
-        #     #     critic_iters = self.opt.critic_iters
-        #
-        #     # Train Discriminator critic_iters times
-        #     for j in range(self.opt.critic_iters):
-        #         # Train with real
-        #         #################
-        #         self.netD.zero_grad()
-        #         self.get_real_samples()
-        #         real_output = self.netD(self.inputv,self.inputv_cond)
-        #         if self.opt.criterion == 'GAN':
-        #             errD_real = self.criterion(real_output, self.labelv)
-        #             errD_real.backward()
-        #         elif self.opt.criterion == 'WGAN':
-        #             errD_real = real_output.mean()
-        #             errD_real.backward(self.mone)
-        #         else:
-        #             raise ValueError('Unknown GAN criterium')
-        #
-        #         # Train with fake
-        #         #################
-        #         self.generate_noise_vector()
-        #         fake = self.netG(self.noisev,self.inputv_cond)
-        #         fake_rendered = self.render_batch(fake,self.inputv_cond)
-        #         # Do not bp through gen
-        #         outD_fake = self.netD(fake_rendered.detach(),self.inputv_cond.detach())
-        #         if self.opt.criterion == 'GAN':
-        #             labelv = Variable(self.label.fill_(self.fake_label))
-        #             errD_fake = self.criterion(outD_fake, labelv)
-        #             errD_fake.backward()
-        #             errD = errD_real + errD_fake
-        #         elif self.opt.criterion == 'WGAN':
-        #             errD_fake = outD_fake.mean()
-        #             errD_fake.backward(self.one)
-        #             errD = errD_fake - errD_real
-        #         else:
-        #             raise ValueError('Unknown GAN criterium')
-        #
-        #         # Compute gradient penalty
-        #         if self.opt.gp != 'None':
-        #             gradient_penalty = calc_gradient_penalty(
-        #                 self.netD, self.inputv.data, fake_rendered.data,self.inputv_cond.data,
-        #                 self.opt.gp_lambda)
-        #             gradient_penalty.backward()
-        #             errD += gradient_penalty
-        #         gnorm_D = torch.nn.utils.clip_grad_norm(self.netD.parameters(), self.opt.max_gnorm)
-        #         # Update weight
-        #         self.optimizerD.step()
-        #
-        #         # Clamp critic weigths if not GP and if WGAN
-        #         if self.opt.criterion == 'WGAN' and self.opt.gp == 'None':
-        #             for p in self.netD.parameters():
-        #                 p.data.clamp_(-self.opt.clamp, self.opt.clamp)
-        #
-        #     ############################
-        #     # (2) Update G network
-        #     ###########################
-        #     # To avoid computation
-        #     # for p in self.netD.parameters():
-        #     #     p.requires_grad = False
-        #
-        #     self.netG.zero_grad()
-        #     self.generate_noise_vector()
-        #     fake = self.netG(self.noisev,self.inputv_cond)
-        #     fake_rendered = self.render_batch(fake,self.inputv_cond)
-        #     outG_fake = self.netD(fake_rendered, self.inputv_cond)
-        #     dot = make_dot(fake)
-        #     # dot.render('teeest/gen.gv', view=True)
-        #     # quit()
-        #
-        #     if self.opt.criterion == 'GAN':
-        #         # Fake labels are real for generator cost
-        #         labelv = Variable(self.label.fill_(self.real_label))
-        #         errG = self.criterion(outG_fake, labelv)
-        #         errG.backward()
-        #     elif self.opt.criterion == 'WGAN':
-        #         errG = outG_fake.mean()
-        #         errG.backward(self.mone)
-        #     else:
-        #         raise ValueError('Unknown GAN criterium')
-        #     gnorm_G = torch.nn.utils.clip_grad_norm(self.netG.parameters(), self.opt.max_gnorm)
-        #     self.optimizerG.step()
-        #
-        #     # Log print
-
-
-            # Save images
-        iteration=0
-        # torchvision.utils.save_image(self.inputv.data, os.path.join(self.opt.out_dir,  'input_%d.png' % (iteration)), nrow=2, normalize=True, scale_each=True)
-        # torchvision.utils.save_image(fake_rendered.data, os.path.join(self.opt.out_dir,  'output_%d.png' % (iteration)), nrow=2, normalize=True, scale_each=True)
-                # self.save_images(iteration, self.inputv[0],
-                #                  fake_rendered[0])
-
-            # Do checkpointing
-
 
 
         from diffrend.numpy.ops import sph2cart_vec as np_sph2cart
