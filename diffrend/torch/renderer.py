@@ -116,7 +116,11 @@ def render(scene, **params):
     light_dir_norm = torch.sqrt(torch.sum(light_dir ** 2, dim=-1))[:, :, np.newaxis]
     light_dir /= light_dir_norm  # TODO: nonzero_divide
 
-    im_color = torch.sum(frag_normals * light_dir, dim=-1)[:, :, np.newaxis] * \
+    if get_param_value('double_sided', params, False):
+        frag_normal_dot_light = torch.abs(torch.sum(frag_normals * light_dir, dim=-1))
+    else:
+        frag_normal_dot_light = torch.nn.functional.relu(torch.sum(frag_normals * light_dir, dim=-1))
+    im_color = frag_normal_dot_light[:, :, np.newaxis] * \
                light_colors[:, np.newaxis, :] * frag_albedo[np.newaxis, :, :]
 
     im = torch.sum(im_color, dim=0).view(int(H), int(W), 3)
@@ -186,6 +190,8 @@ def render_splats_NDC(scene, **params):
         return {
             'image': norm_depth_image,
             'depth': im_depth,
+            'pos': pos_CC,
+            'normal': normals_SLC
         }
     ##############################
     # Fragment processing
@@ -209,9 +215,9 @@ def render_splats_NDC(scene, **params):
     """
     Get the normal and material for the visible objects.
     """
-    normals_CC = normals_SLC   # TODO: NEED TO TRANSFORM TO CC
-    frag_normals = normals_CC
-    frag_pos = pos_CC
+    normals_CC = normals_SLC   # TODO: Transform to CC, or assume SLC is CC
+    frag_normals = normals_CC[:, :3]
+    frag_pos = pos_CC[:, :3]
 
     frag_albedo = torch.index_select(materials, 0, material_idx)
 
@@ -235,6 +241,8 @@ def render_splats_NDC(scene, **params):
     return {
         'image': im,
         'depth': im_depth,
+        'pos': pos_CC,
+        'normal': normals_CC
     }
 
 
@@ -249,15 +257,12 @@ def render_splats_along_ray(scene, **params):
     viewport = np.array(camera['viewport'])
     W, H = int(viewport[2] - viewport[0]), int(viewport[3] - viewport[1])
     aspect_ratio = W / H
-    fovy = camera['fovy']
-    near = camera['near']
-    far = camera['far']
     eye = camera['eye'][:3]
     at = camera['at'][:3]
     up = camera['up'][:3]
     Mcam = lookat(eye=eye, at=at, up=up)
     #M = perspective(fovy, aspect_ratio, near, far)
-    Minv = inv_perspective(fovy, aspect_ratio, near, far)
+    #Minv = inv_perspective(fovy, aspect_ratio, near, far)
 
     splats = scene['objects']['disk']
     pos_ray = splats['pos']
@@ -292,6 +297,8 @@ def render_splats_along_ray(scene, **params):
         return {
             'image': norm_depth_image,
             'depth': im_depth,
+            'pos': pos_CC,
+            'normal': normals_CC
         }
     ##############################
     # Fragment processing
@@ -340,6 +347,8 @@ def render_splats_along_ray(scene, **params):
     return {
         'image': im,
         'depth': im_depth,
+        'pos': pos_CC,
+        'normal': normals_CC
     }
 
 
