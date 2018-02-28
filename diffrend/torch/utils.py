@@ -427,7 +427,7 @@ def cam_to_world(pos, normal, camera):
 
     if pos is not None:
         if pos.size()[1] == 3:
-            pos = torch.stack((pos, tch_var_f(np.ones(pos.size()[0]))), dim=1)
+            pos = torch.cat((pos, tch_var_f(np.ones(pos.size()[0])[:, np.newaxis])), dim=1)
         pos_WC = torch.mm(pos, inv_view_matrix.transpose(1, 0))
 
     if normal is not None:
@@ -478,3 +478,32 @@ def test_cam_to_world_offset0():
     normal_WC = get_data(world_coord['normal'])
     np.testing.assert_equal(pos_WC_gt[:, :3], pos_WC[:, :3])
     np.testing.assert_equal(get_data(normal_CC[:, :3]), normal_WC[:, :3])
+
+
+def test_cam_to_world_offset1():
+    """The camera is at the world origin"""
+    camera = {'eye': tch_var_f([0, 0, 1, 1]),
+              'at': tch_var_f([0, 0, -1, 1]),
+              'up': tch_var_f([0, 1, 0, 0])
+              }
+    pos_CC = tch_var_f([[0, 0, 0],
+                        [0, 0, -1],
+                        ])
+    normal_CC = tch_var_f([[0, 0, 1, 0],
+                           [0, 1, 0, 0]],
+                          )
+    pos_WC_gt = np.array([[0., 0., 1., 1.],
+                        [0., 0., 0., 1.],
+                        ])
+    world_coord = cam_to_world(pos=pos_CC, normal=normal_CC, camera=camera)
+    print(world_coord)
+    pos_WC = get_data(world_coord['pos'])
+    normal_WC = get_data(world_coord['normal'])
+    np.testing.assert_equal(pos_WC_gt[:, :3], pos_WC[:, :3])
+    np.testing.assert_equal(get_data(normal_CC[:, :3]), normal_WC[:, :3])
+
+
+if __name__ == '__main__':
+    test_cam_to_world_identity()
+    test_cam_to_world_offset0()
+    test_cam_to_world_offset1()
