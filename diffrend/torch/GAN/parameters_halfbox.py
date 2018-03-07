@@ -42,7 +42,8 @@ class Parameters():
             raise ValueError('Add the route for the dataset of your system')
 
         # Dataset parameters
-        self.parser.add_argument('--dataset', type=str, default='objects_folder', help='dataset name: [shapenet, objects_folder]')
+        self.parser.add_argument('--dataset', type=str, default='objects_folder_multi',
+                                 help='dataset name: [shapenet, objects_folder, objects_folder_multi]')
         self.parser.add_argument('--root_dir', type=str, default=default_root, help='dataset root directory')
         self.parser.add_argument('--synsets', type=str, default='', help='Synsets from the shapenet dataset to use')
         self.parser.add_argument('--classes', type=str, default='bowl', help='Classes from the shapenet dataset to use')
