@@ -22,6 +22,61 @@ normals per pixel do not need to be stored.
 Implement ray_planar_object_intersection
 """
 
+class Renderer:
+    def __init__(self, **params):
+        self.camera = params['camera']
+        self._init_rays(self.camera)
+
+    def _init_rays(self, camera):
+        viewport = np.array(camera['viewport'])
+        W, H = viewport[2] - viewport[0], viewport[3] - viewport[1]
+        aspect_ratio = W / H
+
+        x, y = np.meshgrid(np.linspace(-1, 1, W), np.linspace(1, -1, H))
+        n_pixels = x.size
+
+        fovy = np.array(camera['fovy'])
+        focal_length = np.array(camera['focal_length'])
+        h = np.tan(fovy / 2) * 2 * focal_length
+        w = h * aspect_ratio
+
+        x *= w / 2
+        y *= h / 2
+
+        x = tch_var_f(x.ravel())
+        y = tch_var_f(y.ravel())
+
+        eye = camera['eye'][:3]
+        at = camera['at'][:3]
+        up = camera['up'][:3]
+
+        proj_type = camera['proj_type']
+        if proj_type == 'ortho' or proj_type == 'orthographic':
+            ray_dir = normalize(at - eye)[:, np.newaxis]
+            ray_orig = torch.stack((x, y, tch_var_f(np.zeros(n_pixels)), tch_var_f(np.ones(n_pixels))), dim=0)
+            # inv_view_matrix = lookat_inv(eye=eye, at=at, up=up)
+            # ray_orig = torch.mm(inv_view_matrix, ray_orig)
+            # ray_orig = (ray_orig[:3] / ray_orig[3][np.newaxis, :]).permute(1, 0)
+        elif proj_type == 'persp' or proj_type == 'perspective':
+            ray_orig = eye[np.newaxis, :]
+            ray_dir = torch.stack((x, y, tch_var_f(-np.ones(n_pixels) * focal_length)), dim=0)
+            # inv_view_matrix = lookat_rot_inv(eye=eye, at=at, up=up)
+            # ray_dir = torch.mm(inv_view_matrix, ray_dir)
+
+            # normalize ray direction
+            ray_dir /= torch.sqrt(torch.sum(ray_dir ** 2, dim=0))
+        else:
+            raise ValueError("Invalid projection type")
+
+        self.ray_orig = ray_orig
+        self.ray_dir = ray_dir
+        self.H = H
+        self.W = W
+        return ray_orig, ray_dir, H, W
+
+    def render(self, scene, **params):
+        pass
+
 
 def render(scene, **params):
     """Render.
@@ -49,16 +104,19 @@ def render(scene, **params):
 
     # Ray-object intersections
     disable_normals = get_param_value('norm_depth_image_only', params, False)
-    obj_intersections, ray_dist, normals, material_idx = ray_object_intersections(ray_orig, ray_dir, scene_objects,
-                                                                                  disable_normals=disable_normals)
-    num_objects = obj_intersections.size()[0]
-    # Valid distances
-    pixel_dist = ray_dist
-    valid_pixels = (camera['near'] <= ray_dist) * (ray_dist <= camera['far'])
-    pixel_dist = where(valid_pixels, pixel_dist, camera['far'] + 1)
+    if get_param_value('tiled_rendering', params, False):
+        pass
+    else:
+        obj_intersections, ray_dist, normals, material_idx = ray_object_intersections(ray_orig, ray_dir, scene_objects,
+                                                                                      disable_normals=disable_normals)
+        num_objects = obj_intersections.size()[0]
+        # Valid distances
+        pixel_dist = ray_dist
+        valid_pixels = (camera['near'] <= ray_dist) * (ray_dist <= camera['far'])
+        pixel_dist = where(valid_pixels, pixel_dist, camera['far'] + 1)
 
-    # Nearest object depth and index
-    im_depth, nearest_obj = pixel_dist.min(0)
+        # Nearest object depth and index
+        im_depth, nearest_obj = pixel_dist.min(0)
 
     # Reshape to image for visualization
     # use nearest_obj for gather/select the pixel color
@@ -66,10 +124,16 @@ def render(scene, **params):
     im_depth = im_depth.view(H, W)
 
     # Find the number of pixels covered by each object
-    pixel_obj_count = torch.sum(valid_pixels, dim=0)
-    valid_pixels_mask = pixel_obj_count > 0
-    nearest_obj_only = torch.masked_select(nearest_obj, valid_pixels_mask)
-    obj_pixel_count = bincount(nearest_obj_only, num_objects)
+    if get_param_value('vis_stat', params, False):
+        pixel_obj_count = torch.sum(valid_pixels, dim=0)
+        valid_pixels_mask = pixel_obj_count > 0
+        nearest_obj_only = torch.masked_select(nearest_obj, valid_pixels_mask)
+        obj_pixel_count = bincount(nearest_obj_only, num_objects)
+        valid_pixels_mask = valid_pixels_mask.view(H, W)
+    else:
+        obj_pixel_count = None
+        pixel_obj_count = None
+        valid_pixels_mask = None
 
     if get_param_value('norm_depth_image_only', params, False):
         min_depth = torch.min(im_depth)
@@ -85,7 +149,7 @@ def render(scene, **params):
             'valid_pixels': valid_pixels,
             'obj_pixel_count': obj_pixel_count,
             'pixel_obj_count': pixel_obj_count,
-            'valid_pixels_mask': valid_pixels_mask.view(H, W),
+            'valid_pixels_mask': valid_pixels_mask,
         }
 
     ##############################
@@ -145,7 +209,7 @@ def render(scene, **params):
         'valid_pixels': valid_pixels,
         'obj_pixel_count': obj_pixel_count,
         'pixel_obj_count': pixel_obj_count,
-        'valid_pixels_mask': valid_pixels_mask.view(H, W),
+        'valid_pixels_mask': valid_pixels_mask,
     }
 
 
