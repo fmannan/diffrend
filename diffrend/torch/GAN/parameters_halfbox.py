@@ -47,7 +47,7 @@ class Parameters():
         self.parser.add_argument('--root_dir', type=str, default=default_root, help='dataset root directory')
         self.parser.add_argument('--synsets', type=str, default='', help='Synsets from the shapenet dataset to use')
         self.parser.add_argument('--classes', type=str, default='bowl', help='Classes from the shapenet dataset to use')
-        self.parser.add_argument('--workers', type=int, default=8, help='number of data loading workers')
+        self.parser.add_argument('--workers', type=int, default=1, help='number of data loading workers')
         self.parser.add_argument('--toy_example', action='store_true', default=False, help='Use toy example')
         self.parser.add_argument('--use_mesh', action='store_true', default=True, help='Render dataset with meshes')
         # corresponding folders: 02691156, 03759954
@@ -99,7 +99,7 @@ class Parameters():
         self.parser.add_argument('--ngpu', type=int, default=1, help='number of GPUs to use')
         self.parser.add_argument('--manualSeed', type=int, help='manual seed')
         self.parser.add_argument('--out_dir', type=str, default=default_out)
-        self.parser.add_argument('--name', type=str, default='',required=False)
+        self.parser.add_argument('--name', type=str, default='', required=False)
 
         # Camera parameters
         self.parser.add_argument('--width', type=int, default=128)
