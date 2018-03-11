@@ -17,7 +17,7 @@ import torch.nn.functional as F
 from diffrend.torch.GAN.datasets import Dataset_load
 from diffrend.torch.GAN.networks import create_networks
 from diffrend.torch.GAN.parameters_halfbox import Parameters
-from diffrend.torch.GAN.utils import make_dot
+#from diffrend.torch.GAN.utils import make_dot
 from diffrend.torch.params import SCENE_BASIC, SCENE_SPHERE_HALFBOX
 from diffrend.torch.utils import tch_var_f, tch_var_l, where, get_data
 from diffrend.torch.renderer import render, render_splats_NDC, render_splats_along_ray
@@ -456,7 +456,7 @@ class GAN(object):
             fake = self.netG(self.noisev)
             fake_rendered = self.render_batch(fake)
             outG_fake = self.netD(fake_rendered)
-            dot = make_dot(fake)
+            #dot = make_dot(fake)
             # dot.render('teeest/gen.gv', view=True)
             # quit()
 

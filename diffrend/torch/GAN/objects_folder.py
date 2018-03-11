@@ -1,4 +1,4 @@
-"""Sapenet dataset."""
+"""Shapenet dataset."""
 import os
 import numpy as np
 from torch.utils.data import Dataset
@@ -25,7 +25,7 @@ class ObjectsFolderDataset(Dataset):
 
         # Get object paths
         self._get_objects_paths()
-        print ("Total samples: {}".format(len(self.samples)))
+        print("Total samples: {}".format(len(self.samples)))
 
         # self.scene = self._create_scene()
 
@@ -37,7 +37,7 @@ class ObjectsFolderDataset(Dataset):
         """Get item."""
         # Get object path
         obj_path = os.path.join(self.opt.root_dir, self.samples[idx])
-        print (obj_path)
+        #print(obj_path)
 
         # Load obj model
         obj_model = load_model(obj_path)

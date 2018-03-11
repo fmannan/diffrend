@@ -335,7 +335,8 @@ def render_splats_along_ray(scene, **params):
 
     ##### Find (X, Y) in the Camera's view frustum
     x, y = np.meshgrid(np.linspace(-1, 1, W), np.linspace(1, -1, H))
-    Z = -torch.abs(pos_ray[:, 2])
+    # Force the caller to set the z coordinate with the correct sign
+    Z = -torch.nn.functional.relu(-pos_ray[:, 2]) #-torch.abs(pos_ray[:, 2])
     n_pixels = x.size
 
     fovy = camera['fovy']
