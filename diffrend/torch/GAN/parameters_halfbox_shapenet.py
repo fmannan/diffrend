@@ -36,6 +36,7 @@ class Parameters():
             default_out = './render_samples/'
         elif username == 'mudumbas':
             default_root = '/data/lisa/data/ShapeNetCore.v2'
+            #default_root = '/u/mudumbas/diffrend/data/obj4'
             default_out = '/data/lisa/data/sai'
             # default_out = '/data/lisa/data/sai/renderer_bunny_64_sameview_check_separatefake'
         else:
@@ -44,12 +45,15 @@ class Parameters():
         # Dataset parameters
         self.parser.add_argument('--dataset', type=str, default='objects_folder_multi',
                                  help='dataset name: [shapenet, objects_folder, objects_folder_multi]')
+        #self.parser.add_argument('--dataset', type=str, default='objects_folder', help='dataset name: [shapenet, objects_folder]')
         self.parser.add_argument('--root_dir', type=str, default=default_root, help='dataset root directory')
         self.parser.add_argument('--synsets', type=str, default='', help='Synsets from the shapenet dataset to use')
-        self.parser.add_argument('--classes', type=str, default='bowl', help='Classes from the shapenet dataset to use')
+        self.parser.add_argument('--classes', type=str, default='bowl,bottle,mug', help='Classes from the shapenet dataset to use')#,cap,can,laptop
         self.parser.add_argument('--workers', type=int, default=8, help='number of data loading workers')
         self.parser.add_argument('--toy_example', action='store_true', default=False, help='Use toy example')
         self.parser.add_argument('--use_mesh', action='store_true', default=True, help='Render dataset with meshes')
+        self.parser.add_argument('--gen_model_path', type=str, default=None, help='dataset root directory')
+        self.parser.add_argument('--dis_model_path', type=str, default=None, help='dataset root directory')
         # corresponding folders: 02691156, 03759954
 
         # other low-footprint objects:
@@ -66,7 +70,7 @@ class Parameters():
         # Network parameters
         self.parser.add_argument('--gen_type', type=str, default='dcgan', help='One of: mlp, cnn, dcgan, resnet') # try resnet :)
         self.parser.add_argument('--gen_norm', type=str, default='batchnorm', help='One of: None, batchnorm, instancenorm')
-        self.parser.add_argument('--ngf', type=int, default=90, help='number of features in the generator network')
+        self.parser.add_argument('--ngf', type=int, default=64, help='number of features in the generator network')
         self.parser.add_argument('--gen_nextra_layers', type=int, default=0, help='number of extra layers in the generator network')
         self.parser.add_argument('--gen_bias_type', type=str, default=None, help='One of: None, plane')
         self.parser.add_argument('--netG', default='', help="path to netG (to continue training)")
@@ -77,7 +81,7 @@ class Parameters():
         self.parser.add_argument('--disc_norm', type=str, default='None', help='One of: None, batchnorm, instancenorm')
         self.parser.add_argument('--ndf', type=int, default=64, help='number of features in the discriminator network')
         self.parser.add_argument('--disc_nextra_layers', type=int, default=0, help='number of extra layers in the discriminator network')
-        self.parser.add_argument('--nz', type=int, default=100, help='size of the latent z vector')
+        self.parser.add_argument('--nz', type=int, default=200, help='size of the latent z vector')
         self.parser.add_argument('--netD', default='', help="path to netD (to continue training)")
 
         # Optimization parameters
@@ -85,7 +89,7 @@ class Parameters():
         self.parser.add_argument('--lr', type=float, default=0.0001, help='learning rate, default=0.0002')
         self.parser.add_argument('--beta1', type=float, default=0.0, help='beta1 for adam. default=0.5')
         self.parser.add_argument('--n_iter', type=int, default=40000, help='number of iterations to train')
-        self.parser.add_argument('--batchSize', type=int, default=2, help='input batch size')
+        self.parser.add_argument('--batchSize', type=int, default=4, help='input batch size')
 
         # GAN parameters
         self.parser.add_argument("--criterion", help="GAN Training criterion", choices=['GAN', 'WGAN'], default='WGAN')
@@ -104,9 +108,9 @@ class Parameters():
         # Camera parameters
         self.parser.add_argument('--width', type=int, default=128)
         self.parser.add_argument('--height', type=int, default=128)
-        self.parser.add_argument('--cam_dist', type=float, default=4.0, help='Camera distance from the center of the object')
+        self.parser.add_argument('--cam_dist', type=float, default=3.0, help='Camera distance from the center of the object')
         self.parser.add_argument('--nv', type=int, default=10, help='Number of views to generate')
-        self.parser.add_argument('--angle', type=int, default=5, help='cam angle')
+        self.parser.add_argument('--angle', type=int, default=25, help='cam angle')
         self.parser.add_argument('--fovy', type=float, default=20, help='Field of view in the vertical direction. Default: 15.0')
         self.parser.add_argument('--focal_length', type=float, default=0.1, help='focal length')
         self.parser.add_argument('--theta', nargs=2, type=float, default=None, help='Angle in degrees from the z-axis.')

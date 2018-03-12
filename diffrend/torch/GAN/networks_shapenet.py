@@ -67,10 +67,11 @@ def create_networks(opt, verbose=True):
 
     # Create the discriminator network
     if opt.disc_type == 'cnn':
+        print('render_img_nc',render_img_nc)
         if render_img_size==128:
-            netD = _netD(ngpu, 3, ndf, render_img_size, use_sigmoid=use_sigmoid)
+            netD = _netD(ngpu, render_img_nc, ndf, render_img_size, use_sigmoid=use_sigmoid)
         else:
-            netD = _netD_64(ngpu, 3, ndf, render_img_size, use_sigmoid=use_sigmoid)
+            netD = _netD_64(ngpu, render_img_nc, ndf, render_img_size, use_sigmoid=use_sigmoid)
     elif opt.disc_type == 'dcgan':
         netD = DCGAN_D(render_img_size, nz, render_img_nc, ndf, ngpu,
                        n_extra_layers=disc_nextra_layers,

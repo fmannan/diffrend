@@ -13,13 +13,14 @@ import torch.optim as optim
 import torch.utils.data
 from torch.autograd import Variable
 import torch.nn.functional as F
-
+import shutil
+import torchvision
 from diffrend.torch.GAN.datasets import Dataset_load
-from diffrend.torch.GAN.networks import create_networks
-from diffrend.torch.GAN.parameters_halfbox import Parameters
+from diffrend.torch.GAN.networks_shapenet import create_networks
+from diffrend.torch.GAN.parameters_halfbox_shapenet import Parameters
 from diffrend.torch.GAN.utils import make_dot
 from diffrend.torch.params import SCENE_BASIC, SCENE_SPHERE_HALFBOX
-from diffrend.torch.utils import tch_var_f, tch_var_l, where, get_data
+from diffrend.torch.utils import tch_var_f, tch_var_l, where, get_data, normalize
 from diffrend.torch.renderer import render, render_splats_NDC, render_splats_along_ray
 from diffrend.utils.sample_generator import uniform_sample_sphere
 from diffrend.torch.ops import sph2cart_unit
@@ -29,7 +30,23 @@ from diffrend.torch.ops import sph2cart_unit
 # except ImportError:
 HYPERDASH_SUPPORTED = False
 
+def copy_scripts_to_folder(expr_dir):
+    shutil.copy("networks.py", expr_dir)
+    shutil.copy("parameters_halfbox.py", expr_dir)
+    shutil.copy(__file__, expr_dir)
 
+
+def mkdirs(paths):
+    if isinstance(paths, list) and not isinstance(paths, str):
+        for path in paths:
+            mkdir(path)
+    else:
+        mkdir(paths)
+
+
+def mkdir(path):
+    if not os.path.exists(path):
+        os.makedirs(path)
 def create_scene(width, height, fovy, focal_length, n_samples,
                  ):
     """Create a semi-empty scene with camera parameters."""
@@ -65,18 +82,38 @@ def calc_gradient_penalty(discriminator, real_data, fake_data, gp_lambda):
 
     return gradient_penalty
 
+def calc_gradient_penalty0(discriminator, real_data, fake_data, fake_data_cond,gp_lambda):
+    """Calculate GP."""
+    assert real_data.size(0) == fake_data.size(0)
+    alpha = torch.rand(real_data.size(0), 1, 1, 1)
+    alpha = alpha.expand(real_data.size())
+    alpha = alpha.cuda()
 
+    interpolates = Variable(alpha * real_data + ((1 - alpha) * fake_data),
+                            requires_grad=True)
+    interpolates_cond =  Variable(fake_data_cond, requires_grad=True)
+
+    disc_interpolates = discriminator(interpolates, interpolates_cond)
+
+    gradients = torch.autograd.grad(
+        outputs=disc_interpolates, inputs=interpolates,
+        grad_outputs=torch.ones(disc_interpolates.size()).cuda(),
+        create_graph=True, retain_graph=True, only_inputs=True)[0]
+    gradients = gradients.contiguous().view(gradients.size(0), -1)
+    gradient_penalty = ((gradients.norm(2, dim=1) - 1) ** 2).mean() * gp_lambda
+
+    return gradient_penalty
 class GAN(object):
     """GAN class."""
 
-    def __init__(self, opt, dataset_load=None, experiment=None):
+    def __init__(self, opt, dataset_load=None, experiment=None, exp_dir=None):
         """Constructor."""
         self.opt = opt
         self.exp = experiment
         self.real_label = 1
         self.fake_label = 0
         self.dataset_load = dataset_load
-
+        self.opt.out_dir=exp_dir
         # Create dataset loader
         self.create_dataset_loader()
 
@@ -131,6 +168,8 @@ class GAN(object):
         self.input = torch.FloatTensor(
             self.opt.batchSize, self.opt.render_img_nc,
             self.opt.render_img_size, self.opt.render_img_size)
+        self.input_cond = torch.FloatTensor(
+            self.opt.batchSize, 3)
         self.noise = torch.FloatTensor(
             self.opt.batchSize, int(self.opt.nz), 1, 1)
         self.fixed_noise = torch.FloatTensor(
@@ -141,6 +180,7 @@ class GAN(object):
 
         if not self.opt.no_cuda:
             self.input = self.input.cuda()
+            self.input_cond = self.input_cond.cuda()
             self.label = self.label.cuda()
             self.noise = self.noise.cuda()
             self.fixed_noise = self.fixed_noise.cuda()
@@ -196,10 +236,9 @@ class GAN(object):
 
         # Define the camera poses
         if not self.opt.same_view:
-            self.cam_pos = uniform_sample_sphere(
-                radius=self.opt.cam_dist, num_samples=self.opt.batchSize,
-                axis=self.opt.axis, angle=np.deg2rad(self.opt.angle),
-                theta_range=self.opt.theta, phi_range=self.opt.phi)
+            self.cam_pos = uniform_sample_sphere(radius=self.opt.cam_dist, num_samples=self.opt.batchSize,
+                                                 axis=self.opt.axis, angle=np.deg2rad(self.opt.angle),
+                                                 theta_range=self.opt.theta, phi_range=self.opt.phi)
 
         # Create a splats rendering scene
         large_scene = create_scene(self.opt.width, self.opt.height,
@@ -210,6 +249,7 @@ class GAN(object):
 
         # Render scenes
         data = []
+        data_cond=[]
         for idx in range(self.opt.batchSize):
             # Save the splats into the rendering scene
             if not self.opt.toy_example:
@@ -226,7 +266,7 @@ class GAN(object):
                     # TODO: Solve this hack!!!!!!
                     while True:
                         samples = self.get_samples()
-                        if samples['mesh']['face'][0].size(0) <= 4000:
+                        if samples['mesh']['face'][0].size(0) <= 3000:
                             break
                     # print (samples['mesh']['face'][0].size())
                     large_scene['objects']['triangle']['material_idx'] = tch_var_l(
@@ -262,8 +302,9 @@ class GAN(object):
                 large_scene['camera']['eye'] = tch_var_f(self.cam_pos[0])
 
             # Render scene
+            view_dir = normalize(large_scene['camera']['at'] - large_scene['camera']['eye'])
             res = render(large_scene,
-                         norm_depth_image_only=self.opt.norm_depth_image_only)
+                         norm_depth_image_only=self.opt.norm_depth_image_only, double_sided=True)
 
             # Get rendered output
             if self.opt.render_img_nc == 1:
@@ -279,16 +320,21 @@ class GAN(object):
 
             # Add depth image to the output structure
             data.append(im)
+            data_cond.append(large_scene['camera']['eye'])
         # Stack real samples
         real_samples = torch.stack(data)
+        real_samples_cond = torch.stack(data_cond)
         self.batch_size = real_samples.size(0)
         if not self.opt.no_cuda:
             real_samples = real_samples.cuda()
+            real_samples_cond = real_samples_cond.cuda()
 
         # Set input/output variables
         self.input.resize_as_(real_samples.data).copy_(real_samples.data)
+        self.input_cond.resize_as_(real_samples_cond.data).copy_(real_samples_cond.data)
         self.label.resize_(self.batch_size).fill_(self.real_label)
         self.inputv = Variable(self.input)
+        self.inputv_cond = Variable(self.input_cond)
         self.labelv = Variable(self.label)
 
     def generate_noise_vector(self, ):
@@ -303,12 +349,12 @@ class GAN(object):
 
         # Generate camera positions on a sphere
         if not self.opt.same_view:
-            cam_pos = uniform_sample_sphere(
-                radius=self.opt.cam_dist, num_samples=self.opt.batchSize,
-                axis=self.opt.axis, angle=np.deg2rad(self.opt.angle),
-                theta_range=self.opt.theta, phi_range=self.opt.phi)
+            cam_pos = uniform_sample_sphere(radius=self.opt.cam_dist, num_samples=self.opt.batchSize,
+                                                 axis=self.opt.axis, angle=np.deg2rad(self.opt.angle),
+                                                 theta_range=self.opt.theta, phi_range=self.opt.phi)
 
         rendered_data = []
+        rendered_data_cond = []
         # Set splats into rendering scene
         if 'sphere' in self.scene['objects']:
             del self.scene['objects']['sphere']
@@ -320,6 +366,8 @@ class GAN(object):
         if self.opt.fix_splat_pos:
             x, y = np.meshgrid(np.linspace(-1, 1, self.opt.splats_img_size),
                                np.linspace(-1, 1, self.opt.splats_img_size))
+        lookat = self.opt.at if self.opt.at is not None else [0.0, 0.0, 0.0, 1.0]
+        self.scene['camera']['at'] = tch_var_f(lookat)
         self.scene['objects']['disk']['material_idx'] = tch_var_l(
             np.zeros(self.opt.splats_img_size * self.opt.splats_img_size))
         for idx in range(batch_size):
@@ -373,12 +421,25 @@ class GAN(object):
 
             # Store normalized depth into the data
             rendered_data.append(im)
+            rendered_data_cond.append(self.scene['camera']['eye'])
         rendered_data = torch.stack(rendered_data)
         return rendered_data
 
     def train(self, ):
         """Train networtk."""
         # Start training
+        if self.opt.gen_model_path is not None:
+            print("reloading networks from")
+            print(self.opt.gen_model_path)
+            self.netG.load_state_dict(torch.load(
+            open(self.opt.gen_model_path, 'rb'
+            )
+            ))
+            #iteration=0
+            self.netD.load_state_dict(torch.load(
+            open(self.opt.dis_model_path, 'rb'
+            )
+            ))
         for iteration in range(self.opt.n_iter):
             ############################
             # (1) Update D network
@@ -491,13 +552,39 @@ class GAN(object):
                     self.exp.metric("Wassertein D", Wassertein_D)
 
             # Save images
-            if iteration % 5 == 0:
-                self.save_images(iteration, self.inputv[0],
-                                 fake_rendered[0])
+            if iteration % 20 == 0:
+                torchvision.utils.save_image(self.inputv.data, os.path.join(self.opt.out_dir,  'input_%d.png' % (iteration)), nrow=2, normalize=True, scale_each=True)
+                torchvision.utils.save_image(fake_rendered.data, os.path.join(self.opt.out_dir,  'output_%d.png' % (iteration)), nrow=2, normalize=True, scale_each=True)
+                # self.save_images(iteration, self.inputv[0],
+                #                  fake_rendered[0])
 
             # Do checkpointing
-            if iteration % 500 == 0:
+            if iteration % 2000 == 0:
                 self.save_networks(iteration)
+
+            # if iteration % 500 == 0:
+            #     from diffrend.numpy.ops import sph2cart_vec as np_sph2cart
+            #     #fake = self.netG(self.noisev,self.inputv_cond)
+            #     #fake_rendered = self.render_batch(fake,self.inputv_cond)
+            #     phi = np.linspace(np.deg2rad(5), np.deg2rad(90), 100)
+            #     theta = np.ones_like(phi) * np.deg2rad(45)
+            #     cam_dist_vec = np.ones_like(phi) * self.opt.cam_dist
+            #     cam_pos = np_sph2cart(np.stack((cam_dist_vec, phi, theta), axis=1))
+            #     #cam_pos = np.split(cam_pos, 100 / 4)
+            #     #for sub_batch in cam_pos:
+            #     noise = torch.FloatTensor(int(self.opt.nz), 1, 1).cuda()
+            #     noise.resize_( int(self.opt.nz), 1, 1).normal_(0, 1)
+            #     #import ipdb;ipdb.set_trace()
+            #     noise=noise.repeat(100,1,1,1)
+            #     #import ipdb;ipdb.set_trace()
+            #     noise = Variable(noise)
+            #     #import ipdb; ipdb.set_trace()
+            #     fake = self.netG(noise,tch_var_f(cam_pos))
+            #     fake_rendered = self.render_batch(fake,tch_var_f(cam_pos))
+            #     torchvision.utils.save_image(fake_rendered.data, os.path.join(self.opt.out_dir,  'smooth_%d.png' % (iteration)), nrow=10, normalize=True, scale_each=True)
+            #     for i in range(100):
+            #         torchvision.utils.save_image(fake_rendered[i].data, os.path.join(self.opt.out_dir,  'smooth_ind_%d_%d.png' % (iteration,i)), nrow=1, normalize=True, scale_each=True)
+            #
 
     def save_networks(self, epoch):
         """Save networks to hard disk."""
@@ -523,9 +610,20 @@ class GAN(object):
 def main():
     """Start training."""
     # Parse args
+    #opt = Parameters().parse()
     opt = Parameters().parse()
-
+    exp_dir = os.path.join(opt.out_dir, opt.name)
+    mkdirs(exp_dir)
     exp = None
+    copy_scripts_to_folder(exp_dir)
+    file_name = os.path.join(exp_dir, 'opt.txt')
+    args = vars(opt)
+    with open(file_name, 'wt') as opt_file:
+        opt_file.write('------------ Options -------------\n')
+        for k, v in sorted(args.items()):
+            opt_file.write('%s: %s\n' % (str(k), str(v)))
+        opt_file.write('-------------- End ----------------\n')
+    #exp = None
     if HYPERDASH_SUPPORTED:
         # create new Hyperdash logger
         exp = Experiment("inverse graphics")
@@ -541,7 +639,7 @@ def main():
         dataset_load = Dataset_load(opt)
 
     # Create GAN
-    gan = GAN(opt, dataset_load, exp)
+    gan = GAN(opt, dataset_load, exp, exp_dir)
 
     # Train gan
     gan.train()
