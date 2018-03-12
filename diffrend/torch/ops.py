@@ -107,3 +107,8 @@ def sph2cart_unit(u):
     y = sinth * torch.sin(phi)
     z = torch.cos(theta)
     return torch.stack((x, y, z), dim=-1)
+
+
+def tensor_dot(x, y, axis=0):
+    return torch.sum(x * y, dim=axis)
+

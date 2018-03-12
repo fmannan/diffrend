@@ -6,7 +6,7 @@ from diffrend.torch.utils import (tonemap, ray_object_intersections,
                                   bincount, tch_var_f, norm_p, normalize,
                                   lookat)
 from diffrend.utils.utils import get_param_value
-from diffrend.torch.ops import perspective, inv_perspective
+from diffrend.torch.ops import perspective, inv_perspective, tensor_dot
 """
 Scalable Rendering TODO:
 1. Backface culling. Cull splats for which dot((eye - pos), normal) <= 0 [DONE]
@@ -180,10 +180,14 @@ def render(scene, **params):
     light_dir_norm = torch.sqrt(torch.sum(light_dir ** 2, dim=-1))[:, :, np.newaxis]
     light_dir /= light_dir_norm  # TODO: nonzero_divide
 
+    frag_normal_dot_light = tensor_dot(frag_normals, light_dir, axis=-1)
     if get_param_value('double_sided', params, False):
-        frag_normal_dot_light = torch.abs(torch.sum(frag_normals * light_dir, dim=-1))
-    else:
-        frag_normal_dot_light = torch.nn.functional.relu(torch.sum(frag_normals * light_dir, dim=-1))
+        # Flip per-fragment normals if needed based on the camera direction
+        cam_dir = normalize(camera['eye'][np.newaxis, np.newaxis, :] - frag_pos)
+        dot_prod = tensor_dot(cam_dir, frag_normals, axis=-1)
+        sgn = torch.sign(dot_prod)
+        frag_normal_dot_light = sgn * frag_normal_dot_light
+    frag_normal_dot_light = torch.nn.functional.relu(frag_normal_dot_light)
     im_color = frag_normal_dot_light[:, :, np.newaxis] * \
                light_colors[:, np.newaxis, :] * frag_albedo[np.newaxis, :, :]
 
