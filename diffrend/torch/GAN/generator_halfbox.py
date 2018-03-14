@@ -263,7 +263,8 @@ class GAN(object):
 
             # Render scene
             res = render(large_scene,
-                         norm_depth_image_only=self.opt.norm_depth_image_only)
+                         norm_depth_image_only=self.opt.norm_depth_image_only,
+                         double_sided=self.opt.double_sided)
 
             # Get rendered output
             if self.opt.render_img_nc == 1:

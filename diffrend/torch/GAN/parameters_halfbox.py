@@ -127,6 +127,7 @@ class Parameters():
         self.parser.add_argument('--render_img_size', type=int, default=128, help='Width/height of the rendering image')
         self.parser.add_argument('--splats_radius', type=float, default=0.05, help='radius of the splats (fix)')
         self.parser.add_argument('--same_view', action='store_true', help='data with view fixed') # before we add conditioning on cam pose, this is necessary
+        self.parser.add_argument('--double_sided', action='store_true', help='View dependent normal for real data.')
 
     def parse(self):
         """Parse."""
