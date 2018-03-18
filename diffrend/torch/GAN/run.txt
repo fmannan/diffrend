@@ -1,0 +1,1 @@
+python generator.py --width 128 --height 128 --splats_img_size 128 --lr 2e-4 --name shapenet --disc_type cnn --cam_dist 3.0  --batchSize 6   --angle 10 --dataset shapenet --RGBD

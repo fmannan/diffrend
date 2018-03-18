@@ -263,10 +263,10 @@ SCENE_SPHERE_HALFBOX = {
     'lights': {
         'pos': tch_var_f([
             [20., 20., 20., 1.0],
-            [-15, 3., 15., 1.0],
-            [20, 20., 20., 1.0],
+            [-20., -20., -20., 1.0],
+
         ]),
-        'color_idx': tch_var_l([2, 1, 3]),
+        'color_idx': tch_var_l([2,2]),
         # Light attenuation factors have the form (kc, kl, kq) and eq: 1/(kc + kl * d + kq * d^2)
         'attenuation': [
             [0., 1., 0.],
@@ -274,6 +274,20 @@ SCENE_SPHERE_HALFBOX = {
             [1., 0., 0.],
         ]
     },
+    # 'lights': {
+    #     'pos': tch_var_f([
+    #         [20., 20., 20., 1.0],
+    #         [-15, 3., 15., 1.0],
+    #         [20, 20., 20., 1.0],
+    #     ]),
+    #     'color_idx': tch_var_l([2, 1, 3]),
+    #     # Light attenuation factors have the form (kc, kl, kq) and eq: 1/(kc + kl * d + kq * d^2)
+    #     'attenuation': [
+    #         [0., 1., 0.],
+    #         [0., 0., 1.],
+    #         [1., 0., 0.],
+    #     ]
+    # },
     'colors': tch_var_f([
         [0.0, 0.0, 0.0],
         [0.8, 0.1, 0.1],
