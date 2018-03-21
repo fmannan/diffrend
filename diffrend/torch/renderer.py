@@ -206,6 +206,8 @@ def render(scene, **params):
     return {
         'image': im,
         'depth': im_depth,
+        'normal': frag_normals.view(H, W, 3),
+        'pos': frag_pos.view(H, W, 3),
         'ray_dist': ray_dist,
         'obj_dist': pixel_dist,
         'nearest': nearest_obj.view(H, W),
