@@ -35,3 +35,12 @@ for idx in range(0, len(data), 20):
     ax.scatter(pos[:, 0], pos[:, 1], pos[:, 2], s=1.3)
 
 
+filename_prefix = 'test'
+
+for idx in range(0, len(data), 20):
+    pos = get_data(data[idx]['pos'])[:, :3]
+    with open(filename_prefix + '_{:05d}.xyz'.format(idx), 'w') as fid:
+        for sub_idx in range(pos.shape[0]):
+            fid.write('{}\n'.format(' '.join([str(x) for x in pos[sub_idx]])))
+
+
