@@ -274,10 +274,10 @@ class GAN(object):
         # Define the camera poses
         if not self.opt.same_view:
             self.cam_pos = uniform_sample_sphere(radius=self.opt.cam_dist, num_samples=self.opt.batchSize,
-                                                 axis=self.opt.axis, angle=self.opt.angle,
+                                                 axis=self.opt.axis, angle=np.deg2rad(self.opt.angle),
                                                  theta_range=self.opt.theta, phi_range=self.opt.phi)
             self.cam_pos2 = uniform_sample_sphere(radius=self.opt.cam_dist, num_samples=self.opt.batchSize,
-                                                 axis=self.opt.axis, angle=self.opt.angle,
+                                                 axis=self.opt.axis, angle=np.deg2rad(self.opt.angle),
                                                  theta_range=self.opt.theta, phi_range=self.opt.phi)
 
         # Create a splats rendering scene
@@ -308,7 +308,7 @@ class GAN(object):
                     # TODO: Solve this hack!!!!!!
                     while True:
                         samples = self.get_samples()
-                        if samples['mesh']['face'][0].size(0) <= 4000:
+                        if samples['mesh']['face'][0].size(0) <= 3000:
                             break
                     # print (samples['mesh']['face'][0].size())
                     large_scene['objects']['triangle']['material_idx'] = tch_var_l(
@@ -404,7 +404,7 @@ class GAN(object):
                     # TODO: Solve this hack!!!!!!
                     while True:
                         samples = self.get_samples()
-                        if samples['mesh']['face'][0].size(0) <= 4000:
+                        if samples['mesh']['face'][0].size(0) <= 3000:
                             break
                     # print (samples['mesh']['face'][0].size())
                     large_scene['objects']['triangle']['material_idx'] = tch_var_l(
@@ -519,7 +519,7 @@ class GAN(object):
         # Generate camera positions on a sphere
         if not self.opt.same_view:
             cam_pos = uniform_sample_sphere(radius=self.opt.cam_dist, num_samples=self.opt.batchSize,
-                                                 axis=self.opt.axis, angle=self.opt.angle,
+                                                 axis=self.opt.axis, angle=np.deg2rad(self.opt.angle),
                                                  theta_range=self.opt.theta, phi_range=self.opt.phi)
 
         rendered_data = []
@@ -612,15 +612,21 @@ class GAN(object):
                 im = res['image'].permute(2, 0, 1)
 
             #import ipdb; ipdb.set_trace()
-            # pos=pos.view(128,128,3)
-            # pos=pos.permute(2,0,1)
-            # normals=normals.view(128,128,3)
-            # normals=normals.permute(2,0,1)
+            res_world = cam_to_world(pos=res['pos'], normal=res['normal'], camera=self.scene['camera'])
+            pos=res_world['pos'][:,:3].contiguous().view(128,128,3).permute(2,0,1)
+            #
+            normals=res_world['normal'].contiguous().view(128,128,3).permute(2,0,1)
 
-            pos=pos.permute(1, 0)
-            pos=pos.contiguous().view(3,128,128)
-            normals=normals.permute(1, 0)
-            normals=normals.contiguous().view(3,128,128)
+
+
+            # dict_res_world={}
+            # dict_res_world['pos']=get_data(res_world['pos'][:,:3])
+            # dict_res_world['normal']=get_data(res_world['normal'])
+            # import ipdb; ipdb.set_trace()
+            # pos=pos.permute(1, 0)
+            # pos=pos.contiguous().view(3,128,128)
+            # normals=normals.permute(1, 0)
+            # normals=normals.contiguous().view(3,128,128)
             # Store normalized depth into the data
             #data23d.append(torch.cat([res['pos'],res['normal']],0))
             rendered_data3d.append(torch.cat([pos,normals],0))
@@ -672,11 +678,11 @@ class GAN(object):
                     self.netD2.zero_grad()
                     self.get_real_samples()
                     #input_D = torch.cat([self.inputv,self.inputv_depth],1)
-                    # real_output = self.netD(self.inputv3d)
-                    # real_output_depth = self.netD2(self.inputv23d)
+                    real_output = self.netD(self.inputv3d)
+                    real_output_depth = self.netD2(self.inputv23d)
 
-                    real_output = self.netD(self.inputv)
-                    real_output_depth = self.netD2(self.inputv2)
+                    # real_output = self.netD(self.inputv)
+                    # real_output_depth = self.netD2(self.inputv2)
                     if self.opt.criterion == 'GAN':
                         errD_real = self.criterion(real_output, self.labelv)
                         errD_real.backward()
@@ -698,11 +704,11 @@ class GAN(object):
                     fake_rendered2,fd2,r2 = self.render_batch(fake2)
                     fake_D=torch.cat([fake_rendered.detach(),fd.detach()],1)
                     # Do not bp through gen
-                    # outD_fake = self.netD(r.detach())
-                    # outD_fake_depth = self.netD2(r2.detach())
+                    outD_fake = self.netD(r.detach())
+                    outD_fake_depth = self.netD2(r2.detach())
 
-                    outD_fake = self.netD(fake_rendered.detach())
-                    outD_fake_depth = self.netD2(fake_rendered2.detach())
+                    # outD_fake = self.netD(fake_rendered.detach())
+                    # outD_fake_depth = self.netD2(fake_rendered2.detach())
                     if self.opt.criterion == 'GAN':
                         labelv = Variable(self.label.fill_(self.fake_label))
                         errD_fake = self.criterion(outD_fake, labelv)
@@ -720,27 +726,27 @@ class GAN(object):
 
                     # Compute gradient penalty
                     if self.opt.gp != 'None':
-                        # gradient_penalty = calc_gradient_penalty(
-                        #     self.netD, self.inputv3d.data, r.data,
-                        #     self.opt.gp_lambda)
-                        # gradient_penalty.backward()
-                        # errD += gradient_penalty
-                        #
-                        # gradient_penalty_depth = calc_gradient_penalty(
-                        #     self.netD2, self.inputv23d.data, r2.data,
-                        #     self.opt.gp_lambda)
-                        # gradient_penalty_depth.backward()
-
                         gradient_penalty = calc_gradient_penalty(
-                            self.netD, self.inputv.data, fake_rendered.data,
+                            self.netD, self.inputv3d.data, r.data,
                             self.opt.gp_lambda)
                         gradient_penalty.backward()
                         errD += gradient_penalty
 
                         gradient_penalty_depth = calc_gradient_penalty(
-                            self.netD2, self.inputv2.data, fake_rendered2.data,
+                            self.netD2, self.inputv23d.data, r2.data,
                             self.opt.gp_lambda)
                         gradient_penalty_depth.backward()
+
+                        # gradient_penalty = calc_gradient_penalty(
+                        #     self.netD, self.inputv.data, fake_rendered.data,
+                        #     self.opt.gp_lambda)
+                        # gradient_penalty.backward()
+                        # errD += gradient_penalty
+                        #
+                        # gradient_penalty_depth = calc_gradient_penalty(
+                        #     self.netD2, self.inputv2.data, fake_rendered2.data,
+                        #     self.opt.gp_lambda)
+                        # gradient_penalty_depth.backward()
                         errD_depth += gradient_penalty_depth
                     gnorm_D = torch.nn.utils.clip_grad_norm(self.netD.parameters(), self.opt.max_gnorm)
                     gnorm_D2 = torch.nn.utils.clip_grad_norm(self.netD2.parameters(), self.opt.max_gnorm)
@@ -764,11 +770,11 @@ class GAN(object):
                 fake2 = self.netG(self.noisev2)
                 fake_rendered,fd,r = self.render_batch(fake)
                 fake_rendered2,fd2,r2 = self.render_batch(fake2)
-                # outG_fake = self.netD(r)
-                # outG_fake_depth = self.netD2(r2)
+                outG_fake = self.netD(r)
+                outG_fake_depth = self.netD2(r2)
 
-                outG_fake = self.netD(fake_rendered)
-                outG_fake_depth = self.netD2(fake_rendered2)
+                # outG_fake = self.netD(fake_rendered)
+                # outG_fake_depth = self.netD2(fake_rendered2)
                 #dot = make_dot(fake)
                 # dot.render('teeest/gen.gv', view=True)
                 # quit()
