@@ -24,15 +24,15 @@ from diffrend.torch.utils import tch_var_f, tch_var_l, where, get_data, normaliz
 from diffrend.torch.renderer import render, render_splats_NDC, render_splats_along_ray
 from diffrend.utils.sample_generator import uniform_sample_sphere
 from diffrend.torch.ops import sph2cart_unit
-# try: # temporarily
-#     from hyperdash import Experiment
-#     HYPERDASH_SUPPORTED = True
-# except ImportError:
-HYPERDASH_SUPPORTED = False
+try: # temporarily
+    from hyperdash import Experiment
+    HYPERDASH_SUPPORTED = True
+except ImportError:
+    HYPERDASH_SUPPORTED = False
 
 def copy_scripts_to_folder(expr_dir):
-    shutil.copy("networks.py", expr_dir)
-    shutil.copy("parameters_halfbox.py", expr_dir)
+    shutil.copy("networks_shapenet.py", expr_dir)
+    shutil.copy("parameters_halfbox_shapenet.py", expr_dir)
     shutil.copy(__file__, expr_dir)
 
 

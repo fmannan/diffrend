@@ -1,1 +1,1 @@
-python generator_halfbox_shapenet.py --width 128 --height 128 --splats_img_size 128 --lr 2e-4 --name shapenet_bowls_bottles_mugs --disc_type cnn --cam_dist 3.5 --angle 6 --batchSize 8 --dataset shapenet 
+python3 generator_halfbox_shapenet.py --width 128 --height 128 --splats_img_size 128 --lr 2e-4 --name shapenet_bowls_bottles_mugs --disc_type cnn --cam_dist 3.5 --angle 6 --batchSize 8 --dataset shapenet
