@@ -160,6 +160,7 @@ def render(scene, **params):
     light_pos = scene['lights']['pos'][:, :3]
     light_clr_idx = scene['lights']['color_idx']
     light_colors = color_table[light_clr_idx]
+    light_attenuation_coeffs = scene['lights']['attenuation']
 
     materials = scene['materials']['albedo']
 
@@ -179,8 +180,12 @@ def render(scene, **params):
     light_dir = light_pos[:, np.newaxis, :] - frag_pos
     light_dir_norm = torch.sqrt(torch.sum(light_dir ** 2, dim=-1))[:, :, np.newaxis]
     light_dir /= light_dir_norm  # TODO: nonzero_divide
+    # Attenuate the lights
+    per_frag_att_factor = 1 / (light_attenuation_coeffs[:, 0][:, np.newaxis, np.newaxis] +
+                          light_dir_norm * light_attenuation_coeffs[:, 1][:, np.newaxis, np.newaxis] +
+                          (light_dir_norm ** 2) * light_attenuation_coeffs[:, 2][:, np.newaxis, np.newaxis])
 
-    frag_normal_dot_light = tensor_dot(frag_normals, light_dir, axis=-1)
+    frag_normal_dot_light = tensor_dot(frag_normals, per_frag_att_factor * light_dir, axis=-1)
     if get_param_value('double_sided', params, False):
         # Flip per-fragment normals if needed based on the camera direction
         cam_dir = normalize(camera['eye'][np.newaxis, np.newaxis, :] - frag_pos)
