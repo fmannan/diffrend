@@ -280,6 +280,7 @@ def render_splats_NDC(scene, **params):
     light_pos = scene['lights']['pos']
     light_clr_idx = scene['lights']['color_idx']
     light_colors = color_table[light_clr_idx]
+    light_attenuation_coeffs = scene['lights']['attenuation']
 
     materials = scene['materials']['albedo']
     material_idx = scene['objects']['disk']['material_idx']
@@ -300,8 +301,14 @@ def render_splats_NDC(scene, **params):
     light_dir = light_pos_CC[:, np.newaxis, :3] - frag_pos[:, :3]
     light_dir_norm = torch.sqrt(torch.sum(light_dir ** 2, dim=-1))[:, :, np.newaxis]
     light_dir /= light_dir_norm  # TODO: nonzero_divide
+    # Attenuate the lights
+    per_frag_att_factor = 1 / (light_attenuation_coeffs[:, 0][:, np.newaxis, np.newaxis] +
+                               light_dir_norm * light_attenuation_coeffs[:, 1][:, np.newaxis, np.newaxis] +
+                               (light_dir_norm ** 2) * light_attenuation_coeffs[:, 2][:, np.newaxis, np.newaxis])
 
-    im_color = torch.sum(frag_normals * light_dir, dim=-1)[:, :, np.newaxis] * \
+    frag_normal_dot_light = tensor_dot(frag_normals, per_frag_att_factor * light_dir, axis=-1)
+    frag_normal_dot_light = torch.nn.functional.relu(frag_normal_dot_light)
+    im_color = frag_normal_dot_light[:, :, np.newaxis] * \
                light_colors[:, np.newaxis, :] * frag_albedo[np.newaxis, :, :]
 
     im = torch.sum(im_color, dim=0).view(int(H), int(W), 3)
@@ -388,6 +395,7 @@ def render_splats_along_ray(scene, **params):
     light_pos = scene['lights']['pos']
     light_clr_idx = scene['lights']['color_idx']
     light_colors = color_table[light_clr_idx]
+    light_attenuation_coeffs = scene['lights']['attenuation']
 
     materials = scene['materials']['albedo']
     material_idx = scene['objects']['disk']['material_idx']
@@ -407,8 +415,14 @@ def render_splats_along_ray(scene, **params):
     light_dir = light_pos_CC[:, np.newaxis, :3] - frag_pos[:, :3]
     light_dir_norm = torch.sqrt(torch.sum(light_dir ** 2, dim=-1))[:, :, np.newaxis]
     light_dir /= light_dir_norm  # TODO: nonzero_divide
+    # Attenuate the lights
+    per_frag_att_factor = 1 / (light_attenuation_coeffs[:, 0][:, np.newaxis, np.newaxis] +
+                               light_dir_norm * light_attenuation_coeffs[:, 1][:, np.newaxis, np.newaxis] +
+                               (light_dir_norm ** 2) * light_attenuation_coeffs[:, 2][:, np.newaxis, np.newaxis])
 
-    im_color = torch.sum(frag_normals * light_dir, dim=-1)[:, :, np.newaxis] * \
+    frag_normal_dot_light = tensor_dot(frag_normals, per_frag_att_factor * light_dir, axis=-1)
+    frag_normal_dot_light = torch.nn.functional.relu(frag_normal_dot_light)
+    im_color = frag_normal_dot_light[:, :, np.newaxis] * \
                light_colors[:, np.newaxis, :] * frag_albedo[np.newaxis, :, :]
 
     im = torch.sum(im_color, dim=0).view(int(H), int(W), 3)
