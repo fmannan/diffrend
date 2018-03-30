@@ -44,7 +44,7 @@ class ObjectsFolderMultiObjectDataset(Dataset):
         obj2 = load_model('../../../data/sphere_halfbox_v2.obj')
         v1 = (obj_model['v'] - obj_model['v'].mean()) / (obj_model['v'].max() - obj_model['v'].min())
         v2 = obj2['v']  # / (obj2['v'].max() - obj2['v'].min())
-        scale = (obj2['v'].max() - obj2['v'].min()) * .8
+        scale = (obj2['v'].max() - obj2['v'].min()) * 3.
         offset = np.array([4, 1.5, 3.0])
         v = np.concatenate((scale * v1 + offset, v2))
         f = np.concatenate((obj_model['f'], obj2['f'] + v1.shape[0]))
@@ -98,4 +98,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-                                                                 

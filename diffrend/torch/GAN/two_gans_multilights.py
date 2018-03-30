@@ -17,7 +17,7 @@ import shutil
 import torchvision
 from diffrend.torch.GAN.datasets import Dataset_load
 from diffrend.torch.GAN.two_networks import create_networks
-from diffrend.torch.GAN.parameters_halfbox_shapenet_difflights import Parameters
+from diffrend.torch.GAN.parameters_halfbox_shapenet import Parameters
 from diffrend.torch.GAN.utils import make_dot
 from diffrend.torch.params import SCENE_BASIC, SCENE_SPHERE_HALFBOX
 from diffrend.torch.utils import tch_var_f, tch_var_l, where, get_data, normalize, cam_to_world
@@ -35,8 +35,8 @@ from mpl_toolkits.mplot3d import axes3d
 HYPERDASH_SUPPORTED = False
 
 def copy_scripts_to_folder(expr_dir):
-    shutil.copy("networks.py", expr_dir)
-    shutil.copy("parameters_halfbox.py", expr_dir)
+    shutil.copy("two_networks.py", expr_dir)
+    shutil.copy("parameters_halfbox_shapenet.py", expr_dir)
     shutil.copy(__file__, expr_dir)
 
 
@@ -266,17 +266,18 @@ class GAN(object):
         # Define the camera poses
         if not self.opt.same_view:
             self.cam_pos = uniform_sample_sphere(radius=self.opt.cam_dist, num_samples=self.opt.batchSize,
-                                                 axis=self.opt.axis, angle=self.opt.angle,
+                                                 axis=self.opt.axis, angle=np.deg2rad(self.opt.angle),
                                                  theta_range=self.opt.theta, phi_range=self.opt.phi)
-            self.cam_pos2 = uniform_sample_sphere(radius=self.opt.cam_dist, num_samples=self.opt.batchSize,
-                                                 axis=self.opt.axis, angle=self.opt.angle,
+            self.cam_pos2 = uniform_sample_sphere(radius=self.opt.cam_dist, num_samples=self.opt.batchSize,  #np.deg2rad(
+                                                 axis=self.opt.axis, angle=np.deg2rad(self.opt.angle),
                                                  theta_range=self.opt.theta, phi_range=self.opt.phi)
-        light_pos = uniform_sample_sphere(radius=30, num_samples=self.opt.batchSize,
-                                                 axis=self.opt.axis, angle=self.opt.angle,
+        light_pos = uniform_sample_sphere(radius=2, num_samples=self.opt.batchSize,
+                                                 axis=self.opt.axis, angle=np.deg2rad(self.opt.angle),
                                                  theta_range=self.opt.theta, phi_range=self.opt.phi)
-        light_pos2 = uniform_sample_sphere(radius=30, num_samples=self.opt.batchSize,
-                                                 axis=self.opt.axis, angle=self.opt.angle,
+        light_pos2 = uniform_sample_sphere(radius=2, num_samples=self.opt.batchSize,
+                                                 axis=self.opt.axis, angle=np.deg2rad(self.opt.angle),
                                                  theta_range=self.opt.theta, phi_range=self.opt.phi)
+
         # Create a splats rendering scene
         large_scene = create_scene(self.opt.width, self.opt.height,
                                    self.opt.fovy, self.opt.focal_length,
@@ -338,7 +339,17 @@ class GAN(object):
                 large_scene['camera']['eye'] = tch_var_f(self.cam_pos[idx])
             else:
                 large_scene['camera']['eye'] = tch_var_f(self.cam_pos[0])
-            large_scene['lights']['pos'] = tch_var_f(light_pos[idx])
+
+            #print(large_scene['lights']['pos'].size())
+            #print(light_pos[idx].shape)
+            y1 = light_pos[idx].reshape(1,-1)
+            b = np.ones((1, 1))
+            light_posi = np.concatenate((y1,b), axis = 1)
+
+            #print(light_posi.shape)
+            large_scene['lights']['pos'] = tch_var_f(light_posi)
+            #print(large_scene['lights']['pos'])
+
             # Render scene
             view_dir = normalize(large_scene['camera']['at'] - large_scene['camera']['eye'])
             res = render(large_scene,
@@ -396,7 +407,7 @@ class GAN(object):
                     # TODO: Solve this hack!!!!!!
                     while True:
                         samples = self.get_samples()
-                        if samples['mesh']['face'][0].size(0) <= 4000:
+                        if samples['mesh']['face'][0].size(0) <= 3000:
                             break
                     # print (samples['mesh']['face'][0].size())
                     large_scene['objects']['triangle']['material_idx'] = tch_var_l(
@@ -430,7 +441,15 @@ class GAN(object):
                 large_scene['camera']['eye'] = tch_var_f(self.cam_pos2[idx])
             else:
                 large_scene['camera']['eye'] = tch_var_f(self.cam_pos2[0])
-            large_scene['lights']['pos'] = tch_var_f(light_pos2[idx])
+
+            y1 = light_pos2[idx].reshape(1,-1)
+            b = np.ones((1, 1))
+            light_posi = np.concatenate((y1,b), axis = 1)
+
+
+
+            large_scene['lights']['pos'] = tch_var_f(light_posi)
+
             # Render scene
             #view_dir = normalize(large_scene['camera']['at'] - large_scene['camera']['eye'])
             res = render(large_scene,
@@ -500,10 +519,13 @@ class GAN(object):
         batch_size = batch.size()[0]
 
         # Generate camera positions on a sphere
-
-        light_pos = uniform_sample_sphere(radius=30, num_samples=self.opt.batchSize,
-                                                 axis=self.opt.axis, angle=self.opt.angle,
+        if not self.opt.same_view:
+            cam_pos = uniform_sample_sphere(radius=self.opt.cam_dist, num_samples=self.opt.batchSize,   #np.deg2rad(
+                                                 axis=self.opt.axis, angle=np.deg2rad(self.opt.angle),
                                                  theta_range=self.opt.theta, phi_range=self.opt.phi)
+        light_pos = uniform_sample_sphere(radius=2, num_samples=batch_size,
+                                                     axis=self.opt.axis, angle=np.deg2rad(self.opt.angle),
+                                                     theta_range=self.opt.theta, phi_range=self.opt.phi)
 
         rendered_data = []
         rendered_data_depth = []
@@ -559,14 +581,21 @@ class GAN(object):
                 if not self.opt.same_view:
                     self.scene['camera']['eye'] = tch_var_f(cam_pos[idx])
                 else:
-                    self.scene['camera']['eye'] = tch_var_f(self.cam_pos[0])
+                    self.scene['camera']['eye'] = tch_var_f(cam_pos[0])
 
             else:
                 if not self.opt.same_view:
                     self.scene['camera']['eye'] = batch_cond[idx]
                 else:
                     self.scene['camera']['eye'] = batch_cond[0]
-            self.scene['lights']['pos'] = tch_var_f(light_pos[idx])
+
+            y1 = light_pos[idx].reshape(1,-1)
+            b = np.ones((1, 1))
+            light_posi = np.concatenate((y1,b), axis = 1)
+
+
+            self.scene['lights']['pos'] = tch_var_f(light_posi)
+
             # Render scene
             # res = render_splats_NDC(self.scene)
             res = render_splats_along_ray(self.scene)
