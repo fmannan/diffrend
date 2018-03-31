@@ -349,13 +349,13 @@ def render_splats_along_ray(scene, **params):
     splats = scene['objects']['disk']
     pos_ray = splats['pos']
     normals_CC = splats['normal']
-    num_objects = pos_ray.size()[0]
+    #num_objects = pos_ray.size()[0]
 
     ##### Find (X, Y) in the Camera's view frustum
     x, y = np.meshgrid(np.linspace(-1, 1, W), np.linspace(1, -1, H))
     # Force the caller to set the z coordinate with the correct sign
     Z = -torch.nn.functional.relu(-pos_ray[:, 2]) #-torch.abs(pos_ray[:, 2])
-    n_pixels = x.size
+    #n_pixels = x.size
 
     fovy = camera['fovy']
     focal_length = camera['focal_length']
@@ -367,8 +367,8 @@ def render_splats_along_ray(scene, **params):
 
     x = tch_var_f(x.ravel())
     y = tch_var_f(y.ravel())
-    X = Z * x / focal_length
-    Y = Z * y / focal_length
+    X = -Z * x / focal_length
+    Y = -Z * y / focal_length
     pos_CC = torch.stack((X, Y, Z), dim=1)
     ####
     im_depth = norm_p(pos_CC[..., :3]).view(H, W)
@@ -406,8 +406,8 @@ def render_splats_along_ray(scene, **params):
     """
     Get the normal and material for the visible objects.
     """
-    frag_normals = normals_CC
-    frag_pos = pos_CC
+    frag_normals = normals_CC[:, :3]
+    frag_pos = pos_CC[:, :3]
 
     frag_albedo = torch.index_select(materials, 0, material_idx)
 
