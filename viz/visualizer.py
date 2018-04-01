@@ -12,7 +12,7 @@ scene = np.load('scene_output_twogans.npy')
 for idx in range(0, len(scene), 20):
     print(idx)
     scene[idx]['lights']['attenuation'] = tch_var_f([[1.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
-    res = render_splats_along_ray(scene[idx])
+    res = render_splats_along_ray(scene[idx], use_old_sign=True)
 
     im = get_data(res['image'])
     depth = get_data(res['depth'])

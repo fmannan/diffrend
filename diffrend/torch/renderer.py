@@ -367,8 +367,9 @@ def render_splats_along_ray(scene, **params):
 
     x = tch_var_f(x.ravel())
     y = tch_var_f(y.ravel())
-    X = -Z * x / focal_length
-    Y = -Z * y / focal_length
+    sgn = 1 if get_param_value('use_old_sign', params, False) else -1
+    X = sgn * Z * x / focal_length
+    Y = sgn * Z * y / focal_length
     pos_CC = torch.stack((X, Y, Z), dim=1)
     ####
     im_depth = norm_p(pos_CC[..., :3]).view(H, W)
