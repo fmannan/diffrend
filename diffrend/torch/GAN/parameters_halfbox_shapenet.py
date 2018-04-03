@@ -37,7 +37,7 @@ class Parameters():
         elif username == 'sai' or username == 'root':
             #default_root = '/data/lisa/data/ShapeNetCore.v2'
             #default_root = '/home/dvazquez/datasets/shapenet/ShapeNetCore.v2'
-            default_root = '/home/sai/diffrend/data/sphere_halfbox'
+            default_root = '/home/sai/attenuation/diffrend/data/sphere_halfbox'
             default_out = './output'
         else:
             raise ValueError('Add the route for the dataset of your system')
@@ -51,9 +51,11 @@ class Parameters():
         self.parser.add_argument('--classes', type=str, default='motorcycle', help='Classes from the shapenet dataset to use')#,cap,can,laptop
         self.parser.add_argument('--workers', type=int, default=8, help='number of data loading workers')
         self.parser.add_argument('--toy_example', action='store_true', default=False, help='Use toy example')
+        self.parser.add_argument('--use_old_sign', action='store_true', default=True, help='Use toy example')
         self.parser.add_argument('--use_mesh', action='store_true', default=True, help='Render dataset with meshes')
         self.parser.add_argument('--gen_model_path', type=str, default=None, help='dataset root directory')
         self.parser.add_argument('--dis_model_path', type=str, default=None, help='dataset root directory')
+        self.parser.add_argument('--dis_model_path2', type=str, default=None, help='dataset root directory')
         # corresponding folders: 02691156, 03759954
 
         # other low-footprint objects:
