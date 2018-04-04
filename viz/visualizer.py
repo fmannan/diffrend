@@ -1,6 +1,6 @@
 import numpy as np
 from diffrend.torch.renderer import render_splats_along_ray
-from diffrend.torch.utils import get_data, tch_var_f
+from diffrend.torch.utils import get_data, tch_var_f, cam_to_world
 from mpl_toolkits.mplot3d import axes3d
 import matplotlib.pyplot as plt
 
@@ -12,7 +12,7 @@ scene = np.load('scene_output_twogans.npy')
 for idx in range(0, len(scene), 20):
     print(idx)
     scene[idx]['lights']['attenuation'] = tch_var_f([[1.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
-    res = render_splats_along_ray(scene[idx], use_old_sign=True)
+    res = render_splats_along_ray(scene[idx], use_old_sign=False)
 
     im = get_data(res['image'])
     depth = get_data(res['depth'])
@@ -28,7 +28,14 @@ for idx in range(0, len(scene), 20):
     ax = fig.add_subplot(111, projection='3d')
     ax.scatter(pos[:, 0], pos[:, 1], pos[:, 2], s=1.3)
 
+    res_world = cam_to_world(pos=res['pos'], normal=res['normal'], camera=scene[idx]['camera'])
+    pos = get_data(res_world['pos'])
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    ax.scatter(pos[:, 0], pos[:, 1], pos[:, 2], s=1.3)
 
+plt.ioff()
+plt.show()
 # data = np.load('res_world_twogans.npy')
 #
 # # pos0 = get_data(data[0]['pos'])

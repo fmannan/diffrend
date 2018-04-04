@@ -86,6 +86,10 @@ def normalize(u):
     return u / denom
 
 
+def reflect_ray(incident, normal):
+    pass
+
+
 def point_along_ray(ray_orig, ray_dir, ray_dist):
     """Find the point along the ray_dir at distance ray_dist
     :param ray_orig: 4-element vector or 3-element vector or [N x 3] matrix
@@ -271,7 +275,7 @@ def lookat_inv(eye, at, up):
     :return: 4x4 inverse lookat matrix
     """
     rot_matrix = lookat_rot_inv(eye, at, up)
-    rot_translate = torch.cat((rot_matrix, torch.mm(rot_matrix, eye.view(-1, 1))), dim=1)
+    rot_translate = torch.cat((rot_matrix, torch.mm(rot_matrix, eye[:, np.newaxis])), dim=1)
     return torch.cat((rot_translate, tch_var_f([0, 0, 0, 1.])[np.newaxis, :]), dim=0)
 
 
