@@ -653,8 +653,8 @@ class GAN(object):
                    '%s/netG_epoch_%d.pth' % (self.opt.out_dir, epoch))
         torch.save(self.netD.state_dict(),
                    '%s/netD_epoch_%d.pth' % (self.opt.out_dir, epoch))
-        torch.save(self.netD2.state_dict(),
-                   '%s/netD2_epoch_%d.pth' % (self.opt.out_dir, epoch))
+        #torch.save(self.netD2.state_dict(),
+        #           '%s/netD2_epoch_%d.pth' % (self.opt.out_dir, epoch))
 
     def save_images(self, epoch, input, output):
         """Save images."""
