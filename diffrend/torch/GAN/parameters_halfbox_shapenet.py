@@ -37,7 +37,7 @@ class Parameters():
         elif username == 'mudumbas' or username == 'root':
             #default_root = '/data/lisa/data/ShapeNetCore.v2'
             #default_root = '/home/dvazquez/datasets/shapenet/ShapeNetCore.v2'
-            default_root = '/u/mudumbas/Videos/diffrend/data/sphere'
+            default_root = '/u/mudumbas/Videos/diffrend/data/sphere_halfbox'
             default_out = '/data/milatmp1/mudumbas'
         else:
             raise ValueError('Add the route for the dataset of your system')
