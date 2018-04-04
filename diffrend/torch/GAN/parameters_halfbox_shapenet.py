@@ -34,11 +34,11 @@ class Parameters():
         elif username == 'fahim' or username == 'fmannan':
             default_root = '/data/lisa/data/ShapeNetCore.v2'
             default_out = './render_samples/'
-        elif username == 'sai' or username == 'root':
+        elif username == 'mudumbas' or username == 'root':
             #default_root = '/data/lisa/data/ShapeNetCore.v2'
             #default_root = '/home/dvazquez/datasets/shapenet/ShapeNetCore.v2'
-            default_root = '/home/sai/attenuation/diffrend/data/sphere_halfbox'
-            default_out = './output'
+            default_root = '/u/mudumbas/Videos/diffrend/data/sphere'
+            default_out = '/data/milatmp1/mudumbas'
         else:
             raise ValueError('Add the route for the dataset of your system')
 
@@ -52,6 +52,7 @@ class Parameters():
         self.parser.add_argument('--workers', type=int, default=8, help='number of data loading workers')
         self.parser.add_argument('--toy_example', action='store_true', default=False, help='Use toy example')
         self.parser.add_argument('--use_old_sign', action='store_true', default=True, help='Use toy example')
+        self.parser.add_argument('--use_penality', action='store_true', default=True, help='Use toy example')
         self.parser.add_argument('--use_mesh', action='store_true', default=True, help='Render dataset with meshes')
         self.parser.add_argument('--gen_model_path', type=str, default=None, help='dataset root directory')
         self.parser.add_argument('--dis_model_path', type=str, default=None, help='dataset root directory')

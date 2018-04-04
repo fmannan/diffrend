@@ -36,6 +36,8 @@ HYPERDASH_SUPPORTED = False
 
 def copy_scripts_to_folder(expr_dir):
     shutil.copy("two_networks.py", expr_dir)
+    shutil.copy("../params.py", expr_dir)
+    shutil.copy("../renderer.py", expr_dir)
     shutil.copy("parameters_halfbox_shapenet.py", expr_dir)
     shutil.copy(__file__, expr_dir)
 
@@ -504,6 +506,8 @@ class GAN(object):
         rendered_data_depth = []
         rendered_data_cond = []
         rendered_res_world=[]
+        z_min=1
+        z_max=self.opt.cam_dist + 2.0
         # Set splats into rendering scene
         if 'sphere' in self.scene['objects']:
             del self.scene['objects']['sphere']
@@ -519,6 +523,7 @@ class GAN(object):
         self.scene['camera']['at'] = tch_var_f(lookat)
         self.scene['objects']['disk']['material_idx'] = tch_var_l(
             np.zeros(self.opt.splats_img_size * self.opt.splats_img_size))
+        loss=0.0
         for idx in range(batch_size):
             # Get splats positions and normals
             if not self.opt.fix_splat_pos:
@@ -535,7 +540,12 @@ class GAN(object):
                 # pos = torch.cat([pos, -F.relu(batch[idx][:, :1])], 1)  # for along-ray but not explicitly < -f (can it learn to be < -f?)
                 pos = torch.cat([pos, -self.scene['camera']['focal_length']-F.relu(batch[idx][:, :1])], 1)  # for along-ray
                 z = -self.scene['camera']['focal_length']-F.relu(batch[idx][:, :1])
-                z = (z - torch.min(z))/(torch.max(z) - torch.min(z))
+                #z = (z - torch.min(z))/(torch.max(z) - torch.min(z))
+                print(torch.min(torch.abs(z)))
+                print(torch.max(torch.abs(z)))
+                eps=1e-3
+                #loss += (100 * F.relu(z_min - torch.abs(z)))**2 + F.relu(torch.abs(z) - z_max)**2 + (0.5/((torch.abs(z)).var() + eps))
+                loss += (100 * F.relu(z_min - (-z)))**2 + F.relu((-z) - z_max)**2 + (0.5/((-z).var() + eps))
                 if self.opt.norm_sph_coord:
                     # TODO: Sigmoid here?
                     # phi_theta = F.sigmoid(batch[idx][:, 1:]) * tch_var_f([2 * np.pi, np.pi / 2.])[np.newaxis, :]
@@ -564,7 +574,7 @@ class GAN(object):
 
             # Render scene
             # res = render_splats_NDC(self.scene)
-            res = render_splats_along_ray(self.scene)
+            res = render_splats_along_ray(self.scene,use_old_sign=self.opt.use_old_sign)
             # res_world = cam_to_world(pos=res['pos'], normal=res['normal'], camera=self.scene['camera'])
             # dict_res_world={}
             # dict_res_world['pos']=get_data(res_world['pos'][:,:3])
@@ -597,7 +607,7 @@ class GAN(object):
 
         rendered_data = torch.stack(rendered_data)
         rendered_data_depth = torch.stack(rendered_data_depth)
-        return rendered_data, rendered_data_depth, rendered_res_world
+        return rendered_data, rendered_data_depth, rendered_res_world, loss/self.opt.batchSize
 
     def train(self, ):
         """Train networtk."""
@@ -656,8 +666,8 @@ class GAN(object):
                     self.generate_noise_vector()
                     fake = self.netG(self.noisev)
                     fake2 = self.netG(self.noisev2)
-                    fake_rendered,fd,r = self.render_batch(fake)
-                    fake_rendered2,fd2,r2 = self.render_batch(fake2)
+                    fake_rendered,fd,r,loss = self.render_batch(fake)
+                    fake_rendered2,fd2,r2,loss2 = self.render_batch(fake2)
                     fake_D=torch.cat([fake_rendered.detach(),fd.detach()],1)
                     # Do not bp through gen
                     outD_fake = self.netD(fake_rendered.detach())
@@ -710,8 +720,8 @@ class GAN(object):
                 self.generate_noise_vector()
                 fake = self.netG(self.noisev)
                 fake2 = self.netG(self.noisev2)
-                fake_rendered,fd,r = self.render_batch(fake)
-                fake_rendered2,fd2,r2 = self.render_batch(fake2)
+                fake_rendered,fd,r,loss = self.render_batch(fake)
+                fake_rendered2,fd2,r2,loss2 = self.render_batch(fake2)
                 outG_fake = self.netD(fake_rendered)
                 outG_fake_depth = self.netD2(fake_rendered2)
                 #dot = make_dot(fake)
@@ -724,7 +734,7 @@ class GAN(object):
                     errG = self.criterion(outG_fake, labelv)
                     errG.backward()
                 elif self.opt.criterion == 'WGAN':
-                    errG = 0.5*outG_fake.mean() + 0.5*outG_fake_depth.mean()
+                    errG = 0.5*outG_fake.mean() + 0.5*outG_fake_depth.mean()+0.5*(loss+loss2)
                     errG.backward(self.mone)
                 else:
                     raise ValueError('Unknown GAN criterium')
@@ -736,7 +746,7 @@ class GAN(object):
                 mse_criterion = nn.MSELoss().cuda()
 
                 if iteration % 5 == 0:
-                    fake_rendered_cond2,fd2,r2 = self.render_batch(fake, self.inputv_cond)
+                    fake_rendered_cond2,fd2,r2,loss3 = self.render_batch(fake, self.inputv_cond)
                     l2_loss=mse_criterion(fd2, self.inputv_depth)
                     Wassertein_D = (errD_real.data[0] - errD_fake.data[0])
                     Wassertein_D_depth = (errD_real_depth.data[0] - errD_fake_depth.data[0])
@@ -744,7 +754,7 @@ class GAN(object):
                           ' Loss_D_fake: %.4f Loss_D_real_depth: %.4f Loss_D_fake_depth: %.4f Wassertein D: %.4f Wassertein_depth D_depth: %.4f L2_loss: %.4f' % (
                               iteration, self.opt.n_iter, errD.data[0],
                               errG.data[0], errD_real.data[0], errD_fake.data[0],errD_real_depth.data[0],errD_fake_depth.data[0],
-                              Wassertein_D, Wassertein_D_depth, l2_loss.data[0]))
+                              Wassertein_D, Wassertein_D_depth, 0.5*(loss+loss2).data[0]))
                     l2_file.write('%s\n' % (str(l2_loss.data[0])))
                     l2_file.flush()
                     print("written to file",str(l2_loss.data[0]))
