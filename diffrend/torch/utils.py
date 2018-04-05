@@ -87,7 +87,12 @@ def normalize(u):
 
 
 def reflect_ray(incident, normal):
-    pass
+    """
+    :param incident: L x N x 3 matrix
+    :param normal: 1 x N x 3 matrix
+    :return: L x N x 3 matrix
+    """
+    return -2 * torch.sum(incident * normal, dim=-1)[..., np.newaxis] * normal + incident
 
 
 def point_along_ray(ray_orig, ray_dir, ray_dist):

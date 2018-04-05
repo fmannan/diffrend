@@ -246,6 +246,8 @@ def render_sphere_halfbox(out_dir, cam_pos, width, height, fovy, focal_length, n
     scene['camera']['viewport'] = [0, 0, width, height]
     scene['camera']['fovy'] = np.deg2rad(fovy)
     scene['camera']['focal_length'] = focal_length
+    scene['lights']['pos'] = tch_var_f([[4., 4., 3., 1.0]])
+    scene['lights']['attenuation'] = tch_var_f([[1., 0., 0.]])
 
     # generate camera positions on a sphere
     if cam_pos is None:
