@@ -31,9 +31,9 @@ SCENE_TEST = {
         'color_idx': tch_var_l([2, 1, 3]),
         # Light attenuation factors have the form (kc, kl, kq) and eq: 1/(kc + kl * d + kq * d^2)
         'attenuation': tch_var_f([
-            [1., 0., 0.],
-            [1., 0., 0.],
-            [1., 0., 0.],
+            [1., 0., 0.0],
+            [0., 0., 0.01],
+            [0., 0., 0.01],
         ])
     },
     'colors': tch_var_f([
@@ -44,7 +44,7 @@ SCENE_TEST = {
     ]),
     'materials': {
         'albedo': tch_var_f([
-            [0.0, 0.0, 0.0],
+            [0.6, 0.6, 0.6],
             [0.1, 0.1, 0.1],
             [0.2, 0.2, 0.2],
             [0.5, 0.5, 0.5],
@@ -257,7 +257,8 @@ def test_sphere_splat_NDC(out_dir, cam_pos, width, height, fovy, focal_length,  
     plt.show()
 
 
-def test_sphere_splat_render_along_ray(out_dir, cam_pos, width, height, fovy, focal_length,  b_display=False):
+def test_sphere_splat_render_along_ray(out_dir, cam_pos, width, height, fovy, focal_length, use_quartic,
+                                       b_display=False):
     """
     Create a sphere on a square as in render_sphere_world, and then convert to the camera's coordinate system
     and then render using render_splats_along_ray.
@@ -321,7 +322,7 @@ def test_sphere_splat_render_along_ray(out_dir, cam_pos, width, height, fovy, fo
 
     # main render run
     start_time = time()
-    res = render_splats_along_ray(large_scene)
+    res = render_splats_along_ray(large_scene, use_quartic=use_quartic)
     rendering_time.append(time() - start_time)
 
     # Test cam_to_world
@@ -405,6 +406,7 @@ def main():
                                                                                             ' depth image.')
     parser.add_argument('--test_along_ray', action='store_true', help='')
     parser.add_argument('--display', action='store_true', help='Optionally display using matplotlib.')
+    parser.add_argument('--use_quartic', action='store_true', help='Use quartic attenuation')
 
     args = parser.parse_args()
     print(args)
@@ -418,7 +420,8 @@ def main():
     #                    fovy=11.5, focal_length=0.01, b_display=True)
     if args.test_along_ray:
         test_sphere_splat_render_along_ray(out_dir=args.out_dir, cam_pos=[0, 0, 10], width=args.width,
-                                           height=args.height, fovy=11.5, focal_length=0.01, b_display=True)
+                                           height=args.height, fovy=11.5, focal_length=0.01,
+                                           use_quartic=args.use_quartic, b_display=True)
     else:
         test_sphere_splat_NDC(out_dir=args.out_dir, cam_pos=[0, 0, 10], width=args.width, height=args.height,
                               fovy=11.5, focal_length=0.01, b_display=True)

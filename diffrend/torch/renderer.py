@@ -80,15 +80,17 @@ class Renderer:
 
 def fragment_shader(frag_pos, frag_normals, light_dir, cam_dir,
                     light_attenuation_coeffs, frag_coeffs,
-                    light_colors, frag_albedo, double_sided):
+                    light_colors, frag_albedo, double_sided,
+                    use_quartic):
     # Fragment shading
     #light_dir = light_pos[:, np.newaxis, :] - frag_pos
     light_dir_norm = torch.sqrt(torch.sum(light_dir ** 2, dim=-1))[:, :, np.newaxis]
     light_dir /= light_dir_norm  # TODO: nonzero_divide
     # Attenuate the lights
+    pow_val = 2 if not use_quartic else 4
     per_frag_att_factor = 1 / (light_attenuation_coeffs[:, 0][:, np.newaxis, np.newaxis] +
                                light_dir_norm * light_attenuation_coeffs[:, 1][:, np.newaxis, np.newaxis] +
-                               (light_dir_norm ** 2) * light_attenuation_coeffs[:, 2][:, np.newaxis, np.newaxis])
+                               (light_dir_norm ** pow_val) * light_attenuation_coeffs[:, 2][:, np.newaxis, np.newaxis])
 
     # Diffuse component
     frag_normal_dot_light = tensor_dot(frag_normals, per_frag_att_factor * light_dir, axis=-1)
@@ -224,40 +226,8 @@ def render(scene, **params):
                                frag_coeffs=frag_coeffs,
                                light_colors=light_colors,
                                frag_albedo=frag_albedo,
-                               double_sided=get_param_value('double_sided', params, False))
-    # # Fragment shading
-    # light_dir = light_pos[:, np.newaxis, :] - frag_pos
-    # light_dir_norm = torch.sqrt(torch.sum(light_dir ** 2, dim=-1))[:, :, np.newaxis]
-    # light_dir /= light_dir_norm  # TODO: nonzero_divide
-    # # Attenuate the lights
-    # per_frag_att_factor = 1 / (light_attenuation_coeffs[:, 0][:, np.newaxis, np.newaxis] +
-    #                       light_dir_norm * light_attenuation_coeffs[:, 1][:, np.newaxis, np.newaxis] +
-    #                       (light_dir_norm ** 2) * light_attenuation_coeffs[:, 2][:, np.newaxis, np.newaxis])
-    #
-    # # Diffuse component
-    # frag_normal_dot_light = tensor_dot(frag_normals, per_frag_att_factor * light_dir, axis=-1)
-    #
-    # # Specular component
-    # reflected_light_dir = reflect_ray(-light_dir, frag_normals)
-    #
-    # # View dir, i.e., from vector originating from frag_pos towards the eye
-    # cam_dir = normalize(camera['eye'][np.newaxis, np.newaxis, :3] - frag_pos[:, :, :3])
-    # reflected_cam_dot = tensor_dot(cam_dir, reflected_light_dir, axis=-1)
-    #
-    # if get_param_value('double_sided', params, False):
-    #     # Flip per-fragment normals if needed based on the camera direction
-    #     dot_prod = tensor_dot(cam_dir, frag_normals, axis=-1)
-    #     sgn = torch.sign(dot_prod)
-    #     frag_normal_dot_light = sgn * frag_normal_dot_light
-    #     reflected_cam_dot = sgn * reflected_cam_dot
-    #
-    # frag_normal_dot_light = torch.nn.functional.relu(frag_normal_dot_light)
-    # reflected_cam_dot = torch.nn.functional.relu(reflected_cam_dot)
-    #
-    # im_color = (frag_coeffs[:, 0][np.newaxis, :, np.newaxis] * frag_normal_dot_light[:, :, np.newaxis] +
-    #             frag_coeffs[:, 1][np.newaxis, :, np.newaxis] *
-    #             (reflected_cam_dot[:, :, np.newaxis] ** frag_coeffs[:, 2][np.newaxis, :, np.newaxis])) * \
-    #            light_colors[:, np.newaxis, :] * frag_albedo[np.newaxis, :, :]
+                               double_sided=get_param_value('double_sided', params, False),
+                               use_quartic=get_param_value('use_quartic', params, False))
 
     im = torch.sum(im_color, dim=0).view(int(H), int(W), 3)
 
@@ -369,7 +339,8 @@ def render_splats_NDC(scene, **params):
                                frag_coeffs=frag_coeffs,
                                light_colors=light_colors,
                                frag_albedo=frag_albedo,
-                               double_sided=get_param_value('double_sided', params, False))
+                               double_sided=get_param_value('double_sided', params, False),
+                               use_quartic=get_param_value('use_quartic', params, False))
     # # Fragment shading
     # light_dir = light_pos_CC[:, np.newaxis, :3] - frag_pos[:, :3]
     # light_dir_norm = torch.sqrt(torch.sum(light_dir ** 2, dim=-1))[:, :, np.newaxis]
@@ -494,20 +465,8 @@ def render_splats_along_ray(scene, **params):
                                frag_coeffs=frag_coeffs,
                                light_colors=light_colors,
                                frag_albedo=frag_albedo,
-                               double_sided=get_param_value('double_sided', params, False))
-    # # Fragment shading
-    # light_dir = light_pos_CC[:, np.newaxis, :3] - frag_pos[:, :3]
-    # light_dir_norm = torch.sqrt(torch.sum(light_dir ** 2, dim=-1))[:, :, np.newaxis]
-    # light_dir /= light_dir_norm  # TODO: nonzero_divide
-    # # Attenuate the lights
-    # per_frag_att_factor = 1 / (light_attenuation_coeffs[:, 0][:, np.newaxis, np.newaxis] +
-    #                            light_dir_norm * light_attenuation_coeffs[:, 1][:, np.newaxis, np.newaxis] +
-    #                            (light_dir_norm ** 2) * light_attenuation_coeffs[:, 2][:, np.newaxis, np.newaxis])
-    #
-    # frag_normal_dot_light = tensor_dot(frag_normals, per_frag_att_factor * light_dir, axis=-1)
-    # frag_normal_dot_light = torch.nn.functional.relu(frag_normal_dot_light)
-    # im_color = frag_normal_dot_light[:, :, np.newaxis] * \
-    #            light_colors[:, np.newaxis, :] * frag_albedo[np.newaxis, :, :]
+                               double_sided=get_param_value('double_sided', params, False),
+                               use_quartic=get_param_value('use_quartic', params, False))
 
     im = torch.sum(im_color, dim=0).view(int(H), int(W), 3)
 
