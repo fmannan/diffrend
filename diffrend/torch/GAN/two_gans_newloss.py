@@ -506,8 +506,8 @@ class GAN(object):
         rendered_data_depth = []
         rendered_data_cond = []
         rendered_res_world=[]
-        z_min=1
-        z_max=self.opt.cam_dist + 2.0
+        z_min = self.scene['camera']['focal_length'] + 1
+        z_max = z_min + 10  # self.opt.cam_dist + 2.0
         # Set splats into rendering scene
         if 'sphere' in self.scene['objects']:
             del self.scene['objects']['sphere']
@@ -538,8 +538,9 @@ class GAN(object):
                 # pos = torch.cat([pos, F.tanh(batch[idx][:, :1])], 1) # for NDC
                 # pos = torch.cat([pos, -torch.abs(batch[idx][:, :1])], 1)  # for along-ray
                 # pos = torch.cat([pos, -F.relu(batch[idx][:, :1])], 1)  # for along-ray but not explicitly < -f (can it learn to be < -f?)
-                pos = torch.cat([pos, -self.scene['camera']['focal_length']-F.relu(batch[idx][:, :1])], 1)  # for along-ray
-                z = pos[:, 2]
+                z = -(F.relu(batch[idx][:, :1]) - F.relu(batch[idx][:, :1] - (z_max - z_min)) + z_min)
+                #z = -self.scene['camera']['focal_length']-F.relu(batch[idx][:, :1])
+                pos = torch.cat([pos, z], 1)  # for along-ray
                 loss += torch.mean(F.relu(z_min - torch.abs(z))**2 + F.relu(torch.abs(z) - z_max)**2)
 
                 if self.opt.norm_sph_coord:

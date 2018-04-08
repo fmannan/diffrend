@@ -508,6 +508,10 @@ def test_cam_to_world_offset1():
     np.testing.assert_equal(get_data(normal_CC[:, :3]), normal_WC[:, :3])
 
 
+def contrast_stretch_percentile(im, low=0.01, high=0.099):
+    pass
+
+
 if __name__ == '__main__':
     test_cam_to_world_identity()
     test_cam_to_world_offset0()
