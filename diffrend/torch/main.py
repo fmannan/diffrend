@@ -1,5 +1,5 @@
 from diffrend.torch.params import SCENE_BASIC, SCENE_1, SCENE_2
-from diffrend.torch.renderer import render, render_splats_NDC
+from diffrend.torch.renderer import render, render_splats_NDC, render_splats_along_ray
 from diffrend.torch.utils import tch_var_f, tch_var_l, CUDA, get_data
 import torch.nn as nn
 from torch import optim
@@ -17,7 +17,7 @@ def render_scene(scene, output_folder, norm_depth_image_only=False, backface_cul
     res = render(scene, norm_depth_image_only=norm_depth_image_only, backface_culling=backface_culling)
     im = get_data(res['image'])
     im_nearest = get_data(res['nearest'])
-    obj_pixel_count = get_data(res['obj_pixel_count'])
+    obj_pixel_count = get_data(res['obj_pixel_count']) if 'obj_pixel_count' in res else None
 
     if plot_res:
         plt.ion()
@@ -219,6 +219,122 @@ def optimize_NDC_test(out_dir, width=32, height=32, max_iter=100, lr=1e-3, scale
     plt.show()
 
 
+def optimize_splats_along_ray_test(out_dir, width=32, height=32, max_iter=100, lr=1e-3, scale=10, print_interval=10,
+                                   imsave_interval=10):
+    """A demo function to check if the differentiable renderer can optimize splats rendered along ray.
+    :param scene:
+    :param out_dir:
+    :return:
+    """
+    import torch
+    import copy
+    from diffrend.torch.params import SCENE_SPHERE_HALFBOX_0
+
+    if not os.path.exists(out_dir):
+        os.mkdir(out_dir)
+
+    scene = SCENE_SPHERE_HALFBOX_0
+    scene['camera']['viewport'] = [0, 0, width, height]
+    scene['camera']['fovy'] = np.deg2rad(45)
+    scene['camera']['focal_length'] = 1
+    scene['camera']['eye'] = tch_var_f([2, 1, 2, 1])
+    scene['camera']['at'] = tch_var_f([0, 0.8, 0, 1])
+
+    target_res = render(SCENE_SPHERE_HALFBOX_0)
+    target_im = target_res['image']
+    target_im.require_grad = False
+    target_im_ = get_data(target_res['image'])
+    target_pos_ = get_data(target_res['pos'])
+    target_normal_ = get_data(target_res['normal'])
+    print('[z_min, z_max] = [%f, %f]' % (np.min(target_pos_[..., 2]), np.max(target_pos_[..., 2])))
+    criterion = nn.L1Loss() #nn.MSELoss()
+    criterion = criterion.cuda()
+
+    plt.ion()
+    plt.figure()
+    plt.imshow(target_im_)
+    plt.title('Target Image')
+    plt.savefig(out_dir + '/target.png')
+
+    input_scene = copy.deepcopy(scene)
+    del input_scene['objects']['sphere']
+    del input_scene['objects']['triangle']
+
+    num_splats = width * height
+    x, y = np.meshgrid(np.linspace(-1, 1, width), np.linspace(-1, 1, height))
+    z = -tch_var_f(2 * np.random.rand(num_splats))
+    z.requires_grad = True
+    pos = torch.stack((tch_var_f(x.ravel()), tch_var_f(y.ravel()), z), dim=1)
+    normals = tch_var_f(np.ones((num_splats, 4)) * np.array([0, 0, 1, 0]))
+    normals.requires_grad = True
+    material_idx = tch_var_l(np.ones(num_splats) * 3)
+
+    input_scene['objects'] = {'disk': {'pos': pos,
+                                       'normal': normals,
+                                       'material_idx': material_idx
+                                       }
+                              }
+    optimizer = optim.Adam((z, normals), lr=lr)
+
+    h0 = plt.figure()
+    h1 = plt.figure()
+    h2 = plt.figure()
+    h3 = plt.figure()
+    loss_per_iter = []
+    for iter in range(max_iter):
+        res = render_splats_along_ray(input_scene, use_old_sign=True)
+        im_out = res['image']
+        res_depth_ = get_data(res['depth'])
+
+        optimizer.zero_grad()
+        loss = criterion(scale * im_out, scale * target_im)
+
+        im_out_ = get_data(im_out)
+        loss_ = get_data(loss)
+        loss_per_iter.append(loss_)
+
+        if iter == 0:
+            plt.figure(h0.number)
+            plt.imshow(im_out_)
+            plt.title('Initial')
+
+        if iter % print_interval == 0 or iter == max_iter - 1:
+            z_ = get_data(z)
+            print('%d. loss= %f [%f, %f]' % (iter, loss_, np.min(z_), np.max(z_)))
+
+        if iter % imsave_interval == 0 or iter == max_iter - 1:
+            z_ = get_data(z)
+            plt.figure(h1.number)
+            plt.imshow(im_out_)
+            plt.title('%d. loss= %f [%f, %f]' % (iter, loss_, np.min(z_), np.max(z_)))
+            plt.savefig(out_dir + '/fig_%05d.png' % iter)
+
+            plt.figure(h2.number)
+            plt.clf()
+            plt.imshow(res_depth_)
+            plt.colorbar()
+            plt.savefig(out_dir + '/fig_depth_%05d.png' % iter)
+
+            plt.figure(h3.number)
+            plt.clf()
+            plt.imshow(z_.reshape((32, 32)))
+            plt.colorbar()
+            plt.savefig(out_dir + '/fig_z_%05d.png' % iter)
+
+        loss.backward()
+        optimizer.step()
+
+    plt.figure()
+    plt.plot(loss_per_iter, linewidth=2)
+    plt.xlabel('Iteration', fontsize=14)
+    plt.title('Loss', fontsize=12)
+    plt.grid(True)
+    plt.savefig(out_dir + '/loss.png')
+
+    plt.ioff()
+    plt.show()
+
+
 def test_scalability(filename, out_dir='./test_scale'):
     # GTX 980 8GB
     # 320 x 240 250 objs
@@ -271,6 +387,7 @@ if __name__ == '__main__':
     parser.add_argument('--display', action='store_true', help='Display result using matplotlib.')
     parser.add_argument('--ortho', action='store_true', help='Use Orthographic Projection.')
     parser.add_argument('--opt-ndc-test', action='store_true', help='Test optimization in NDC.')
+    parser.add_argument('--opt-ray-test', action='store_true', help='Test optimization render along ray.')
     parser.add_argument('--lr', type=float, default=1e-3, help='Learning rate for optimization.')
     parser.add_argument('--max-iter', type=int, default=2000, help='Maximum number of iterations.')
     parser.add_argument('--print-interval', type=int, default=100, help='Print interval for optimization.')
@@ -279,8 +396,8 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     print(args)
-    if not (args.render or args.opt or args.test_scale):
-        args.render = True
+    #if not (args.render or args.opt or args.test_scale):
+    #    args.render = True
 
     scene = SCENE_1
     if args.ortho:
@@ -306,3 +423,6 @@ if __name__ == '__main__':
     if args.opt_ndc_test:
         optimize_NDC_test(out_dir=args.out_dir, width=args.width, height=args.height,
                           max_iter=args.max_iter, lr=args.lr, print_interval=args.print_interval)
+    if args.opt_ray_test:
+        optimize_splats_along_ray_test(out_dir=args.out_dir, width=args.width, height=args.height,
+                                       max_iter=args.max_iter, lr=args.lr, print_interval=args.print_interval)
