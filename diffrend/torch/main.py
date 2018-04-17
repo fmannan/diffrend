@@ -233,12 +233,12 @@ def optimize_splats_along_ray_test(out_dir, width=32, height=32, max_iter=100, l
     """
     import torch
     import copy
-    from diffrend.torch.params import SCENE_SPHERE_HALFBOX_1
+    from diffrend.torch.params import SCENE_SPHERE_HALFBOX_0
 
     if not os.path.exists(out_dir):
         os.mkdir(out_dir)
 
-    scene = SCENE_SPHERE_HALFBOX_1
+    scene = SCENE_SPHERE_HALFBOX_0
     scene['camera']['viewport'] = [0, 0, width, height]
     scene['camera']['fovy'] = np.deg2rad(45)
     scene['camera']['focal_length'] = 1
