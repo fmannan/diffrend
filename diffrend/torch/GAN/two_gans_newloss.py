@@ -538,10 +538,23 @@ class GAN(object):
                 # pos = torch.cat([pos, F.tanh(batch[idx][:, :1])], 1) # for NDC
                 # pos = torch.cat([pos, -torch.abs(batch[idx][:, :1])], 1)  # for along-ray
                 # pos = torch.cat([pos, -F.relu(batch[idx][:, :1])], 1)  # for along-ray but not explicitly < -f (can it learn to be < -f?)
-                z = -(F.relu(batch[idx][:, :1]) - F.relu(batch[idx][:, :1] - (z_max - z_min)) + z_min)
+                #z = -(F.relu(batch[idx][:, :1]) - F.relu(batch[idx][:, :1] - (z_max - z_min)) + z_min)
+
+                """
+                Two options:
+                1. clamp(z) and loss -> loss will always be 0, generated z can be out of range
+                2. loss then clamp(z) -> this gives an extra push if z happens to go out of range
+                """
+                # We want the generator to generate z, s.t. -|z_max| z < -|z_min| where |z_min| = focal_length + eps
+                z = batch[idx][:, :1]
+                #loss += torch.mean(F.relu(z_min - torch.abs(z)) ** 2 + F.relu(torch.abs(z) - z_max) ** 2)
+                # Note: in the following z_max = |z_max| and z_min = |z_min| to avoid extra absolute values
+                # and the z_min, z_max specified before the loop is always non-negative.
+                loss += torch.mean(F.relu(-z_max - z) ** 2 + F.relu(z + z_min) ** 2)
+
+                #z = torch.clamp(z, -z_max, -z_min)
                 #z = -self.scene['camera']['focal_length']-F.relu(batch[idx][:, :1])
                 pos = torch.cat([pos, z], 1)  # for along-ray
-                loss += torch.mean(F.relu(z_min - torch.abs(z))**2 + F.relu(torch.abs(z) - z_max)**2)
 
                 if self.opt.norm_sph_coord:
                     # TODO: Sigmoid here?

@@ -219,6 +219,9 @@ def render(scene, **params):
     frag_albedo = torch.index_select(material_albedo, 0, tmp_idx)
     frag_coeffs = torch.index_select(material_coeffs, 0, tmp_idx)
 
+    # TODO: light visibility from fragment position
+    # ...
+
     im_color = fragment_shader(frag_pos=frag_pos, frag_normals=frag_normals,
                                light_dir=light_pos[:, np.newaxis, :] - frag_pos,
                                cam_dir=normalize(camera['eye'][np.newaxis, np.newaxis, :3] - frag_pos[:, :, :3]),
@@ -373,7 +376,7 @@ def render_splats_NDC(scene, **params):
 
 
 def render_splats_along_ray(scene, **params):
-    """Render splats specified in the camera's normalized coordinate system
+    """Render splats specified in the camera's coordinate system
 
     For now, assume number of splats to be the number of pixels This would be relaxed later to allow subpixel rendering.
     :param scene: Scene description
@@ -414,6 +417,113 @@ def render_splats_along_ray(scene, **params):
     sgn = 1 if get_param_value('use_old_sign', params, False) else -1
     X = sgn * Z * x / focal_length
     Y = sgn * Z * y / focal_length
+    pos_CC = torch.stack((X, Y, Z), dim=1)
+    ####
+    im_depth = norm_p(pos_CC[..., :3]).view(H, W)
+
+    if get_param_value('norm_depth_image_only', params, False):
+        min_depth = torch.min(im_depth)
+        norm_depth_image = where(im_depth >= camera['far'], min_depth, im_depth)
+        norm_depth_image = (norm_depth_image - min_depth) / (torch.max(im_depth) - min_depth)
+        return {
+            'image': norm_depth_image,
+            'depth': im_depth,
+            'pos': pos_CC,
+            'normal': normals_CC
+        }
+    ##############################
+    # Fragment processing
+    # -------------------
+    # We can either perform the operations in the world coordinate or in the camera coordinate
+    # Since the inputs are in NDC and converted to CC, converting to world coordinate would require more operations.
+    # There are fewer lights than splats, so converting light positions and directions to CC is more efficient.
+    ##############################
+    # Lighting
+    color_table = scene['colors']
+    light_pos = scene['lights']['pos']
+    light_clr_idx = scene['lights']['color_idx']
+    light_colors = color_table[light_clr_idx]
+    light_attenuation_coeffs = scene['lights']['attenuation']
+
+    material_albedo = scene['materials']['albedo']
+    material_coeffs = scene['materials']['coeffs']
+    material_idx = scene['objects']['disk']['material_idx']
+
+    light_pos_CC = torch.mm(light_pos, Mcam.transpose(1, 0))
+
+    # Generate the fragments
+    """
+    Get the normal and material for the visible objects.
+    """
+    frag_normals = normals_CC[:, :3]
+    frag_pos = pos_CC[:, :3]
+
+    frag_albedo = torch.index_select(material_albedo, 0, material_idx)
+    frag_coeffs = torch.index_select(material_coeffs, 0, material_idx)
+
+    im_color = fragment_shader(frag_pos=frag_pos, frag_normals=frag_normals,
+                               light_dir=light_pos_CC[:, np.newaxis, :3] - frag_pos[:, :3],
+                               cam_dir=-normalize(frag_pos[np.newaxis, :, :3]),
+                               light_attenuation_coeffs=light_attenuation_coeffs,
+                               frag_coeffs=frag_coeffs,
+                               light_colors=light_colors,
+                               frag_albedo=frag_albedo,
+                               double_sided=False,
+                               use_quartic=get_param_value('use_quartic', params, False))
+
+    im = torch.sum(im_color, dim=0).view(int(H), int(W), 3)
+
+    # clip non-negative
+    im = torch.nn.functional.relu(im)
+
+    # Tonemapping
+    if 'tonemap' in scene:
+        im = tonemap(im, **scene['tonemap'])
+
+    return {
+        'image': im,
+        'depth': im_depth,
+        'pos': pos_CC,
+        'normal': normals_CC
+    }
+
+
+def render_splats_along_ray_WORLD(scene, **params):
+    """Render splats specified in the camera coordinate system but computed in the world coordinate.
+
+    For now, assume number of splats to be the number of pixels This would be relaxed later to allow subpixel rendering.
+    :param scene: Scene description
+    :return: [H, W, 3] image
+    """
+    camera = scene['camera']
+    ray_orig, ray_dir, H, W = generate_rays(camera)
+    H = int(H)
+    W = int(W)
+
+    splats = scene['objects']['disk']
+    pos_ray = splats['pos']
+    normals_CC = splats['normal']
+    #num_objects = pos_ray.size()[0]
+
+    ##### Find (X, Y) in the Camera's view frustum
+    #x, y = np.meshgrid(np.linspace(-1, 1, W), np.linspace(1, -1, H))
+    # Force the caller to set the z coordinate with the correct sign
+    Z = -torch.nn.functional.relu(-pos_ray[:, 2]) #-torch.abs(pos_ray[:, 2])
+    #n_pixels = x.size
+
+    # fovy = camera['fovy']
+    # focal_length = camera['focal_length']
+    # h = np.tan(fovy / 2) * 2 * focal_length
+    # w = h * aspect_ratio
+    #
+    # x *= w / 2
+    # y *= h / 2
+    #
+    # x = tch_var_f(x.ravel())
+    # y = tch_var_f(y.ravel())
+    # sgn = 1 if get_param_value('use_old_sign', params, False) else -1
+    # X = sgn * Z * x / focal_length
+    # Y = sgn * Z * y / focal_length
     pos_CC = torch.stack((X, Y, Z), dim=1)
     ####
     im_depth = norm_p(pos_CC[..., :3]).view(H, W)

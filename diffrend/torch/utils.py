@@ -49,6 +49,10 @@ def where(cond, x, y):
     return cond.float() * x + (1 - cond.float()) * y
 
 
+def norm2_sqr(u):
+    return torch.sum(u ** 2, dim=-1)
+
+
 def norm_p(u, p=2):
     return torch.pow(torch.sum(torch.pow(u, p), dim=-1), 1./p)
 
@@ -76,6 +80,43 @@ def nonzero_divide(x, y):
 
     mask = torch.abs(y) > 0
     return x.masked_scatter(mask, x.masked_select(mask) / y.masked_select(mask))
+
+
+def unit_norm2_L2loss(x, scale):
+    """
+    :param x: [N, 3] matrix
+    :return: Scalar loss
+    """
+    return torch.mean((scale * (torch.sqrt(norm2_sqr(x)) - 1)) ** 2)
+
+
+def unit_norm2_L1loss(x, scale):
+    """
+    :param x: [N, 3] matrix
+    :return: Scalar loss
+    """
+    return torch.mean(scale * torch.abs(torch.sqrt(norm2_sqr(x)) - 1))
+
+
+def unit_norm2sqr_L2loss(x, scale):
+    """
+    :param x: [N, 3] matrix
+    :return: Scalar loss
+    """
+    return torch.mean((scale * (norm2_sqr(x) - 1)) ** 2)
+
+
+def unit_norm2sqr_L1loss(x, scale):
+    """
+    :param x: [N, 3] matrix
+    :return: Scalar loss
+    """
+    return torch.mean(scale * torch.abs(norm2_sqr(x) - 1))
+
+
+def normalize_maxmin(x):
+    min_val = torch.min(x)
+    return (x - min_val) / (torch.max(x) - min_val)
 
 
 def normalize(u):
@@ -266,6 +307,8 @@ def lookat(eye, at, up):
     z = normalize(eye - at)
     y = normalize(up)
     x = normalize(torch.cross(y, z))
+    # The input `up` vector may not be orthogonal to z.
+    y = torch.cross(z, x)
 
     rot_matrix = torch.stack((x, y, z), dim=1).transpose(1, 0)
     rot_translate = torch.cat((rot_matrix, -eye[:3][:, np.newaxis]), dim=1)
@@ -359,6 +402,49 @@ def generate_rays(camera):
     return ray_orig, ray_dir, H, W
 
 
+def generate_rays_TEST(camera):
+    viewport = np.array(camera['viewport'])
+    W, H = viewport[2] - viewport[0], viewport[3] - viewport[1]
+    aspect_ratio = W / H
+
+    x, y = np.meshgrid(np.linspace(-1, 1, W), np.linspace(1, -1, H))
+    n_pixels = x.size
+
+    fovy = np.array(camera['fovy'])
+    focal_length = np.array(camera['focal_length'])
+    h = np.tan(fovy / 2) * 2 * focal_length
+    w = h * aspect_ratio
+
+    x *= w / 2
+    y *= h / 2
+
+    x = tch_var_f(x.ravel())
+    y = tch_var_f(y.ravel())
+
+    eye = camera['eye'][:3]
+    at = camera['at'][:3]
+    up = camera['up'][:3]
+
+    proj_type = camera['proj_type']
+    if proj_type == 'ortho' or proj_type == 'orthographic':
+        ray_dir = normalize(at - eye)[:, np.newaxis]
+        ray_orig = torch.stack((x, y, tch_var_f(np.zeros(n_pixels)), tch_var_f(np.ones(n_pixels))), dim=0)
+        inv_view_matrix = lookat_inv(eye=eye, at=at, up=up)
+        ray_orig = torch.mm(inv_view_matrix, ray_orig)
+        ray_orig = (ray_orig[:3] / ray_orig[3][np.newaxis, :]).permute(1, 0)
+    elif proj_type == 'persp' or proj_type == 'perspective':
+        ray_orig = eye[np.newaxis, :]
+        proj_plane = torch.stack((x, y, tch_var_f(-np.ones(n_pixels) * focal_length), tch_var_f(np.ones(n_pixels))), dim=0)
+        inv_view_matrix = lookat_inv(eye=eye, at=at, up=up)
+        proj_plane_tformed = torch.mm(inv_view_matrix, proj_plane)
+        ray_dir = proj_plane_tformed[:3] - ray_orig.transpose(1, 0)
+
+        # normalize ray direction
+        ray_dir /= torch.sqrt(torch.sum(ray_dir ** 2, dim=0))
+
+    return ray_orig, ray_dir, H, W
+
+
 def ray_object_intersections(eye, ray_dir, scene_objects, **kwargs):
     obj_intersections = None
     ray_dist = None
@@ -416,6 +502,34 @@ def backface_labeler(eye, scene_objects):
     return scene_objects
 
 
+def world_to_cam(pos, normal, camera):
+    """Transforms from the camera coordinate to the world coordinate
+    :param pos_normal: Assumes N x 3 or N x 4 position and normals
+    :param camera: Camera specification. Only eye, at, and up are needed
+    :return: positions and normals in the world coordinate. N x 3
+    """
+    eye = camera['eye'][:3]
+    at = camera['at'][:3]
+    up = camera['up'][:3]
+
+    pos_CC = None
+    normal_CC = None
+
+    if pos is not None:
+        view_matrix = lookat(eye=eye, at=at, up=up)
+        if pos.size()[1] == 3:
+            pos = torch.cat((pos, tch_var_f(np.ones(pos.size()[0])[:, np.newaxis])), dim=1)
+        pos_CC = torch.mm(pos, view_matrix.transpose(1, 0))
+
+    if normal is not None:
+        inv_view_matrix = lookat_inv(eye=eye, at=at, up=up)
+        normal_WC = normal[:, :3]
+        # M^{-T}n = (n^T M^{-1})^T
+        normal_CC = torch.mm(normal_WC, inv_view_matrix[:3, :3])
+
+    return {'pos': pos_CC, 'normal': normal_CC}
+
+
 def cam_to_world(pos, normal, camera):
     """Transforms from the camera coordinate to the world coordinate
     :param pos_normal: Assumes N x 3 or N x 4 position and normals
@@ -436,8 +550,9 @@ def cam_to_world(pos, normal, camera):
         pos_WC = torch.mm(pos, inv_view_matrix.transpose(1, 0))
 
     if normal is not None:
+        view_matrix = lookat(eye=eye, at=at, up=up)
         normal_CC = normal[:, :3]
-        normal_WC = torch.mm(normal_CC, inv_view_matrix.transpose(1, 0)[:3, :3])
+        normal_WC = torch.mm(normal_CC, view_matrix.transpose(1, 0)[:3, :3])
 
     return {'pos': pos_WC, 'normal': normal_WC}
 
@@ -508,11 +623,53 @@ def test_cam_to_world_offset1():
     np.testing.assert_equal(get_data(normal_CC[:, :3]), normal_WC[:, :3])
 
 
+def test_tform_cc_wc():
+    x, y = np.meshgrid(np.linspace(-1, 1, 10), np.linspace(-1, 1, 10))
+    fovy = np.deg2rad(45.)
+    focal_length = 1.0
+    h = np.tan(fovy / 2) * 2 * focal_length
+    aspect_ratio = 1
+    w = h * aspect_ratio
+
+    x *= w / 2
+    y *= h / 2
+
+    x = tch_var_f(x.ravel())
+    y = tch_var_f(y.ravel())
+
+
 def contrast_stretch_percentile(im, low=0.01, high=0.099):
     pass
+
+
+def get_normalmap_image(normals, b_normalize=False):
+    if b_normalize:
+        normals = normalize(normals)
+    return np.uint8(normals * 127 + 127)
 
 
 if __name__ == '__main__':
     test_cam_to_world_identity()
     test_cam_to_world_offset0()
     test_cam_to_world_offset1()
+
+# import matplotlib.pyplot as plt
+#
+# x, y = np.meshgrid(np.linspace(-1, 1, 10), np.linspace(1, -1, 10))
+# fovy = np.deg2rad(45.)
+# focal_length = 1.0
+# h = np.tan(fovy / 2) * 2 * focal_length
+# aspect_ratio = 1
+# w = h * aspect_ratio
+#
+# x *= w / 2
+# y *= h / 2
+#
+# plt.figure()
+# plt.imshow(x)
+#
+# plt.figure()
+# plt.imshow(y)
+#
+# x = tch_var_f(x.ravel())
+# y = tch_var_f(y.ravel())
