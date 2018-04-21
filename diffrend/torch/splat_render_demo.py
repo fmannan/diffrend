@@ -240,7 +240,7 @@ def render_sphere(out_dir, cam_pos, radius, width, height, fovy, focal_length, n
 
 def render_sphere_halfbox(out_dir, cam_pos, width, height, fovy, focal_length, num_views,
                           cam_dist, norm_depth_image_only, theta_range=None, phi_range=None,
-                          axis=None, angle=None, cam_lookat=None, use_quartic=False, b_display=False):
+                          axis=None, angle=None, cam_lookat=None, use_quartic=False, b_tiled=True, b_display=False):
     # python splat_render_demo.py --sphere-halfbox --fovy 30 --out_dir ./sphere_halfbox_demo --cam_dist 4 --axis .8 .5 1
     # --angle 5 --at 0 .4 0 --nv 10 --width=256 --height=256
     scene = SCENE_SPHERE_HALFBOX
@@ -258,7 +258,7 @@ def render_sphere_halfbox(out_dir, cam_pos, width, height, fovy, focal_length, n
     lookat = cam_lookat if cam_lookat is not None else [0.0, 0.0, 0.0, 1.0]
     scene['camera']['at'] = tch_var_f(lookat)
 
-    res = render(scene)
+    res = render(scene, tiled=True)
     im = np.uint8(255. * get_data(res['image']))
     depth = get_data(res['depth'])
 
@@ -280,13 +280,14 @@ def render_sphere_halfbox(out_dir, cam_pos, width, height, fovy, focal_length, n
     imsave(out_dir + '/depth_orig.png', im_depth)
 
     if b_display:
-        plt.figure()
+        h1 = plt.figure()
+        h2 = plt.figure()
     for idx in range(cam_pos.shape[0]):
         scene['camera']['eye'] = tch_var_f(cam_pos[idx])
         suffix = '_{}'.format(idx)
 
         # main render run
-        res = render(scene, norm_depth_image_only=norm_depth_image_only, use_quartic=use_quartic)
+        res = render(scene, tiled=b_tiled, norm_depth_image_only=norm_depth_image_only, use_quartic=use_quartic)
 
         im = np.uint8(255. * get_data(res['image']))
         depth = get_data(res['depth'])
@@ -295,10 +296,12 @@ def render_sphere_halfbox(out_dir, cam_pos, width, height, fovy, focal_length, n
         im_depth = np.uint8(255. * (depth - depth.min()) / (depth.max() - depth.min()))
 
         if b_display:
+            plt.figure(h1.number)
             plt.imshow(im)
             plt.title('Image')
             plt.savefig(out_dir + '/fig_img' + suffix + '.png')
 
+            plt.figure(h2.number)
             plt.imshow(im_depth)
             plt.title('Depth Image')
             plt.savefig(out_dir + '/fig_depth' + suffix + '.png')
@@ -361,6 +364,7 @@ if __name__ == '__main__':
     parser.add_argument('--sphere-halfbox', action='store_true', help='Renders demo sphere-halfbox.')
     parser.add_argument('--double-sided', action='store_true', help='Render double-sided triangles.')
     parser.add_argument('--use-quartic', action='store_true', help='Use quartic attenuation.')
+    parser.add_argument('--tiled', action='store_true', default=True, help='Tiled rendering.')
 
     args = parser.parse_args()
     print(args)
@@ -397,7 +401,8 @@ if __name__ == '__main__':
                               fovy=args.fovy, focal_length=args.f, cam_dist=args.cam_dist, num_views=args.nv,
                               norm_depth_image_only=args.norm_depth_image_only,
                               theta_range=args.theta, phi_range=args.phi,
-                              axis=axis, angle=angle, cam_lookat=args.at, use_quartic=args.use_quartic)
+                              axis=axis, angle=angle, cam_lookat=args.at, use_quartic=args.use_quartic,
+                              b_tiled=args.tiled, b_display=args.display)
     else:
         render_random_camera(filename=args.model, out_dir=args.out_dir, radius=args.r, num_samples=args.n,
                              cam_dist=args.cam_dist, num_views=args.nv,

@@ -78,10 +78,10 @@ class Renderer:
         pass
 
 
-def fragment_shader(frag_pos, frag_normals, light_dir, cam_dir,
+def fragment_shader(frag_normals, light_dir, cam_dir,
                     light_attenuation_coeffs, frag_coeffs,
                     light_colors, frag_albedo, double_sided,
-                    use_quartic):
+                    use_quartic, light_visibility):
     # Fragment shading
     #light_dir = light_pos[:, np.newaxis, :] - frag_pos
     light_dir_norm = torch.sqrt(torch.sum(light_dir ** 2, dim=-1))[:, :, np.newaxis]
@@ -112,10 +112,13 @@ def fragment_shader(frag_pos, frag_normals, light_dir, cam_dir,
     frag_normal_dot_light = torch.nn.functional.relu(frag_normal_dot_light)
     reflected_cam_dot = torch.nn.functional.relu(reflected_cam_dot)
 
+    light_albedo_vis = light_colors[:, np.newaxis, :] * frag_albedo[np.newaxis, :, :]
+    if light_visibility is not None:
+        light_albedo_vis = light_albedo_vis * light_visibility[:, :, np.newaxis]
     im_color = (frag_coeffs[:, 0][np.newaxis, :, np.newaxis] * frag_normal_dot_light[:, :, np.newaxis] +
                 frag_coeffs[:, 1][np.newaxis, :, np.newaxis] *
                 (reflected_cam_dot[:, :, np.newaxis] ** frag_coeffs[:, 2][np.newaxis, :, np.newaxis])) * \
-               light_colors[:, np.newaxis, :] * frag_albedo[np.newaxis, :, :]
+               light_albedo_vis
     return im_color
 
 
@@ -131,6 +134,7 @@ def render(scene, **params):
     ray_orig, ray_dir, H, W = generate_rays(camera)
     H = int(H)
     W = int(W)
+    num_pixels = H * W
 
     scene_objects = scene['objects']
 
@@ -145,19 +149,69 @@ def render(scene, **params):
 
     # Ray-object intersections
     disable_normals = get_param_value('norm_depth_image_only', params, False)
-    if get_param_value('tiled_rendering', params, False):
-        pass
+    if get_param_value('tiled', params, True):
+        im_depth_all = []
+        nearest_obj_all = []
+        frag_normals_all = []
+        frag_pos_all = []
+        tile_size = get_param_value('tile_size', params, 4096)
+        n_partitions = int(np.ceil(num_pixels / tile_size))
+        for idx in range(n_partitions):
+            start_idx = idx * tile_size
+            end_idx = min((idx + 1) * tile_size, num_pixels)
+            ray_dir_subset = ray_dir[:, start_idx:end_idx]
+            obj_intersections, ray_dist, normals, material_idx = ray_object_intersections(ray_orig, ray_dir_subset,
+                                                                                          scene_objects,
+                                                                                          disable_normals=disable_normals)
+            # num_objects = obj_intersections.size()[0]
+            # Valid distances
+            valid_pixels = (camera['near'] <= ray_dist) * (ray_dist <= camera['far'])
+            pixel_dist = where(valid_pixels, ray_dist, camera['far'] + 1)
+
+            # Nearest object depth and index
+            im_depth, nearest_obj = pixel_dist.min(0)
+
+            frag_normals = torch.gather(
+                normals, 0, nearest_obj[np.newaxis, :, np.newaxis].repeat(1, 1, 3))
+            frag_pos = torch.gather(
+                obj_intersections, 0,
+                nearest_obj[np.newaxis, :, np.newaxis].repeat(1, 1, 3))
+
+            im_depth_all.append(im_depth)
+            nearest_obj_all.append(nearest_obj)
+            frag_normals_all.append(frag_normals)
+            frag_pos_all.append(frag_pos)
+
+            del obj_intersections
+            del valid_pixels
+            del pixel_dist
+        im_depth = torch.cat(im_depth_all)
+        nearest_obj = torch.cat(nearest_obj_all)
+        frag_pos = torch.cat(frag_pos_all, dim=1)
+        frag_normals = torch.cat(frag_normals_all, dim=1)
     else:
         obj_intersections, ray_dist, normals, material_idx = ray_object_intersections(ray_orig, ray_dir, scene_objects,
                                                                                       disable_normals=disable_normals)
-        num_objects = obj_intersections.size()[0]
+        #num_objects = obj_intersections.size()[0]
         # Valid distances
-        pixel_dist = ray_dist
         valid_pixels = (camera['near'] <= ray_dist) * (ray_dist <= camera['far'])
-        pixel_dist = where(valid_pixels, pixel_dist, camera['far'] + 1)
+        pixel_dist = where(valid_pixels, ray_dist, camera['far'] + 1)
 
         # Nearest object depth and index
         im_depth, nearest_obj = pixel_dist.min(0)
+
+        frag_normals = torch.gather(
+            normals, 0, nearest_obj[np.newaxis, :, np.newaxis].repeat(1, 1, 3))
+        frag_pos = torch.gather(
+            obj_intersections, 0,
+            nearest_obj[np.newaxis, :, np.newaxis].repeat(1, 1, 3))
+
+        del valid_pixels
+        del pixel_dist
+        del obj_intersections
+        del normals
+        valid_pixels = None
+        pixel_dist = None
 
     # Reshape to image for visualization
     # use nearest_obj for gather/select the pixel color
@@ -166,6 +220,7 @@ def render(scene, **params):
 
     # Find the number of pixels covered by each object
     if get_param_value('vis_stat', params, False):
+        raise RuntimeError('Removed Support for vis_stat')
         pixel_obj_count = torch.sum(valid_pixels, dim=0)
         valid_pixels_mask = pixel_obj_count > 0
         nearest_obj_only = torch.masked_select(nearest_obj, valid_pixels_mask)
@@ -210,19 +265,22 @@ def render(scene, **params):
     """
     Get the normal and material for the visible objects.
     """
-    frag_normals = torch.gather(
-        normals, 0, nearest_obj[np.newaxis, :, np.newaxis].repeat(1, 1, 3))
-    frag_pos = torch.gather(
-        obj_intersections, 0,
-        nearest_obj[np.newaxis, :, np.newaxis].repeat(1, 1, 3))
+
     tmp_idx = torch.gather(material_idx, 0, nearest_obj)
     frag_albedo = torch.index_select(material_albedo, 0, tmp_idx)
     frag_coeffs = torch.index_select(material_coeffs, 0, tmp_idx)
 
     # TODO: light visibility from fragment position
-    # ...
+    # Generate rays from fragment position towards the light sources
+    num_lights = light_pos.shape[0]
+    if get_param_value('render_shadow', params, False):
+        light_visibility = []
+        for idx in range(num_lights):
+            print(idx)
+    else:
+        light_visibility = None  # tch_var_f(np.ones((num_lights, H * W)))
 
-    im_color = fragment_shader(frag_pos=frag_pos, frag_normals=frag_normals,
+    im_color = fragment_shader(frag_normals=frag_normals,
                                light_dir=light_pos[:, np.newaxis, :] - frag_pos,
                                cam_dir=normalize(camera['eye'][np.newaxis, np.newaxis, :3] - frag_pos[:, :, :3]),
                                light_attenuation_coeffs=light_attenuation_coeffs,
@@ -230,7 +288,8 @@ def render(scene, **params):
                                light_colors=light_colors,
                                frag_albedo=frag_albedo,
                                double_sided=get_param_value('double_sided', params, False),
-                               use_quartic=get_param_value('use_quartic', params, False))
+                               use_quartic=get_param_value('use_quartic', params, False),
+                               light_visibility=light_visibility)
 
     im = torch.sum(im_color, dim=0).view(int(H), int(W), 3)
 
@@ -250,13 +309,13 @@ def render(scene, **params):
         'normal': frag_normals.view(H, W, 3),
         'pos': frag_pos.view(H, W, 3),
         'ray_dist': ray_dist,
-        'obj_dist': pixel_dist,
+        #'obj_dist': pixel_dist,
         'nearest': nearest_obj.view(H, W),
         'ray_dir': ray_dir,
-        'valid_pixels': valid_pixels,
-        'obj_pixel_count': obj_pixel_count,
-        'pixel_obj_count': pixel_obj_count,
-        'valid_pixels_mask': valid_pixels_mask,
+        #'valid_pixels': valid_pixels,
+        #'obj_pixel_count': obj_pixel_count,
+        #'pixel_obj_count': pixel_obj_count,
+        #'valid_pixels_mask': valid_pixels_mask,
     }
 
 
@@ -335,7 +394,7 @@ def render_splats_NDC(scene, **params):
     frag_albedo = torch.index_select(material_albedo, 0, material_idx)
     frag_coeffs = torch.index_select(material_coeffs, 0, material_idx)
     # TODO: CHECK fragment_shader call
-    im_color = fragment_shader(frag_pos=frag_pos, frag_normals=frag_normals,
+    im_color = fragment_shader(frag_normals=frag_normals,
                                light_dir=light_pos_CC[:, np.newaxis, :3] - frag_pos[:, :3],
                                cam_dir=-frag_pos[:, :3],
                                light_attenuation_coeffs=light_attenuation_coeffs,
@@ -461,7 +520,11 @@ def render_splats_along_ray(scene, **params):
     frag_albedo = torch.index_select(material_albedo, 0, material_idx)
     frag_coeffs = torch.index_select(material_coeffs, 0, material_idx)
 
-    im_color = fragment_shader(frag_pos=frag_pos, frag_normals=frag_normals,
+    light_visibility = None
+    if 'light_vis' in scene['objects']['disk']:
+        light_visibility = scene['objects']['disk']['light_vis']
+
+    im_color = fragment_shader(frag_normals=frag_normals,
                                light_dir=light_pos_CC[:, np.newaxis, :3] - frag_pos[:, :3],
                                cam_dir=-normalize(frag_pos[np.newaxis, :, :3]),
                                light_attenuation_coeffs=light_attenuation_coeffs,
@@ -469,7 +532,8 @@ def render_splats_along_ray(scene, **params):
                                light_colors=light_colors,
                                frag_albedo=frag_albedo,
                                double_sided=False,
-                               use_quartic=get_param_value('use_quartic', params, False))
+                               use_quartic=get_param_value('use_quartic', params, False),
+                               light_visibility=light_visibility)
 
     im = torch.sum(im_color, dim=0).view(int(H), int(W), 3)
 
