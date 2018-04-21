@@ -270,13 +270,33 @@ def render(scene, **params):
     frag_albedo = torch.index_select(material_albedo, 0, tmp_idx)
     frag_coeffs = torch.index_select(material_coeffs, 0, tmp_idx)
 
-    # TODO: light visibility from fragment position
+    # TODO: SOFT light visibility from fragment position
     # Generate rays from fragment position towards the light sources
     num_lights = light_pos.shape[0]
-    if get_param_value('render_shadow', params, False):
+    if get_param_value('shadow', params, False):
         light_visibility = []
         for idx in range(num_lights):
-            print(idx)
+            frag_to_light_dir = (light_pos[idx, np.newaxis, :] - frag_pos).squeeze().transpose(1, 0)
+            frag_to_light_dist = norm_p(frag_to_light_dir.transpose(1, 0), 2)
+            frag_to_light_dir /= frag_to_light_dist
+            frag_ray_orig = frag_pos.squeeze()
+            tile_size = get_param_value('tile_size', params, 4096)
+            n_partitions = int(np.ceil(num_pixels / tile_size))
+            single_light_vis = []
+            for idx in range(n_partitions):
+                start_idx = idx * tile_size
+                end_idx = min((idx + 1) * tile_size, num_pixels)
+                ray_dir_subset = frag_to_light_dir[:, start_idx:end_idx]
+                frag_ray_orig_subset = frag_ray_orig[start_idx:end_idx, :]
+                _, ray_dist, _, _ = ray_object_intersections(frag_ray_orig_subset, ray_dir_subset,
+                                                             scene_objects, disable_normals=True)
+                valid_dist = (ray_dist > 0.1) * (ray_dist < frag_to_light_dist[start_idx:end_idx])
+                ray_dist = where(valid_dist, ray_dist, 1001)
+                nearest_depth, nobj_idx = ray_dist.min(0)
+                b_light_visible = (((nearest_depth == 1001) + (nobj_idx == nearest_obj[start_idx:end_idx])) > 0).type(torch.cuda.FloatTensor)
+                single_light_vis.append(b_light_visible)
+            light_visibility.append(torch.cat(single_light_vis))
+        light_visibility = torch.stack(light_visibility, dim=0)
     else:
         light_visibility = None  # tch_var_f(np.ones((num_lights, H * W)))
 
