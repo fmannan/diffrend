@@ -1,7 +1,7 @@
 from diffrend.torch.params import SCENE_BASIC, SCENE_1, SCENE_2
 from diffrend.torch.renderer import render, render_splats_NDC, render_splats_along_ray
 from diffrend.torch.utils import (tch_var_f, tch_var_l, CUDA, get_data, get_normalmap_image, world_to_cam,
-                                  normalize, unit_norm2_L2loss)
+                                  normalize, unit_norm2_L2loss, normalize_maxmin)
 import torch.nn as nn
 from torch import optim
 import torch.nn.functional as F
@@ -430,6 +430,239 @@ def optimize_splats_along_ray_test(out_dir, width=32, height=32, max_iter=100, l
     plt.show()
 
 
+def optimize_splats_along_ray_shadow_test(out_dir, width=32, height=32, max_iter=100, lr=1e-3, scale=10,
+                                          vis_only=True, print_interval=10, imsave_interval=10):
+    """A demo function to check if the differentiable renderer can optimize splats rendered along ray.
+    :param scene:
+    :param out_dir:
+    :return:
+    """
+    import torch
+    import copy
+    from diffrend.torch.params import SCENE_SPHERE_HALFBOX_0
+
+    if not os.path.exists(out_dir):
+        os.mkdir(out_dir)
+
+    scene = SCENE_SPHERE_HALFBOX_0
+    scene['camera']['viewport'] = [0, 0, width, height]
+    scene['camera']['fovy'] = np.deg2rad(45)
+    scene['camera']['focal_length'] = 1
+    scene['camera']['eye'] = tch_var_f([2, 1, 2, 1])  # tch_var_f([1, 1, 1, 1]) # tch_var_f([2, 2, 2, 1]) #
+    scene['camera']['at'] = tch_var_f([0, 0.8, 0, 1])  # tch_var_f([0, 1, 0, 1]) # tch_var_f([2, 2, 0, 1])  #
+
+    target_res = render(scene, tiled=True, shadow=True)
+    target_im = normalize_maxmin(target_res['image'])
+    target_im.require_grad = False
+    target_im_ = get_data(target_im)
+    target_pos_ = get_data(target_res['pos'])
+    target_normal_ = get_data(target_res['normal'])
+    target_normalmap_img_ = get_normalmap_image(target_normal_)
+    target_depth_ = get_data(target_res['depth'])
+    print('[z_min, z_max] = [%f, %f]' % (np.min(target_pos_[..., 2]), np.max(target_pos_[..., 2])))
+    print('[depth_min, depth_max] = [%f, %f]' % (np.min(target_depth_), np.max(target_depth_)))
+
+    # world -> cam -> render_splats_along_ray
+    cc_tform = world_to_cam(target_res['pos'].view((-1, 3)), target_res['normal'].view((-1, 3)), scene['camera'])
+    material_idx = tch_var_l(np.ones(cc_tform['pos'].shape[0]) * 3)
+    input_scene = copy.deepcopy(scene)
+    del input_scene['objects']['sphere']
+    del input_scene['objects']['triangle']
+    light_vis = tch_var_f(np.ones((input_scene['lights']['pos'].shape[0], cc_tform['pos'].shape[0])))
+    light_vis.requires_grad = True
+    input_scene['objects'] = {'disk': {'pos': cc_tform['pos'],
+                                       'normal': cc_tform['normal'],
+                                       'material_idx': material_idx,
+                                       'light_vis': light_vis,
+                                       }
+                              }
+    res = render_splats_along_ray(input_scene, use_old_sign=False)
+    test_img_ = get_data(normalize_maxmin(res['image']))
+    test_depth_ = get_data(res['depth'])
+    test_normal_ = get_data(res['normal']).reshape(test_img_.shape)
+    test_normalmap_ = get_normalmap_image(test_normal_)
+    #### PLOT
+    plt.ion()
+    plt.figure()
+    plt.imshow(test_img_, interpolation='none')
+    plt.title('Test Image')
+    plt.savefig(out_dir + '/test_img.png')
+    plt.figure()
+    plt.imshow(test_depth_, interpolation='none')
+    plt.title('Test Depth')
+    plt.savefig(out_dir + '/test_depth.png')
+
+    plt.figure()
+    plt.imshow(test_normalmap_, interpolation='none')
+    plt.title('Test Normals')
+    plt.savefig(out_dir + '/test_normal.png')
+
+    ####
+    criterion = nn.L1Loss() #nn.MSELoss()
+    criterion = criterion.cuda()
+
+    plt.ion()
+    plt.figure()
+    plt.imshow(target_im_, interpolation='none')
+    plt.title('Target Image')
+    plt.savefig(out_dir + '/target.png')
+
+    plt.figure()
+    plt.imshow(target_normalmap_img_, interpolation='none')
+    plt.title('Normals')
+    plt.savefig(out_dir + '/normal.png')
+
+    input_scene = copy.deepcopy(scene)
+    del input_scene['objects']['sphere']
+    del input_scene['objects']['triangle']
+
+    num_splats = width * height
+    x, y = np.meshgrid(np.linspace(-1, 1, width), np.linspace(-1, 1, height))
+    z_min = scene['camera']['focal_length']
+    z_max = 3
+
+    z = -torch.clamp(tch_var_f(2 * np.random.rand(num_splats)), z_min, z_max)
+    z.requires_grad = True
+
+    normals = tch_var_f(np.ones((num_splats, 4)) * np.array([0, 0, 1, 0]))
+    normals.requires_grad = True
+    material_idx = tch_var_l(np.ones(num_splats) * 3)
+
+    if vis_only:
+        opt_vars = [light_vis]
+        z = cc_tform['pos'][:, 2]
+        normals = cc_tform['normal']
+    else:
+        opt_vars = [z, normals, light_vis]
+
+    optimizer = optim.Adam(opt_vars, lr=lr)
+    lr_scheduler = StepLR(optimizer, step_size=5000, gamma=0.8)
+
+    h0 = plt.figure()
+    h1 = plt.figure()
+    h2 = plt.figure()
+    h3 = plt.figure()
+
+    gs1 = gridspec.GridSpec(3, 3)
+    gs1.update(wspace=0.0025, hspace=0.02)
+
+    loss_per_iter = []
+    for iter in range(max_iter):
+        lr_scheduler.step()
+        unit_normal_loss = unit_norm2_L2loss(normals, 10.0)
+        z_loss = torch.mean((10 * F.relu(z_min - torch.abs(z))) ** 2 + (10 * F.relu(torch.abs(z) - z_max)) ** 2)
+        pos = torch.stack((tch_var_f(x.ravel()), tch_var_f(y.ravel()), z), dim=1)
+        input_scene['objects'] = {'disk': {'pos': pos,
+                                           'normal': normalize(normals),
+                                           'material_idx': material_idx,
+                                           'light_vis': torch.sigmoid(light_vis),
+                                           }
+                                  }
+        res = render_splats_along_ray(input_scene, use_old_sign=True)
+        im_out = normalize_maxmin(res['image'])
+        res_depth_ = get_data(res['depth'])
+
+        optimizer.zero_grad()
+        loss = criterion(scale * im_out, scale * target_im) + z_loss + unit_normal_loss
+
+        im_out_ = get_data(im_out)
+        im_out_normal_ = get_data(res['normal'])[:, :3].reshape(im_out_.shape)
+        pos_out_ = get_data(res['pos'])
+
+        loss_ = get_data(loss)
+        z_loss_ = get_data(z_loss)
+        unit_normal_loss_ = get_data(unit_normal_loss)
+        loss_per_iter.append(loss_)
+
+        if iter == 0:
+            plt.figure(h0.number)
+            plt.imshow(im_out_)
+            plt.title('Initial')
+
+        if iter % print_interval == 0 or iter == max_iter - 1:
+            z_ = get_data(z)
+            z__ = pos_out_[..., 2]
+            print('%d. loss= %f nloss=%f z_loss=%f [%f, %f] [%f, %f]' % (iter, loss_, unit_normal_loss_, z_loss_,
+                                                                         np.min(z_), np.max(z_), np.min(z__),
+                                                                         np.max(z__)))
+
+        if iter % imsave_interval == 0 or iter == max_iter - 1:
+            z_ = get_data(z)
+            plt.figure(h1.number, figsize=(4, 4))
+            plt.clf()
+            plt.suptitle('%d. loss= %f [%f, %f]' % (iter, loss_, np.min(z_), np.max(z_)))
+            plt.subplot(gs1[0])
+            plt.axis('off')
+            plt.imshow(im_out_, interpolation='none')
+            plt.subplot(gs1[1])
+            plt.axis('off')
+            plt.imshow(get_normalmap_image(im_out_normal_), interpolation='none')
+            ax = plt.subplot(gs1[2])
+            plt.axis('off')
+            im_tmp = ax.imshow(res_depth_, interpolation='none')
+            # create an axes on the right side of ax. The width of cax will be 5%
+            # of ax and the padding between cax and ax will be fixed at 0.05 inch.
+            divider = make_axes_locatable(ax)
+            cax = divider.append_axes("right", size="5%", pad=0.05)
+            plt.colorbar(im_tmp, cax=cax)
+
+
+            plt.subplot(gs1[3])
+            plt.axis('off')
+            plt.imshow(target_im_, interpolation='none')
+            plt.subplot(gs1[4])
+            plt.axis('off')
+            plt.imshow(test_normalmap_, interpolation='none')
+            ax = plt.subplot(gs1[5])
+            plt.axis('off')
+            im_tmp = ax.imshow(test_depth_, interpolation='none')
+            divider = make_axes_locatable(ax)
+            cax = divider.append_axes("right", size="5%", pad=0.05)
+            plt.colorbar(im_tmp, cax=cax)
+
+            H, W = target_im_.shape[:2]
+            light_vis_ = get_data(torch.sigmoid(light_vis))
+            plt.subplot(gs1[6])
+            plt.axis('off')
+            plt.imshow(light_vis_[0].reshape((H, W)), interpolation='none')
+
+            plt.subplot(gs1[7])
+            plt.axis('off')
+            plt.imshow(light_vis_[1].reshape((H, W)), interpolation='none')
+
+            plt.subplot(gs1[8])
+            plt.axis('off')
+            plt.imshow(light_vis_[2].reshape((H, W)), interpolation='none')
+
+
+            plt.savefig(out_dir + '/fig_%05d.png' % iter)
+
+            plt.figure(h2.number)
+            plt.clf()
+            plt.imshow(res_depth_)
+            plt.colorbar()
+            plt.savefig(out_dir + '/fig_depth_%05d.png' % iter)
+
+            plt.figure(h3.number)
+            plt.clf()
+            plt.imshow(z_.reshape(im_out_.shape[:2]))
+            plt.colorbar()
+            plt.savefig(out_dir + '/fig_z_%05d.png' % iter)
+
+        loss.backward()
+        optimizer.step()
+
+    plt.figure()
+    plt.plot(loss_per_iter, linewidth=2)
+    plt.xlabel('Iteration', fontsize=14)
+    plt.title('Loss', fontsize=12)
+    plt.grid(True)
+    plt.savefig(out_dir + '/loss.png')
+
+    plt.ioff()
+    plt.show()
+
+
 def test_scalability(filename, out_dir='./test_scale'):
     # GTX 980 8GB
     # 320 x 240 250 objs
@@ -483,6 +716,7 @@ if __name__ == '__main__':
     parser.add_argument('--ortho', action='store_true', help='Use Orthographic Projection.')
     parser.add_argument('--opt-ndc-test', action='store_true', help='Test optimization in NDC.')
     parser.add_argument('--opt-ray-test', action='store_true', help='Test optimization render along ray.')
+    parser.add_argument('--opt-ray-shadow-test', action='store_true', help='Test optimization render along ray.')
     parser.add_argument('--lr', type=float, default=1e-3, help='Learning rate for optimization.')
     parser.add_argument('--max-iter', type=int, default=2000, help='Maximum number of iterations.')
     parser.add_argument('--print-interval', type=int, default=100, help='Print interval for optimization.')
@@ -520,4 +754,8 @@ if __name__ == '__main__':
                           max_iter=args.max_iter, lr=args.lr, print_interval=args.print_interval)
     if args.opt_ray_test:
         optimize_splats_along_ray_test(out_dir=args.out_dir, width=args.width, height=args.height,
+                                       max_iter=args.max_iter, lr=args.lr, print_interval=args.print_interval)
+
+    if args.opt_ray_shadow_test:
+        optimize_splats_along_ray_shadow_test(out_dir=args.out_dir, width=args.width, height=args.height,
                                        max_iter=args.max_iter, lr=args.lr, print_interval=args.print_interval)

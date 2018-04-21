@@ -279,7 +279,7 @@ def render(scene, **params):
             frag_to_light_dir = (light_pos[idx, np.newaxis, :] - frag_pos).squeeze().transpose(1, 0)
             frag_to_light_dist = norm_p(frag_to_light_dir.transpose(1, 0), 2)
             frag_to_light_dir /= frag_to_light_dist
-            frag_ray_orig = frag_pos.squeeze()
+            frag_ray_orig = frag_pos.squeeze() + 0.1 * frag_to_light_dir.transpose(1, 0)
             tile_size = get_param_value('tile_size', params, 4096)
             n_partitions = int(np.ceil(num_pixels / tile_size))
             single_light_vis = []
@@ -290,7 +290,7 @@ def render(scene, **params):
                 frag_ray_orig_subset = frag_ray_orig[start_idx:end_idx, :]
                 _, ray_dist, _, _ = ray_object_intersections(frag_ray_orig_subset, ray_dir_subset,
                                                              scene_objects, disable_normals=True)
-                valid_dist = (ray_dist > 0.1) * (ray_dist < frag_to_light_dist[start_idx:end_idx])
+                valid_dist = (ray_dist > 0) * (ray_dist < frag_to_light_dist[start_idx:end_idx])
                 ray_dist = where(valid_dist, ray_dist, 1001)
                 nearest_depth, nobj_idx = ray_dist.min(0)
                 b_light_visible = (((nearest_depth == 1001) + (nobj_idx == nearest_obj[start_idx:end_idx])) > 0).type(torch.cuda.FloatTensor)
