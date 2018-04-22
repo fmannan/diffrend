@@ -40,12 +40,13 @@ class ObjectsFolderMultiObjectDataset(Dataset):
         #print (obj_path)
 
         # Load obj model
-        obj_model = load_model(obj_path)
-        obj2 = load_model('../../../data/sphere_halfbox_v2.obj')
+        obj_model = load_model(obj_path)  #'../../../data/sphere_halfbox_v2.obj'
+        obj2 = load_model(self.opt.bg_model)
         v1 = (obj_model['v'] - obj_model['v'].mean()) / (obj_model['v'].max() - obj_model['v'].min())
         v2 = obj2['v']  # / (obj2['v'].max() - obj2['v'].min())
-        scale = (obj2['v'].max() - obj2['v'].min()) * 3.
-        offset = np.array([4, 1.5, 3.0])
+        scale = (obj2['v'].max() - obj2['v'].min()) * 0.25
+        offset = np.array([3.0, 3.0, 3.0]) + 2 * np.random.rand(3)  # np.array([4, 1.5, 3.0])
+        #print(idx, offset, scale)
         v = np.concatenate((scale * v1 + offset, v2))
         f = np.concatenate((obj_model['f'], obj2['f'] + v1.shape[0]))
         obj_model = {'v': v, 'f': f}

@@ -58,6 +58,7 @@ class Parameters():
         self.parser.add_argument('--gen_model_path', type=str, default=None, help='dataset root directory')
         self.parser.add_argument('--dis_model_path', type=str, default=None, help='dataset root directory')
         self.parser.add_argument('--dis_model_path2', type=str, default=None, help='dataset root directory')
+        self.parser.add_argument('--bg_model', type=str, default='../../../data/halfbox.obj', help='Background model path')
         # corresponding folders: 02691156, 03759954
 
         # other low-footprint objects:
