@@ -17,7 +17,7 @@ from imageio import imsave
 def render_random_camera(filename, out_dir, num_samples, radius, cam_dist, num_views, width, height,
                          fovy, focal_length, norm_depth_image_only, theta_range=None, phi_range=None,
                          axis=None, angle=None, cam_pos=None, cam_lookat=None, use_mesh=False,
-                         double_sided=False, use_quartic=False, b_tiled=True, b_display=False):
+                         double_sided=False, use_quartic=False, b_shadow=True, b_tiled=True, b_display=False):
     """
     Randomly generate N samples on a surface and render them. The samples include position and normal, the radius is set
     to a constant.
@@ -88,8 +88,8 @@ def render_random_camera(filename, out_dir, num_samples, radius, cam_dist, num_v
 
         # main render run
         start_time = time()
-        res = render(scene, tiled=b_tiled, norm_depth_image_only=norm_depth_image_only, double_sided=double_sided,
-                     use_quartic=use_quartic)
+        res = render(scene, tiled=b_tiled, shadow=b_shadow, norm_depth_image_only=norm_depth_image_only,
+                     double_sided=double_sided, use_quartic=use_quartic)
         rendering_time.append(time() - start_time)
 
         im = np.uint8(255. * get_data(res['image']))
