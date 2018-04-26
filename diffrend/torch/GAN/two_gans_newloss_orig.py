@@ -20,7 +20,7 @@ from diffrend.torch.GAN.two_networks import create_networks
 from diffrend.torch.GAN.parameters_halfbox_shapenet import Parameters
 #from diffrend.torch.GAN.utils import make_dot
 from diffrend.torch.params import SCENE_BASIC, SCENE_SPHERE_HALFBOX
-from diffrend.torch.utils import tch_var_f, tch_var_l, where, get_data, normalize, cam_to_world
+from diffrend.torch.utils import tch_var_f, tch_var_l, where, get_data, normalize, cam_to_world, spatial_3x3
 from diffrend.torch.renderer import render, render_splats_NDC, render_splats_along_ray
 from diffrend.utils.sample_generator import uniform_sample_sphere
 from diffrend.torch.ops import sph2cart_unit
@@ -572,6 +572,10 @@ class GAN(object):
             # Render scene
             # res = render_splats_NDC(self.scene)
             res = render_splats_along_ray(self.scene,use_old_sign=self.opt.use_old_sign)
+            res_pos = res['pos']
+            spatial_loss = spatial_3x3(res_pos.view((self.opt.splats_img_size, self.opt.splats_img_size, 3)))
+            spatial_var = torch.mean(res_pos[:, 0].var() + res_pos[:, 1].var() + res_pos[:, 2].var())
+            loss += 0.5 * spatial_loss + 0.01 * (1 / (spatial_var + 1e-4))
             # res_world = cam_to_world(pos=res['pos'], normal=res['normal'], camera=self.scene['camera'])
             # dict_res_world={}
             # dict_res_world['pos']=get_data(res_world['pos'][:,:3])
@@ -579,19 +583,14 @@ class GAN(object):
             # Get rendered output
             if self.opt.render_img_nc == 1:
                 depth = res['depth']
-                # Normalize depth image
                 cond = depth >= self.scene['camera']['far']
                 depth = where(cond, torch.min(depth), depth)
-                im = ((depth - torch.min(depth)) /
-                      (torch.max(depth) - torch.min(depth)))
-                im = im.unsqueeze(0)
+                im = depth.unsqueeze(0)
             else:
                 depth = res['depth']
                 # Normalize depth image
                 cond = depth >= self.scene['camera']['far']
-                depth = where(cond, torch.min(depth), depth)
-                im_d = ((depth - torch.min(depth)) /
-                      (torch.max(depth) - torch.min(depth)))
+                im_d = where(cond, torch.min(depth), depth)
                 im_d = im_d.unsqueeze(0)
                 im = res['image'].permute(2, 0, 1)
 
