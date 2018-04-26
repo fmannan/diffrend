@@ -638,8 +638,19 @@ def test_tform_cc_wc():
     y = tch_var_f(y.ravel())
 
 
-def contrast_stretch_percentile(im, low=0.01, high=0.099):
-    pass
+def spatial_3x3(pos, norm=1):
+    diff_right = pos[:, 1:, :] - pos[:, :-1, :]
+    diff_down = pos[1:, :, :] - pos[:-1, :, :]
+    diff_diag_down = pos[1:, 1:, :] - pos[:-1, :-1, :]
+    inv_norm = 1 / norm
+    cost = torch.mean(torch.pow(torch.sum(torch.abs(diff_right) ** norm, dim=2), inv_norm)) + \
+           torch.mean(torch.pow(torch.sum(torch.abs(diff_down) ** norm, dim=2), inv_norm)) + \
+           torch.mean(torch.pow(torch.sum(torch.abs(diff_diag_down) ** norm, dim=2), inv_norm))
+    return torch.mean(cost)
+
+
+def contrast_stretch(im, low=0.01, high=0.099):
+    return torch.clamp((im - low) / (high - low), 0.0, 1.0)
 
 
 def get_normalmap_image(normals, b_normalize=False):
@@ -647,29 +658,17 @@ def get_normalmap_image(normals, b_normalize=False):
         normals = normalize(normals)
     return np.uint8(normals * 127 + 127)
 
+def test_no_cost():
+    pos = tch_var_f(np.zeros((5, 5, 3)))
+    cost = spatial_3x3(pos)
+    print(cost)
+
 
 if __name__ == '__main__':
     test_cam_to_world_identity()
     test_cam_to_world_offset0()
     test_cam_to_world_offset1()
+    test_no_cost()
+    cost = spatial_3x3(tch_var_f(np.random.rand(5, 5, 3)))
+    print(cost)
 
-# import matplotlib.pyplot as plt
-#
-# x, y = np.meshgrid(np.linspace(-1, 1, 10), np.linspace(1, -1, 10))
-# fovy = np.deg2rad(45.)
-# focal_length = 1.0
-# h = np.tan(fovy / 2) * 2 * focal_length
-# aspect_ratio = 1
-# w = h * aspect_ratio
-#
-# x *= w / 2
-# y *= h / 2
-#
-# plt.figure()
-# plt.imshow(x)
-#
-# plt.figure()
-# plt.imshow(y)
-#
-# x = tch_var_f(x.ravel())
-# y = tch_var_f(y.ravel())

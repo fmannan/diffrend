@@ -5,9 +5,13 @@ from mpl_toolkits.mplot3d import axes3d
 import matplotlib.pyplot as plt
 
 
-scene = np.load('scene_output_twogans.npy')
+#scene = np.load('scene_output_twogans.npy')
+scene = np.load('scene_input_twogans_unnorm.npy')
 #scene = np.load('scene_output.npy')
 #pos = get_data(scene[0]['objects']['disk']['pos'])
+fig = plt.figure()
+ax = fig.add_subplot(111, projection='3d')
+ax.scatter(scene[:, 0], scene[:, 1], scene[:, 2], s=1.3)
 
 for idx in range(0, len(scene), 20):
     print(idx)
