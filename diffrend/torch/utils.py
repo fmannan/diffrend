@@ -653,23 +653,3 @@ if __name__ == '__main__':
     test_cam_to_world_offset0()
     test_cam_to_world_offset1()
 
-# import matplotlib.pyplot as plt
-#
-# x, y = np.meshgrid(np.linspace(-1, 1, 10), np.linspace(1, -1, 10))
-# fovy = np.deg2rad(45.)
-# focal_length = 1.0
-# h = np.tan(fovy / 2) * 2 * focal_length
-# aspect_ratio = 1
-# w = h * aspect_ratio
-#
-# x *= w / 2
-# y *= h / 2
-#
-# plt.figure()
-# plt.imshow(x)
-#
-# plt.figure()
-# plt.imshow(y)
-#
-# x = tch_var_f(x.ravel())
-# y = tch_var_f(y.ravel())
