@@ -240,10 +240,10 @@ class GAN(object):
                                          lr=self.opt.lr,
                                          betas=(self.opt.beta1, 0.999))
             self.optimizerG = optim.Adam(self.netG.parameters(),
-                                         lr=self.opt.lr,
+                                         lr=self.opt.lr*0.5,
                                          betas=(self.opt.beta1, 0.999))
             self.optimizerG2 = optim.Adam(self.netG2.parameters(),
-                                         lr=self.opt.lr*0.5,
+                                         lr=self.opt.lr,
                                          betas=(self.opt.beta1, 0.999))
         elif self.opt.optimizer == 'rmsprop':
             self.optimizerD = optim.RMSprop(self.netD.parameters(),
@@ -251,9 +251,9 @@ class GAN(object):
             self.optimizerD2 = optim.RMSprop(self.netD2.parameters(),
                                             lr=self.opt.lr)
             self.optimizerG = optim.RMSprop(self.netG.parameters(),
-                                            lr=self.opt.lr)
-            self.optimizerG2 = optim.RMSprop(self.netG2.parameters(),
                                             lr=self.opt.lr*0.5)
+            self.optimizerG2 = optim.RMSprop(self.netG2.parameters(),
+                                            lr=self.opt.lr)
         else:
             raise ValueError('Unknown optimizer: ' + self.opt.optimizer)
 
