@@ -92,6 +92,13 @@ class Parameters():
         # Optimization parameters
         self.parser.add_argument('--optimizer', type=str, default='adam', help='Optimizer (adam, rmsprop)')
         self.parser.add_argument('--lr', type=float, default=0.0001, help='learning rate, default=0.0002')
+        self.parser.add_argument('--lr_sched_type', type=str, default='step', help='Learning rate scheduler type.')
+        self.parser.add_argument('--z_lr_sched_step', type=int, default=100000, help='Learning rate schedule for z.')
+        self.parser.add_argument('--normal_lr_sched_step', type=int, default=100000, help='Learning rate schedule for '
+                                                                                          'normal.')
+        self.parser.add_argument('--z_lr_sched_gamma', type=float, default=1.0, help='Learning rate gamma for z.')
+        self.parser.add_argument('--normal_lr_sched_gamma', type=int, default=1.0, help='Learning rate gamma for '
+                                                                                          'normal.')
         self.parser.add_argument('--beta1', type=float, default=0.0, help='beta1 for adam. default=0.5')
         self.parser.add_argument('--n_iter', type=int, default=40000, help='number of iterations to train')
         self.parser.add_argument('--batchSize', type=int, default=4, help='input batch size')

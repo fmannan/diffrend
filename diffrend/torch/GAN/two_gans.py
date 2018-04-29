@@ -388,11 +388,7 @@ class GAN(object):
                             'triangle': {'face': None, 'normal': None,
                                          'material_idx': None}}
 
-                    # TODO: Solve this hack!!!!!!
-                    while True:
-                        samples = self.get_samples()
-                        if samples['mesh']['face'][0].size(0) <= 3000:
-                            break
+                    samples = self.get_samples()
                     # print (samples['mesh']['face'][0].size())
                     large_scene['objects']['triangle']['material_idx'] = tch_var_l(
                         np.zeros(samples['mesh']['face'][0].shape[0], dtype=int).tolist())
@@ -436,17 +432,17 @@ class GAN(object):
                 depth = res['depth']
                 #Normalize depth image
                 cond = depth >= large_scene['camera']['far']
-                depth = where(cond, torch.min(depth), depth)
-                im_d = ((depth - torch.min(depth)) /
-                      (torch.max(depth) - torch.min(depth)))
-                im_d = im.unsqueeze(0)
+                im_d = where(cond, torch.min(depth), depth)
+                #im_d = ((depth - torch.min(depth)) /
+                #      (torch.max(depth) - torch.min(depth)))
+                im_d = im_d.unsqueeze(0)
             else:
                 depth = res['depth']
                 #Normalize depth image
                 cond = depth >= large_scene['camera']['far']
-                depth = where(cond, torch.min(depth), depth)
-                im_d = ((depth - torch.min(depth)) /
-                      (torch.max(depth) - torch.min(depth)))
+                im_d = where(cond, torch.min(depth), depth)
+                #im_d = ((depth - torch.min(depth)) /
+                #      (torch.max(depth) - torch.min(depth)))
                 im_d = im_d.unsqueeze(0)
                 im = res['image'].permute(2, 0, 1)
 

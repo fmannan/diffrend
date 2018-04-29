@@ -18,7 +18,6 @@ import torchvision
 from diffrend.torch.GAN.datasets import Dataset_load
 from diffrend.torch.GAN.twin_networks import create_networks
 from diffrend.torch.GAN.parameters_halfbox_shapenet import Parameters
-from diffrend.torch.GAN.utils import make_dot
 from diffrend.torch.params import SCENE_BASIC, SCENE_SPHERE_HALFBOX
 from diffrend.torch.utils import tch_var_f, tch_var_l, where, get_data, normalize, cam_to_world, spatial_3x3
 from diffrend.torch.renderer import render, render_splats_NDC, render_splats_along_ray
@@ -34,8 +33,15 @@ from mpl_toolkits.mplot3d import axes3d
 # except ImportError:
 HYPERDASH_SUPPORTED = False
 
+"""
+Usage: --width 128 --height 128 --splats_img_size 128 --lr 2e-4 --name test_mvfg --disc_type cnn --cam_dist 1.6 
+--dataset=objects_folder_multi --root=./test_input/ --workers=0 --fovy=30 
+LR decay example:
+--lr_sched_type=step --z_lr_sched_step=1000 --z_lr_sched_gamma=0.8
+--normal_lr_sched_step=100000 --z_lr_sched_gamma=1.0  # no decay
+"""
 def copy_scripts_to_folder(expr_dir):
-    shutil.copy("two_networks_conditional.py", expr_dir)
+    #shutil.copy("two_networks_conditional.py", expr_dir)
     shutil.copy("../params.py", expr_dir)
     shutil.copy("../renderer.py", expr_dir)
     shutil.copy("parameters_halfbox_shapenet.py", expr_dir)
@@ -256,6 +262,18 @@ class GAN(object):
                                             lr=self.opt.lr)
         else:
             raise ValueError('Unknown optimizer: ' + self.opt.optimizer)
+        LR_fn = None
+        if self.opt.lr_sched_type == 'step':
+            LR_fn = optim.lr_scheduler.StepLR
+        elif self.opt.lr_sched_type == 'exp':
+            LR_fn = optim.lr_scheduler.ExponentialLR
+
+        self.optG_z_lr_scheduler = LR_fn(self.optimizerG,
+                                       step_size=self.opt.z_lr_sched_step,
+                                       gamma=self.opt.z_lr_sched_gamma)
+        self.optG2_normal_lr_scheduler = LR_fn(self.optimizerG2,
+                                        step_size=self.opt.normal_lr_sched_step,
+                                        gamma=self.opt.normal_lr_sched_gamma)
 
     def get_samples(self):
         """Get samples."""
@@ -687,7 +705,7 @@ class GAN(object):
         return rendered_data, rendered_data_depth, rendered_res_world, loss/self.opt.batchSize
 
     def train(self, ):
-        """Train networtk."""
+        """Train network."""
         # Start training
         if self.opt.gen_model_path is not None:
             print("reloading networks from")
@@ -814,6 +832,10 @@ class GAN(object):
                     raise ValueError('Unknown GAN criterium')
                 gnorm_G = torch.nn.utils.clip_grad_norm(self.netG.parameters(),
                                                         self.opt.max_gnorm)
+                # Update step size
+                self.optG_z_lr_scheduler.step()
+                self.optG2_normal_lr_scheduler.step()
+
                 self.optimizerG.step()
                 self.optimizerG2.step()
 
@@ -826,10 +848,12 @@ class GAN(object):
                     Wassertein_D = (errD_real.data[0] - errD_fake.data[0])
                     Wassertein_D_depth = (errD_real_depth.data[0] - errD_fake_depth.data[0])
                     print('\n[%d/%d] Loss_D: %.4f Loss_G: %.4f Loss_D_real: %.4f'
-                          ' Loss_D_fake: %.4f Loss_D_real_depth: %.4f Loss_D_fake_depth: %.4f Wassertein D: %.4f Wassertein_depth D_depth: %.4f L2_loss: %.4f' % (
-                              iteration, self.opt.n_iter, errD.data[0],
-                              errG.data[0], errD_real.data[0], errD_fake.data[0],errD_real_depth.data[0],errD_fake_depth.data[0],
-                              Wassertein_D, Wassertein_D_depth, 0.5*(loss+loss2).data[0]))
+                          ' Loss_D_fake: %.4f Loss_D_real_depth: %.4f Loss_D_fake_depth: %.4f Wassertein D: %.4f '
+                          'Wassertein_depth D_depth: %.4f L2_loss: %.4f z_lr: %.8f, n_lr: %.8f' % (
+                          iteration, self.opt.n_iter, errD.data[0],
+                          errG.data[0], errD_real.data[0], errD_fake.data[0],errD_real_depth.data[0],errD_fake_depth.data[0],
+                          Wassertein_D, Wassertein_D_depth, 0.5*(loss+loss2).data[0],
+                          self.optG_z_lr_scheduler.get_lr()[0], self.optG2_normal_lr_scheduler.get_lr()[0]))
                     l2_file.write('%s\n' % (str(l2_loss.data[0])))
                     l2_file.flush()
                     print("written to file",str(l2_loss.data[0]))
