@@ -39,6 +39,10 @@ Usage: --width 128 --height 128 --splats_img_size 128 --lr 2e-4 --name test_mvfg
 LR decay example:
 --lr_sched_type=step --z_lr_sched_step=1000 --z_lr_sched_gamma=0.8
 --normal_lr_sched_step=100000 --z_lr_sched_gamma=1.0  # no decay
+Alternating optimization:
+--alt_opt_zn_start=500   # start alternating optimization after `alt_opt_zn_start` iterations
+--alt_opt_zn_interval=100   # alternate every `alt_opt_zn_interval` iterations
+
 """
 def copy_scripts_to_folder(expr_dir):
     #shutil.copy("two_networks_conditional.py", expr_dir)
@@ -274,6 +278,9 @@ class GAN(object):
         self.optG2_normal_lr_scheduler = LR_fn(self.optimizerG2,
                                         step_size=self.opt.normal_lr_sched_step,
                                         gamma=self.opt.normal_lr_sched_gamma)
+        self.LR_SCHED_MAP = [self.optG_z_lr_scheduler, self.optG2_normal_lr_scheduler]
+        self.OPT_MAP = [self.optimizerG, self.optimizerG2]
+
 
     def get_samples(self):
         """Get samples."""
@@ -721,6 +728,7 @@ class GAN(object):
             ))
         file_name = os.path.join(self.opt.out_dir, 'L2.txt')
         with open(file_name, 'wt') as l2_file:
+            curr_generator_idx = 0
             for iteration in range(self.opt.n_iter):
                 self.iterationa_no=iteration
 
@@ -832,17 +840,25 @@ class GAN(object):
                     raise ValueError('Unknown GAN criterium')
                 gnorm_G = torch.nn.utils.clip_grad_norm(self.netG.parameters(),
                                                         self.opt.max_gnorm)
-                # Update step size
-                self.optG_z_lr_scheduler.step()
-                self.optG2_normal_lr_scheduler.step()
+                if self.opt.alt_opt_zn_interval is not None and iteration >= self.opt.alt_opt_zn_start:
+                    # update one of the generators
+                    if (iteration - self.opt.alt_opt_zn_start) % self.opt.alt_opt_zn_interval == 0:
+                        # switch generator vars to optimize
+                        curr_generator_idx = (1 - curr_generator_idx)
+                    self.LR_SCHED_MAP[curr_generator_idx].step()
+                    self.OPT_MAP[curr_generator_idx].step()
+                else:  # update both generators
+                    # Update step size
+                    self.optG_z_lr_scheduler.step()
+                    self.optG2_normal_lr_scheduler.step()
 
-                self.optimizerG.step()
-                self.optimizerG2.step()
+                    self.optimizerG.step()
+                    self.optimizerG2.step()
 
                 # Log print
                 mse_criterion = nn.MSELoss().cuda()
 
-                if iteration % 5 == 0:
+                if iteration % self.opt.print_interval == 0:
                     fake_rendered_cond2,fd2,r2,loss3 = self.render_batch(fake, self.inputv_cond)
                     l2_loss=mse_criterion(fd2, self.inputv_depth)
                     Wassertein_D = (errD_real.data[0] - errD_fake.data[0])
@@ -867,7 +883,7 @@ class GAN(object):
                         self.exp.metric("Wassertein D", Wassertein_D)
 
                 # Save images
-                if iteration % 20 == 0:
+                if iteration % self.opt.save_image_interval == 0:
                     torchvision.utils.save_image(self.inputv.data, os.path.join(self.opt.out_dir,  'input_%d.png' % (iteration)), nrow=2, normalize=True, scale_each=True)
                     torchvision.utils.save_image(fake_rendered.data, os.path.join(self.opt.out_dir,  'output_%d.png' % (iteration)), nrow=2, normalize=True, scale_each=True)
                     torchvision.utils.save_image(self.inputv_depth.data, os.path.join(self.opt.out_dir,  'input_depth%d.png' % (iteration)), nrow=2, normalize=True, scale_each=True)
@@ -876,7 +892,7 @@ class GAN(object):
 
 
                 # Do checkpointing
-                if iteration % 2000 == 0:
+                if iteration % self.opt.save_interval == 0:
                     self.save_networks(iteration)
 
             # if iteration % 500 == 0:

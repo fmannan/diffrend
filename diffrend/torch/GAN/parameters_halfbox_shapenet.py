@@ -99,6 +99,12 @@ class Parameters():
         self.parser.add_argument('--z_lr_sched_gamma', type=float, default=1.0, help='Learning rate gamma for z.')
         self.parser.add_argument('--normal_lr_sched_gamma', type=int, default=1.0, help='Learning rate gamma for '
                                                                                           'normal.')
+        self.parser.add_argument('--alt_opt_zn_interval', type=int, default=None,
+                                 help='Alternating optimization interval. '
+                                      '[None: joint optimization, 20: every 20 iterations, etc.]')
+        self.parser.add_argument('--alt_opt_zn_start', type=int, default=10000,
+                                 help='Alternating optimization start interation. [-1: starts immediately,'
+                                      '100: starts alternating after the first 100 iterations.')
         self.parser.add_argument('--beta1', type=float, default=0.0, help='beta1 for adam. default=0.5')
         self.parser.add_argument('--n_iter', type=int, default=40000, help='number of iterations to train')
         self.parser.add_argument('--batchSize', type=int, default=4, help='input batch size')
@@ -143,6 +149,10 @@ class Parameters():
         self.parser.add_argument('--render_img_size', type=int, default=128, help='Width/height of the rendering image')
         self.parser.add_argument('--splats_radius', type=float, default=0.05, help='radius of the splats (fix)')
         self.parser.add_argument('--same_view', action='store_true', help='data with view fixed') # before we add conditioning on cam pose, this is necessary
+
+        self.parser.add_argument('--print_interval', type=int, default=5, help='Print loss interval.')
+        self.parser.add_argument('--save_image_interval', type=int, default=20, help='Save image interval.')
+        self.parser.add_argument('--save_interval', type=int, default=2000, help='Save state interval.')
 
     def parse(self):
         """Parse."""
