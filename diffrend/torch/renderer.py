@@ -413,6 +413,7 @@ def render_splats_NDC(scene, **params):
 
     frag_albedo = torch.index_select(material_albedo, 0, material_idx)
     frag_coeffs = torch.index_select(material_coeffs, 0, material_idx)
+    light_visibility = None
     # TODO: CHECK fragment_shader call
     im_color = fragment_shader(frag_normals=frag_normals,
                                light_dir=light_pos_CC[:, np.newaxis, :3] - frag_pos[:, :3],
@@ -422,7 +423,8 @@ def render_splats_NDC(scene, **params):
                                light_colors=light_colors,
                                frag_albedo=frag_albedo,
                                double_sided=get_param_value('double_sided', params, False),
-                               use_quartic=get_param_value('use_quartic', params, False))
+                               use_quartic=get_param_value('use_quartic', params, False),
+                               light_visibility=light_visibility)
     # # Fragment shading
     # light_dir = light_pos_CC[:, np.newaxis, :3] - frag_pos[:, :3]
     # light_dir_norm = torch.sqrt(torch.sum(light_dir ** 2, dim=-1))[:, :, np.newaxis]
@@ -449,8 +451,8 @@ def render_splats_NDC(scene, **params):
     return {
         'image': im,
         'depth': im_depth,
-        'pos': pos_CC,
-        'normal': normals_CC
+        'pos': pos_CC[:, :3],
+        'normal': normals_CC[:, :3]
     }
 
 

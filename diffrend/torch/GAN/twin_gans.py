@@ -627,14 +627,14 @@ class GAN(object):
                     self.scene['camera']['eye'] = batch_cond[0]
 
             # Render scene
-            # res = render_splats_NDC(self.scene)
-            res = render_splats_along_ray(self.scene,use_old_sign=self.opt.use_old_sign,use_quartic=self.opt.use_quartic)
+            res = render_splats_NDC(self.scene)
+            #res = render_splats_along_ray(self.scene,use_old_sign=self.opt.use_old_sign,use_quartic=self.opt.use_quartic)
             # res_world = cam_to_world(pos=res['pos'], normal=res['normal'], camera=self.scene['camera'])
             # dict_res_world={}
             # dict_res_world['pos']=get_data(res_world['pos'][:,:3])
             # dict_res_world['normal']=get_data(res_world['normal'])
             # Get rendered output
-            res_pos = res['pos']
+            res_pos = res['pos'].contiguous()
             spatial_loss = spatial_3x3(res_pos.view((self.opt.splats_img_size, self.opt.splats_img_size, 3)))
             spatial_var = torch.mean(res_pos[:, 0].var() + res_pos[:, 1].var() + res_pos[:, 2].var())
             loss += 0.5 * spatial_loss + 0.01 * (1 / (spatial_var + 1e-4))
