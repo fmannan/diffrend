@@ -70,6 +70,16 @@ class ShapeNetDataset(Dataset):
         # animate_sample_generation(model_name=None, obj=obj_model,
         #                           num_samples=1000, out_dir=None,
         #                           resample=False, rotate_angle=360)
+        if self.opt.bg_model is not None:
+            # add a background to the shapenet model
+            bg_model = load_model(self.opt.bg_model)
+            bg_v = bg_model['v']
+            scale = (bg_v.max() - bg_v.min()) * 0.25
+            offset = np.array([3.0, 3.0, 3.0]) + 2 * np.random.rand(3)
+            v1 = (obj_model['v'] - obj_model['v'].mean()) / (obj_model['v'].max() - obj_model['v'].min())
+            v = np.concatenate((scale * v1 + offset, bg_v))
+            f = np.concatenate((obj_model['f'], bg_v['f'] + v1.shape[0]))
+            obj_model = {'v': v, 'f': f}
 
         if self.opt.use_mesh:
             # normalize the vertices

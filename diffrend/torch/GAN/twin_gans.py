@@ -337,11 +337,8 @@ class GAN(object):
                             'triangle': {'face': None, 'normal': None,
                                          'material_idx': None}}
 
-                    # TODO: Solve this hack!!!!!!
-                    while True:
-                        samples = self.get_samples()
-                        if samples['mesh']['face'][0].size(0) <= 3000:
-                            break
+                    samples = self.get_samples()
+
                     # print (samples['mesh']['face'][0].size())
                     large_scene['objects']['triangle']['material_idx'] = tch_var_l(
                         np.zeros(samples['mesh']['face'][0].shape[0], dtype=int).tolist())
@@ -627,8 +624,8 @@ class GAN(object):
                     self.scene['camera']['eye'] = batch_cond[0]
 
             # Render scene
-            res = render_splats_NDC(self.scene)
-            #res = render_splats_along_ray(self.scene,use_old_sign=self.opt.use_old_sign,use_quartic=self.opt.use_quartic)
+            #res = render_splats_NDC(self.scene)
+            res = render_splats_along_ray(self.scene,use_old_sign=self.opt.use_old_sign,use_quartic=self.opt.use_quartic)
             # res_world = cam_to_world(pos=res['pos'], normal=res['normal'], camera=self.scene['camera'])
             # dict_res_world={}
             # dict_res_world['pos']=get_data(res_world['pos'][:,:3])
