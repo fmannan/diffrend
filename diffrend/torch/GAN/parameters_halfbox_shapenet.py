@@ -108,6 +108,7 @@ class Parameters():
         self.parser.add_argument('--beta1', type=float, default=0.0, help='beta1 for adam. default=0.5')
         self.parser.add_argument('--n_iter', type=int, default=40000, help='number of iterations to train')
         self.parser.add_argument('--batchSize', type=int, default=4, help='input batch size')
+        self.parser.add_argument('--gz_gi_loss', type=float, help='grad z and grad img consistency.')
 
         # GAN parameters
         self.parser.add_argument("--criterion", help="GAN Training criterion", choices=['GAN', 'WGAN'], default='WGAN')

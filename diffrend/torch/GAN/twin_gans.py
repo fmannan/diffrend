@@ -19,7 +19,8 @@ from diffrend.torch.GAN.datasets import Dataset_load
 from diffrend.torch.GAN.twin_networks import create_networks
 from diffrend.torch.GAN.parameters_halfbox_shapenet import Parameters
 from diffrend.torch.params import SCENE_BASIC, SCENE_SPHERE_HALFBOX
-from diffrend.torch.utils import tch_var_f, tch_var_l, where, get_data, normalize, cam_to_world, spatial_3x3
+from diffrend.torch.utils import tch_var_f, tch_var_l, where, get_data, normalize, cam_to_world, spatial_3x3, \
+    grad_spatial2d
 from diffrend.torch.renderer import render, render_splats_NDC, render_splats_along_ray
 from diffrend.utils.sample_generator import uniform_sample_sphere
 from diffrend.torch.ops import sph2cart_unit
@@ -426,11 +427,8 @@ class GAN(object):
                             'triangle': {'face': None, 'normal': None,
                                          'material_idx': None}}
 
-                    # TODO: Solve this hack!!!!!!
-                    while True:
-                        samples = self.get_samples()
-                        if samples['mesh']['face'][0].size(0) <= 3000:
-                            break
+                    samples = self.get_samples()
+
                     # print (samples['mesh']['face'][0].size())
                     large_scene['objects']['triangle']['material_idx'] = tch_var_l(
                         np.zeros(samples['mesh']['face'][0].shape[0], dtype=int).tolist())
@@ -593,10 +591,10 @@ class GAN(object):
                 # pos = torch.cat([pos, -z], 1)
                 #loss += torch.mean(F.relu(z_min - torch.abs(z))**2 + F.relu(torch.abs(z) - z_max)**2)
 
-                z = -(F.relu(batch[idx][:, :1]) - F.relu(batch[idx][:, :1] - (z_max - z_min)) + z_min)
+                z = -(F.relu(batch[idx][:, :1]) + z_min) #-(F.relu(batch[idx][:, :1]) - F.relu(batch[idx][:, :1] - (z_max - z_min)) + z_min)
                 pos = torch.cat([pos, z], 1)  # for along-ray
 
-                loss += torch.mean(F.relu(z_min - torch.abs(z))**2 + F.relu(torch.abs(z) - z_max)**2)+(1/(pos.var() + eps))*0.5
+                loss += torch.mean(F.relu(z_min - torch.abs(z))**2 + F.relu(torch.abs(z) - z_max)**2)
                 if self.opt.norm_sph_coord:
                     # TODO: Sigmoid here?
                     # phi_theta = F.sigmoid(batch[idx][:, 1:]) * tch_var_f([2 * np.pi, np.pi / 2.])[np.newaxis, :]
@@ -632,7 +630,8 @@ class GAN(object):
             # dict_res_world['normal']=get_data(res_world['normal'])
             # Get rendered output
             res_pos = res['pos'].contiguous()
-            spatial_loss = spatial_3x3(res_pos.view((self.opt.splats_img_size, self.opt.splats_img_size, 3)))
+            res_pos_2D = res_pos.view((self.opt.splats_img_size, self.opt.splats_img_size, 3))
+            spatial_loss = spatial_3x3(res_pos_2D)
             spatial_var = torch.mean(res_pos[:, 0].var() + res_pos[:, 1].var() + res_pos[:, 2].var())
             loss += 0.5 * spatial_loss + 0.01 * (1 / (spatial_var + 1e-4))
             if self.opt.render_img_nc == 1:
@@ -654,6 +653,11 @@ class GAN(object):
                 im_d = im_d.unsqueeze(0)
                 im = res['image'].permute(2, 0, 1)
 
+            if self.opt.gz_gi_loss is not None and self.opt.gz_gi_loss > 0:
+                gradZ = grad_spatial2d(res_pos_2D[:, :, 2][:, :, np.newaxis])
+                gradImg = grad_spatial2d(torch.mean(im, dim=0)[:, :, np.newaxis])
+                for (gZ, gI) in zip(gradZ, gradImg):
+                    loss += self.opt.gz_gi_loss * torch.mean(torch.abs(torch.abs(gZ) - torch.abs(gI)))
 
             # Store normalized depth into the data
             rendered_data.append(im)

@@ -638,14 +638,21 @@ def test_tform_cc_wc():
     y = tch_var_f(y.ravel())
 
 
+def grad_spatial2d(x):
+    diff_right = x[:, 1:, :] - x[:, :-1, :]
+    diff_down = x[1:, :, :] - x[:-1, :, :]
+    diff_diag_down = x[1:, 1:, :] - x[:-1, :-1, :]
+    diff_diag_up = x[:-1, 1:, :] - x[1:, :-1, :]
+    return diff_right, diff_down, diff_diag_down, diff_diag_up
+
+
 def spatial_3x3(pos, norm=1):
-    diff_right = pos[:, 1:, :] - pos[:, :-1, :]
-    diff_down = pos[1:, :, :] - pos[:-1, :, :]
-    diff_diag_down = pos[1:, 1:, :] - pos[:-1, :-1, :]
+    diff_right, diff_down, diff_diag_down, diff_diag_up = grad_spatial2d(pos)
     inv_norm = 1 / norm
     cost = torch.mean(torch.pow(torch.sum(torch.abs(diff_right) ** norm, dim=2), inv_norm)) + \
            torch.mean(torch.pow(torch.sum(torch.abs(diff_down) ** norm, dim=2), inv_norm)) + \
-           torch.mean(torch.pow(torch.sum(torch.abs(diff_diag_down) ** norm, dim=2), inv_norm))
+           torch.mean(torch.pow(torch.sum(torch.abs(diff_diag_down) ** norm, dim=2), inv_norm)) + \
+           torch.mean(torch.pow(torch.sum(torch.abs(diff_diag_up) ** norm, dim=2), inv_norm))
     return torch.mean(cost)
 
 
@@ -657,6 +664,7 @@ def get_normalmap_image(normals, b_normalize=False):
     if b_normalize:
         normals = normalize(normals)
     return np.uint8(normals * 127 + 127)
+
 
 def test_no_cost():
     pos = tch_var_f(np.zeros((5, 5, 3)))
