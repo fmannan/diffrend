@@ -18,35 +18,27 @@ import torchvision
 from diffrend.torch.GAN.datasets import Dataset_load
 from diffrend.torch.GAN.twin_networks import create_networks
 from diffrend.torch.GAN.parameters_halfbox_shapenet import Parameters
+from diffrend.torch.GAN.utils import make_dot
 from diffrend.torch.params import SCENE_BASIC, SCENE_SPHERE_HALFBOX
-from diffrend.torch.utils import tch_var_f, tch_var_l, where, get_data, normalize, cam_to_world, spatial_3x3, \
-    grad_spatial2d
+from diffrend.torch.utils import tch_var_f, tch_var_l, where, get_data, normalize, cam_to_world, spatial_3x3, grad_spatial2d
 from diffrend.torch.renderer import render, render_splats_NDC, render_splats_along_ray
 from diffrend.utils.sample_generator import uniform_sample_sphere
 from diffrend.torch.ops import sph2cart_unit
+from diffrend.utils.utils import contrast_stretch_percentile
+
 import matplotlib
 matplotlib.use('Agg')
 from matplotlib import pyplot as plt
 from mpl_toolkits.mplot3d import axes3d
+from diffrend.torch.utils import get_normalmap_image
 # try: # temporarily
 #     from hyperdash import Experiment
 #     HYPERDASH_SUPPORTED = True
 # except ImportError:
 HYPERDASH_SUPPORTED = False
 
-"""
-Usage: --width 128 --height 128 --splats_img_size 128 --lr 2e-4 --name test_mvfg --disc_type cnn --cam_dist 1.6 
---dataset=objects_folder_multi --root=./test_input/ --workers=0 --fovy=30 
-LR decay example:
---lr_sched_type=step --z_lr_sched_step=1000 --z_lr_sched_gamma=0.8
---normal_lr_sched_step=100000 --z_lr_sched_gamma=1.0  # no decay
-Alternating optimization:
---alt_opt_zn_start=500   # start alternating optimization after `alt_opt_zn_start` iterations
---alt_opt_zn_interval=100   # alternate every `alt_opt_zn_interval` iterations
-
-"""
 def copy_scripts_to_folder(expr_dir):
-    #shutil.copy("two_networks_conditional.py", expr_dir)
+    shutil.copy("twin_networks.py", expr_dir)
     shutil.copy("../params.py", expr_dir)
     shutil.copy("../renderer.py", expr_dir)
     shutil.copy("parameters_halfbox_shapenet.py", expr_dir)
@@ -196,6 +188,9 @@ class GAN(object):
         self.input_depth = torch.FloatTensor(
             self.opt.batchSize, 1,
             self.opt.render_img_size, self.opt.render_img_size)
+        self.input_normal = torch.FloatTensor(
+            self.opt.batchSize, 1,
+            self.opt.render_img_size, self.opt.render_img_size)
         self.input_cond = torch.FloatTensor(
             self.opt.batchSize, 3)
         self.input_cond2 = torch.FloatTensor(
@@ -220,6 +215,7 @@ class GAN(object):
             self.input = self.input.cuda()
             self.input2 = self.input2.cuda()
             self.input_depth=self.input_depth.cuda()
+            self.input_normal=self.input_normal.cuda()
             self.input_cond = self.input_cond.cuda()
             self.input_cond2 = self.input_cond2.cuda()
             self.label = self.label.cuda()
@@ -279,9 +275,6 @@ class GAN(object):
         self.optG2_normal_lr_scheduler = LR_fn(self.optimizerG2,
                                         step_size=self.opt.normal_lr_sched_step,
                                         gamma=self.opt.normal_lr_sched_gamma)
-        self.LR_SCHED_MAP = [self.optG_z_lr_scheduler, self.optG2_normal_lr_scheduler]
-        self.OPT_MAP = [self.optimizerG, self.optimizerG2]
-
 
     def get_samples(self):
         """Get samples."""
@@ -324,6 +317,7 @@ class GAN(object):
         # Render scenes
         data = []
         data_depth = []
+        data_normal = []
         data_cond=[]
         for idx in range(self.opt.batchSize):
             # Save the splats into the rendering scene
@@ -338,8 +332,11 @@ class GAN(object):
                             'triangle': {'face': None, 'normal': None,
                                          'material_idx': None}}
 
-                    samples = self.get_samples()
-
+                    # TODO: Solve this hack!!!!!!
+                    while True:
+                        samples = self.get_samples()
+                        if samples['mesh']['face'][0].size(0) <= 3000:
+                            break
                     # print (samples['mesh']['face'][0].size())
                     large_scene['objects']['triangle']['material_idx'] = tch_var_l(
                         np.zeros(samples['mesh']['face'][0].shape[0], dtype=int).tolist())
@@ -397,18 +394,26 @@ class GAN(object):
                 im_d = depth.unsqueeze(0)
                 im = res['image'].permute(2, 0, 1)
 
+                target_normal_ = get_data(res['normal'])
+                target_normalmap_img_ = get_normalmap_image(target_normal_)
+                im_n=tch_var_f(target_normalmap_img_).permute(2, 0, 1)
+
+
             # Add depth image to the output structure
             data.append(im)
             data_depth.append(im_d)
+            data_normal.append(im_n)
             data_cond.append(large_scene['camera']['eye'])
         # Stack real samples
         real_samples = torch.stack(data)
         real_samples_depth = torch.stack(data_depth)
+        real_samples_normal = torch.stack(data_normal)
         real_samples_cond = torch.stack(data_cond)
         self.batch_size = real_samples.size(0)
         if not self.opt.no_cuda:
             real_samples = real_samples.cuda()
             real_samples_depth = real_samples_depth.cuda()
+            real_samples_normal = real_samples_normal.cuda()
             real_samples_cond = real_samples_cond.cuda()
 
         data2 = []
@@ -427,8 +432,11 @@ class GAN(object):
                             'triangle': {'face': None, 'normal': None,
                                          'material_idx': None}}
 
-                    samples = self.get_samples()
-
+                    # TODO: Solve this hack!!!!!!
+                    while True:
+                        samples = self.get_samples()
+                        if samples['mesh']['face'][0].size(0) <= 3000:
+                            break
                     # print (samples['mesh']['face'][0].size())
                     large_scene['objects']['triangle']['material_idx'] = tch_var_l(
                         np.zeros(samples['mesh']['face'][0].shape[0], dtype=int).tolist())
@@ -504,12 +512,14 @@ class GAN(object):
         self.input.resize_as_(real_samples.data).copy_(real_samples.data)
         self.input2.resize_as_(real_samples2.data).copy_(real_samples2.data)
         self.input_depth.resize_as_(real_samples_depth.data).copy_(real_samples_depth.data)
+        self.input_normal.resize_as_(real_samples_normal.data).copy_(real_samples_normal.data)
         self.input_cond.resize_as_(real_samples_cond.data).copy_(real_samples_cond.data)
         self.input_cond2.resize_as_(real_samples_cond2.data).copy_(real_samples_cond2.data)
         self.label.resize_(self.batch_size).fill_(self.real_label)
         self.inputv = Variable(self.input)
         self.inputv2 = Variable(self.input2)
         self.inputv_depth = Variable(self.input_depth)
+        self.inputv_normal = Variable(self.input_normal)
         self.inputv_cond = Variable(self.input_cond)
         self.inputv_cond2 = Variable(self.input_cond2)
         self.labelv = Variable(self.label)
@@ -544,9 +554,12 @@ class GAN(object):
 
         rendered_data = []
         rendered_data_depth = []
+        rendered_data_normal = []
+        rendered_data_world_normal = []
         rendered_data_cond = []
         rendered_res_world=[]
         scenes=[]
+        inpath=self.opt.out_dir+'/'
         z_min=self.scene['camera']['focal_length'] + 3
         z_max=z_min+5
         # Set splats into rendering scene
@@ -577,24 +590,14 @@ class GAN(object):
                 pos = tch_var_f(pos)
                 #import ipdb; ipdb.set_trace()
                 # TODO: Thanh here?
-                # pos = torch.cat([pos, F.tanh(batch[idx][:, :1])], 1) # for NDC
-                # pos = torch.cat([pos, -torch.abs(batch[idx][:, :1])], 1)  # for along-ray
-                # pos = torch.cat([pos, -F.relu(batch[idx][:, :1])], 1)  # for along-ray but not explicitly < -f (can it learn to be < -f?)
-                # pos = torch.cat([pos, -self.scene['camera']['focal_length']-F.relu(batch[idx][:, :1])], 1)  # for along-ray
-                # z = -self.scene['camera']['focal_length']-F.relu(batch[idx][:, :1])
-                # #z = (z - torch.min(z))/(torch.max(z) - torch.min(z))
-                # # print(torch.min(torch.abs(z)))
-                # # print(torch.max(torch.abs(z)))
+
                 eps=1e-3
-                # z = batch[idx][:, :1]
-                # z = (z - z.min()) / (z.max() - z.min() + eps) * (z_max - z_min) + z_min
-                # pos = torch.cat([pos, -z], 1)
-                #loss += torch.mean(F.relu(z_min - torch.abs(z))**2 + F.relu(torch.abs(z) - z_max)**2)
-
-                z = -(F.relu(batch[idx][:, :1]) + z_min) #-(F.relu(batch[idx][:, :1]) - F.relu(batch[idx][:, :1] - (z_max - z_min)) + z_min)
-                pos = torch.cat([pos, z], 1)  # for along-ray
-
+                z = -(F.relu(batch[idx][:, :1]) + z_min)
+                #z = batch[idx][:, :1]
+                #z = (z - z.min()) / (z.max() - z.min() + eps) * (z_max - z_min) + z_min
+                pos = torch.cat([pos, z], 1)
                 loss += torch.mean(F.relu(z_min - torch.abs(z))**2 + F.relu(torch.abs(z) - z_max)**2)
+
                 if self.opt.norm_sph_coord:
                     # TODO: Sigmoid here?
                     # phi_theta = F.sigmoid(batch[idx][:, 1:]) * tch_var_f([2 * np.pi, np.pi / 2.])[np.newaxis, :]
@@ -622,18 +625,16 @@ class GAN(object):
                     self.scene['camera']['eye'] = batch_cond[0]
 
             # Render scene
-            #res = render_splats_NDC(self.scene)
+            # res = render_splats_NDC(self.scene)
             res = render_splats_along_ray(self.scene,use_old_sign=self.opt.use_old_sign,use_quartic=self.opt.use_quartic)
-            # res_world = cam_to_world(pos=res['pos'], normal=res['normal'], camera=self.scene['camera'])
-            # dict_res_world={}
-            # dict_res_world['pos']=get_data(res_world['pos'][:,:3])
-            # dict_res_world['normal']=get_data(res_world['normal'])
+            world_tform = cam_to_world(res['pos'].view((-1, 3)), res['normal'].view((-1, 3)), self.scene['camera'])
+
             # Get rendered output
             res_pos = res['pos'].contiguous()
             res_pos_2D = res_pos.view((self.opt.splats_img_size, self.opt.splats_img_size, 3))
             spatial_loss = spatial_3x3(res_pos_2D)
             spatial_var = torch.mean(res_pos[:, 0].var() + res_pos[:, 1].var() + res_pos[:, 2].var())
-            loss += 0.5 * spatial_loss + 0.01 * (1 / (spatial_var + 1e-4))
+            loss +=  0.01 * (1 / (spatial_var + 1e-4))+0.5 * spatial_loss
             if self.opt.render_img_nc == 1:
                 depth = res['depth']
                 # Normalize depth image
@@ -643,43 +644,29 @@ class GAN(object):
                 #       (torch.max(depth) - torch.min(depth)))
                 im = depth.unsqueeze(0)
             else:
+                W=128
+                H=128
+
                 depth = res['depth']
                 # Normalize depth image
                 cond = depth >= self.scene['camera']['far']
-                # depth = where(cond, torch.min(depth), depth)
-                # im_d = ((depth - torch.min(depth)) /
+                depth = where(cond, torch.min(depth), depth)
+                #im_d = ((depth - torch.min(depth)) /
                 #       (torch.max(depth) - torch.min(depth)))
-                im_d = where(cond, torch.min(depth), depth)
-                im_d = im_d.unsqueeze(0)
+                #im_d = where(cond, torch.min(depth), depth)
+                im_d = depth.unsqueeze(0)
                 im = res['image'].permute(2, 0, 1)
 
-            if self.opt.gz_gi_loss is not None and self.opt.gz_gi_loss > 0:
-                gradZ = grad_spatial2d(res_pos_2D[:, :, 2][:, :, np.newaxis])
-                gradImg = grad_spatial2d(torch.mean(im, dim=0)[:, :, np.newaxis])
-                for (gZ, gI) in zip(gradZ, gradImg):
-                    loss += self.opt.gz_gi_loss * torch.mean(torch.abs(torch.abs(gZ) - torch.abs(gI)))
+                target_normal_ = get_data(res['normal']).reshape((H, W, 3))
+                target_normalmap_img_ = get_normalmap_image(target_normal_)
+                im_n=tch_var_f(target_normalmap_img_).permute(2, 0, 1)
 
-            # Store normalized depth into the data
-            rendered_data.append(im)
-            rendered_data_depth.append(im_d)
-            #rendered_res_world.append(dict_res_world)
-            rendered_data_cond.append(self.scene['camera']['eye'])
-            scenes.append(self.scene)
-
-        rendered_data = torch.stack(rendered_data)
-        rendered_data_depth = torch.stack(rendered_data_depth)
-        if self.iterationa_no % 20 == 0:
-            out_file2 = os.path.join(self.opt.out_dir,"scene_output_twogans"+".npy")
-            np.save(out_file2,scenes)
-            inpath=self.opt.out_dir+'/'
-            for idx in range(0, len(scenes)):
-                #print(idx)
-                #scene[idx]['lights']['attenuation'] = tch_var_f([[1.0, 0.0, 0.0]])
-                #print(scene[idx]['lights']['attenuation'])
-                res = render_splats_along_ray(scenes[idx],use_old_sign=self.opt.use_old_sign, use_quartic=self.opt.use_quartic)
-
-                im = get_data(res['image'])
-                depth = get_data(res['depth'])
+                target_worldnormal_ = get_data(world_tform['normal']).reshape((H, W, 3))
+                target_worldnormalmap_img_ = get_normalmap_image(target_normal_)
+                im_wn=tch_var_f(target_worldnormalmap_img_).permute(2, 0, 1)
+            if self.iterationa_no % 200 == 0:
+                im2 = get_data(res['image'])
+                depth2 = get_data(res['depth'])
 
                 # plt.figure()
                 # plt.imshow(im)
@@ -692,28 +679,55 @@ class GAN(object):
                 np.save(inpath+out_file2,pos)
 
                 out_file2 = ("im"+".npy")
-                np.save(inpath+out_file2,im)
+                np.save(inpath+out_file2,im2)
 
                 out_file2 = ("depth"+".npy")
-                np.save(inpath+out_file2,depth)
-                pos_normal = res['pos']
-                pos_normal = get_data(pos_normal)
-                filename_prefix="input"
-                with open(inpath+ '_{:05d}.xyz'.format(idx), 'w') as fid:
-                    for sub_idx in range(pos_normal.shape[0]):
-                        fid.write('{}\n'.format(' '.join([str(x) for x in pos_normal[sub_idx]])))
+                np.save(inpath+out_file2,depth2)
+                # pos_normal = res['pos']
+                # pos_normal = get_data(pos_normal)
+                # filename_prefix="input"
+                # with open(inpath+ '_{:05d}.xyz'.format(idx), 'w') as fid:
+                #     for sub_idx in range(pos_normal.shape[0]):
+                #         fid.write('{}\n'.format(' '.join([str(x) for x in pos_normal[sub_idx]])))
 
 
                 pos_normal = torch.cat([res['pos'],res['normal']],1)
                 pos_normal = get_data(pos_normal)
                 filename_prefix="input"
-                with open(inpath+ 'withnormal_{:05d}.xyz'.format(idx), 'w') as fid2:
+                with open(inpath+ str(self.iterationa_no)+ 'withnormal_{:05d}.xyz'.format(idx), 'w') as fid2:
                     for sub_idx in range(pos_normal.shape[0]):
                         fid2.write('{}\n'.format(' '.join([str(x) for x in pos_normal[sub_idx]])))
-        return rendered_data, rendered_data_depth, rendered_res_world, loss/self.opt.batchSize
+
+                pos_normal = torch.cat([world_tform['pos'],world_tform['normal']],1)
+                pos_normal = get_data(pos_normal)
+                filename_prefix="input"
+                with open(inpath+ str(self.iterationa_no)+ 'withnormal_world_{:05d}.xyz'.format(idx), 'w') as fid2:
+                    for sub_idx in range(pos_normal.shape[0]):
+                        fid2.write('{}\n'.format(' '.join([str(x) for x in pos_normal[sub_idx]])))
+            if self.opt.gz_gi_loss is not None and self.opt.gz_gi_loss > 0:
+                gradZ = grad_spatial2d(res_pos_2D[:, :, 2][:, :, np.newaxis])
+                gradImg = grad_spatial2d(torch.mean(im, dim=0)[:, :, np.newaxis])
+                for (gZ, gI) in zip(gradZ, gradImg):
+                    loss += self.opt.gz_gi_loss * torch.mean(torch.abs(torch.abs(gZ) - torch.abs(gI)))
+            # Store normalized depth into the data
+            rendered_data.append(im)
+            rendered_data_depth.append(im_d)
+            rendered_data_normal.append(im_n)
+            rendered_data_world_normal.append(im_wn)
+            #rendered_res_world.append(dict_res_world)
+            rendered_data_cond.append(self.scene['camera']['eye'])
+            scenes.append(self.scene)
+            #scenes.append(self.scene)
+
+        rendered_data = torch.stack(rendered_data)
+        rendered_data_depth = torch.stack(rendered_data_depth)
+        rendered_data_normal = torch.stack(rendered_data_normal)
+        rendered_data_world_normal = torch.stack(rendered_data_world_normal)
+
+        return rendered_data, rendered_data_depth, rendered_data_normal, rendered_data_world_normal, rendered_res_world, loss/self.opt.batchSize
 
     def train(self, ):
-        """Train network."""
+        """Train networtk."""
         # Start training
         if self.opt.gen_model_path is not None:
             print("reloading networks from")
@@ -729,7 +743,6 @@ class GAN(object):
             ))
         file_name = os.path.join(self.opt.out_dir, 'L2.txt')
         with open(file_name, 'wt') as l2_file:
-            curr_generator_idx = 0
             for iteration in range(self.opt.n_iter):
                 self.iterationa_no=iteration
 
@@ -763,8 +776,8 @@ class GAN(object):
                     fake2_n = self.netG2(self.noisev21, self.inputv_cond2)
                     fake=torch.cat([fake_z,fake_n],2)
                     fake2=torch.cat([fake2_z,fake2_n],2)
-                    fake_rendered,fd,r,loss = self.render_batch(fake, self.inputv_cond)
-                    fake_rendered2,fd2,r2,loss2 = self.render_batch(fake2, self.inputv_cond2)
+                    fake_rendered,fd,fn,fwn,r,loss = self.render_batch(fake, self.inputv_cond)
+                    fake_rendered2,fd2,fn2,fwn2,r2,loss2 = self.render_batch(fake2, self.inputv_cond2)
                     fake_D=torch.cat([fake_rendered.detach(),fd.detach()],1)
                     # Do not bp through gen
                     outD_fake = self.netD(fake_rendered.detach(), self.inputv_cond.detach())
@@ -814,6 +827,7 @@ class GAN(object):
                 # for p in self.netD.parameters():
                 #     p.requires_grad = False
                 self.netG.zero_grad()
+                self.netG2.zero_grad()
                 self.generate_noise_vector()
                 fake_z = self.netG(self.noisev, self.inputv_cond)
                 fake_n = self.netG2(self.noisev1, self.inputv_cond)
@@ -821,8 +835,8 @@ class GAN(object):
                 fake2_n = self.netG2(self.noisev21, self.inputv_cond2)
                 fake=torch.cat([fake_z,fake_n],2)
                 fake2=torch.cat([fake2_z,fake2_n],2)
-                fake_rendered,fd,r,loss = self.render_batch(fake, self.inputv_cond)
-                fake_rendered2,fd2,r2,loss2 = self.render_batch(fake2, self.inputv_cond2)
+                fake_rendered,fd,fn,fwn,r,loss = self.render_batch(fake, self.inputv_cond)
+                fake_rendered2,fd2,fn,fwn2,r2,loss2 = self.render_batch(fake2, self.inputv_cond2)
                 outG_fake = self.netD(fake_rendered, self.inputv_cond)
                 outG_fake_depth = self.netD2(fake_rendered2, self.inputv_cond2)
                 #dot = make_dot(fake)
@@ -841,26 +855,18 @@ class GAN(object):
                     raise ValueError('Unknown GAN criterium')
                 gnorm_G = torch.nn.utils.clip_grad_norm(self.netG.parameters(),
                                                         self.opt.max_gnorm)
-                if self.opt.alt_opt_zn_interval is not None and iteration >= self.opt.alt_opt_zn_start:
-                    # update one of the generators
-                    if (iteration - self.opt.alt_opt_zn_start) % self.opt.alt_opt_zn_interval == 0:
-                        # switch generator vars to optimize
-                        curr_generator_idx = (1 - curr_generator_idx)
-                    self.LR_SCHED_MAP[curr_generator_idx].step()
-                    self.OPT_MAP[curr_generator_idx].step()
-                else:  # update both generators
-                    # Update step size
+
+                if iteration < 10000:
                     self.optG_z_lr_scheduler.step()
                     self.optG2_normal_lr_scheduler.step()
-
-                    self.optimizerG.step()
-                    self.optimizerG2.step()
+                self.optimizerG.step()
+                self.optimizerG2.step()
 
                 # Log print
                 mse_criterion = nn.MSELoss().cuda()
 
-                if iteration % self.opt.print_interval == 0:
-                    fake_rendered_cond2,fd2,r2,loss3 = self.render_batch(fake, self.inputv_cond)
+                if iteration % 5 == 0:
+                    fake_rendered_cond2,fd2,fn2,fwn2,r2,loss3 = self.render_batch(fake, self.inputv_cond)
                     l2_loss=mse_criterion(fd2, self.inputv_depth)
                     Wassertein_D = (errD_real.data[0] - errD_fake.data[0])
                     Wassertein_D_depth = (errD_real_depth.data[0] - errD_fake_depth.data[0])
@@ -884,41 +890,25 @@ class GAN(object):
                         self.exp.metric("Wassertein D", Wassertein_D)
 
                 # Save images
-                if iteration % self.opt.save_image_interval == 0:
+                if iteration % 20 == 0:
+                    cs=tch_var_f(contrast_stretch_percentile(get_data(fd),  200, [fd.data.min(), fd.data.max()]))
                     torchvision.utils.save_image(self.inputv.data, os.path.join(self.opt.out_dir,  'input_%d.png' % (iteration)), nrow=2, normalize=True, scale_each=True)
+                    torchvision.utils.save_image(self.inputv_normal.data, os.path.join(self.opt.out_dir,  'input_normal%d.png' % (iteration)), nrow=2, normalize=True, scale_each=True)
                     torchvision.utils.save_image(fake_rendered.data, os.path.join(self.opt.out_dir,  'output_%d.png' % (iteration)), nrow=2, normalize=True, scale_each=True)
                     torchvision.utils.save_image(self.inputv_depth.data, os.path.join(self.opt.out_dir,  'input_depth%d.png' % (iteration)), nrow=2, normalize=True, scale_each=True)
                     torchvision.utils.save_image(fd.data, os.path.join(self.opt.out_dir,  'output_depth%d.png' % (iteration)), nrow=2, normalize=True, scale_each=True)
+                    torchvision.utils.save_image(fn.data, os.path.join(self.opt.out_dir,  'output_normal%d.png' % (iteration)), nrow=2, normalize=True, scale_each=True)
+                    torchvision.utils.save_image(fwn.data, os.path.join(self.opt.out_dir,  'output_world_normal%d.png' % (iteration)), nrow=2, normalize=True, scale_each=True)
+                    torchvision.utils.save_image(cs.data, os.path.join(self.opt.out_dir,  'output_depth_cs%d.png' % (iteration)), nrow=2, normalize=True, scale_each=True)
+
 
 
 
                 # Do checkpointing
-                if iteration % self.opt.save_interval == 0:
+                if iteration % 2000 == 0:
                     self.save_networks(iteration)
 
-            # if iteration % 500 == 0:
-            #     from diffrend.numpy.ops import sph2cart_vec as np_sph2cart
-            #     #fake = self.netG(self.noisev,self.inputv_cond)
-            #     #fake_rendered = self.render_batch(fake,self.inputv_cond)
-            #     phi = np.linspace(np.deg2rad(5), np.deg2rad(90), 100)
-            #     theta = np.ones_like(phi) * np.deg2rad(45)
-            #     cam_dist_vec = np.ones_like(phi) * self.opt.cam_dist
-            #     cam_pos = np_sph2cart(np.stack((cam_dist_vec, phi, theta), axis=1))
-            #     #cam_pos = np.split(cam_pos, 100 / 4)
-            #     #for sub_batch in cam_pos:
-            #     noise = torch.FloatTensor(int(self.opt.nz), 1, 1).cuda()
-            #     noise.resize_( int(self.opt.nz), 1, 1).normal_(0, 1)
-            #     #import ipdb;ipdb.set_trace()
-            #     noise=noise.repeat(100,1,1,1)
-            #     #import ipdb;ipdb.set_trace()
-            #     noise = Variable(noise)
-            #     #import ipdb; ipdb.set_trace()
-            #     fake = self.netG(noise,tch_var_f(cam_pos))
-            #     fake_rendered = self.render_batch(fake,tch_var_f(cam_pos))
-            #     torchvision.utils.save_image(fake_rendered.data, os.path.join(self.opt.out_dir,  'smooth_%d.png' % (iteration)), nrow=10, normalize=True, scale_each=True)
-            #     for i in range(100):
-            #         torchvision.utils.save_image(fake_rendered[i].data, os.path.join(self.opt.out_dir,  'smooth_ind_%d_%d.png' % (iteration,i)), nrow=1, normalize=True, scale_each=True)
-            #
+            
 
     def save_networks(self, epoch):
         """Save networks to hard disk."""
