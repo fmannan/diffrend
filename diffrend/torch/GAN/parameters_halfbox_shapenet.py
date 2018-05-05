@@ -37,28 +37,30 @@ class Parameters():
         elif username == 'sai' or username == 'root':
             #default_root = '/data/lisa/data/ShapeNetCore.v2'
             #default_root = '/home/dvazquez/datasets/shapenet/ShapeNetCore.v2'
-            default_root = '/home/sai/attenuation/diffrend/data/sphere_halfbox'
+            default_root = '/home/sai/attenuation/diffrend/data/cube'
             default_out = './output'
         else:
             raise ValueError('Add the route for the dataset of your system')
 
         # Dataset parameters
-        self.parser.add_argument('--dataset', type=str, default='objects_folder',
+        self.parser.add_argument('--dataset', type=str, default='objects_folder_multi',
                                  help='dataset name: [shapenet, objects_folder, objects_folder]')#laptop,pistol
         #self.parser.add_argument('--dataset', type=str, default='objects_folder', help='dataset name: [shapenet, objects_folder]')
         self.parser.add_argument('--root_dir', type=str, default=default_root, help='dataset root directory')
         self.parser.add_argument('--synsets', type=str, default='', help='Synsets from the shapenet dataset to use')
-        self.parser.add_argument('--classes', type=str, default='motorcycle', help='Classes from the shapenet dataset to use')#,cap,can,laptop
-        self.parser.add_argument('--workers', type=int, default=1, help='number of data loading workers')
+        self.parser.add_argument('--classes', type=str, default='bowl', help='Classes from the shapenet dataset to use')#,cap,can,laptop
+        self.parser.add_argument('--workers', type=int, default=0, help='number of data loading workers')
+        self.parser.add_argument('--light_change', type=int, default=2000, help='number of data loading workers')
         self.parser.add_argument('--toy_example', action='store_true', default=False, help='Use toy example')
         self.parser.add_argument('--use_old_sign', action='store_true', default=True, help='Use toy example')
-        self.parser.add_argument('--use_quartic', action='store_true', default=True, help='Use toy example')
+        self.parser.add_argument('--use_quartic', action='store_true', default=False, help='Use toy example')
         self.parser.add_argument('--use_penality', action='store_true', default=True, help='Use toy example')
         self.parser.add_argument('--use_mesh', action='store_true', default=True, help='Render dataset with meshes')
         self.parser.add_argument('--gen_model_path', type=str, default=None, help='dataset root directory')
         self.parser.add_argument('--dis_model_path', type=str, default=None, help='dataset root directory')
         self.parser.add_argument('--dis_model_path2', type=str, default=None, help='dataset root directory')
         self.parser.add_argument('--bg_model', type=str, default='../../../data/halfbox.obj', help='Background model path')
+        self.parser.add_argument('--gz_gi_loss', type=float, default=0.0,help='grad z and grad img consistency.')
         # corresponding folders: 02691156, 03759954
 
         # other low-footprint objects:
@@ -75,18 +77,19 @@ class Parameters():
         # Network parameters
         self.parser.add_argument('--gen_type', type=str, default='dcgan', help='One of: mlp, cnn, dcgan, resnet') # try resnet :)
         self.parser.add_argument('--gen_norm', type=str, default='batchnorm', help='One of: None, batchnorm, instancenorm')
-        self.parser.add_argument('--ngf', type=int, default=80, help='number of features in the generator network')
+        self.parser.add_argument('--ngf', type=int, default=85, help='number of features in the generator network')
         self.parser.add_argument('--gen_nextra_layers', type=int, default=0, help='number of extra layers in the generator network')
         self.parser.add_argument('--gen_bias_type', type=str, default=None, help='One of: None, plane')
         self.parser.add_argument('--netG', default='', help="path to netG (to continue training)")
         self.parser.add_argument('--fix_splat_pos', action='store_true', default=True, help='X and Y coordinates are fix')
+        self.parser.add_argument('--use_zloss', action='store_true', default=False, help='use Z loss')
         self.parser.add_argument('--norm_sph_coord', action='store_true', default=True, help='Use spherical coordinates for the normal')
         self.parser.add_argument('--max_gnorm', type=float, default=400., help='max grad norm to which it will be clipped (if exceeded)')
         self.parser.add_argument('--disc_type', type=str, default='dcgan', help='One of: cnn, dcgan')
         self.parser.add_argument('--disc_norm', type=str, default='None', help='One of: None, batchnorm, instancenorm')
-        self.parser.add_argument('--ndf', type=int, default=75, help='number of features in the discriminator network')
+        self.parser.add_argument('--ndf', type=int, default=85, help='number of features in the discriminator network')
         self.parser.add_argument('--disc_nextra_layers', type=int, default=0, help='number of extra layers in the discriminator network')
-        self.parser.add_argument('--nz', type=int, default=200, help='size of the latent z vector')
+        self.parser.add_argument('--nz', type=int, default=128, help='size of the latent z vector')
         self.parser.add_argument('--netD', default='', help="path to netD (to continue training)")
 
         # Optimization parameters
@@ -94,6 +97,7 @@ class Parameters():
         self.parser.add_argument('--lr', type=float, default=0.0001, help='learning rate, default=0.0002')
         self.parser.add_argument('--lr_sched_type', type=str, default='step', help='Learning rate scheduler type.')
         self.parser.add_argument('--z_lr_sched_step', type=int, default=100000, help='Learning rate schedule for z.')
+        self.parser.add_argument('--lr_iter', type=int, default=10000, help='Learning rate operation iterations')
         self.parser.add_argument('--normal_lr_sched_step', type=int, default=100000, help='Learning rate schedule for '
                                                                                           'normal.')
         self.parser.add_argument('--z_lr_sched_gamma', type=float, default=1.0, help='Learning rate gamma for z.')
@@ -106,9 +110,8 @@ class Parameters():
                                  help='Alternating optimization start interation. [-1: starts immediately,'
                                       '100: starts alternating after the first 100 iterations.')
         self.parser.add_argument('--beta1', type=float, default=0.0, help='beta1 for adam. default=0.5')
-        self.parser.add_argument('--n_iter', type=int, default=40000, help='number of iterations to train')
+        self.parser.add_argument('--n_iter', type=int, default=40201, help='number of iterations to train')
         self.parser.add_argument('--batchSize', type=int, default=4, help='input batch size')
-        self.parser.add_argument('--gz_gi_loss', type=float, help='grad z and grad img consistency.')
 
         # GAN parameters
         self.parser.add_argument("--criterion", help="GAN Training criterion", choices=['GAN', 'WGAN'], default='WGAN')
@@ -129,8 +132,8 @@ class Parameters():
         self.parser.add_argument('--height', type=int, default=128)
         self.parser.add_argument('--cam_dist', type=float, default=3.0, help='Camera distance from the center of the object')
         self.parser.add_argument('--nv', type=int, default=10, help='Number of views to generate')
-        self.parser.add_argument('--angle', type=int,  default=40,help='cam angle')
-        self.parser.add_argument('--fovy', type=float, default=60, help='Field of view in the vertical direction. Default: 15.0')
+        self.parser.add_argument('--angle', type=int,  default=35,help='cam angle')
+        self.parser.add_argument('--fovy', type=float, default=20, help='Field of view in the vertical direction. Default: 15.0')
         self.parser.add_argument('--focal_length', type=float, default=0.1, help='focal length')
         self.parser.add_argument('--theta', nargs=2, type=float, default=None, help='Angle in degrees from the z-axis.')
         self.parser.add_argument('--phi', nargs=2, type=float, default=None, help='Angle in degrees from the x-axis.')
@@ -150,7 +153,6 @@ class Parameters():
         self.parser.add_argument('--render_img_size', type=int, default=128, help='Width/height of the rendering image')
         self.parser.add_argument('--splats_radius', type=float, default=0.05, help='radius of the splats (fix)')
         self.parser.add_argument('--same_view', action='store_true', help='data with view fixed') # before we add conditioning on cam pose, this is necessary
-
         self.parser.add_argument('--print_interval', type=int, default=5, help='Print loss interval.')
         self.parser.add_argument('--save_image_interval', type=int, default=20, help='Save image interval.')
         self.parser.add_argument('--save_interval', type=int, default=2000, help='Save state interval.')
