@@ -41,6 +41,7 @@ def copy_scripts_to_folder(expr_dir):
     shutil.copy("twin_networks.py", expr_dir)
     shutil.copy("../params.py", expr_dir)
     shutil.copy("../renderer.py", expr_dir)
+    shutil.copy("objects_folder_multi.py", expr_dir)
     shutil.copy("parameters_halfbox_shapenet.py", expr_dir)
     shutil.copy(__file__, expr_dir)
 
@@ -276,6 +277,9 @@ class GAN(object):
                                         step_size=self.opt.normal_lr_sched_step,
                                         gamma=self.opt.normal_lr_sched_gamma)
 
+        self.LR_SCHED_MAP = [self.optG_z_lr_scheduler, self.optG2_normal_lr_scheduler]
+        self.OPT_MAP = [self.optimizerG, self.optimizerG2]
+
     def get_samples(self):
         """Get samples."""
         if not self.opt.toy_example:
@@ -332,11 +336,13 @@ class GAN(object):
                             'triangle': {'face': None, 'normal': None,
                                          'material_idx': None}}
 
-                    # TODO: Solve this hack!!!!!!
-                    while True:
-                        samples = self.get_samples()
-                        if samples['mesh']['face'][0].size(0) <= 3000:
-                            break
+                    samples = self.get_samples()
+
+                    # # TODO: Solve this hack!!!!!!
+                    # while True:
+                    #     samples = self.get_samples()
+                    #     if samples['mesh']['face'][0].size(0) <= 3000:
+                    #         break
                     # print (samples['mesh']['face'][0].size())
                     large_scene['objects']['triangle']['material_idx'] = tch_var_l(
                         np.zeros(samples['mesh']['face'][0].shape[0], dtype=int).tolist())
@@ -431,12 +437,12 @@ class GAN(object):
                         large_scene['objects'] = {
                             'triangle': {'face': None, 'normal': None,
                                          'material_idx': None}}
-
-                    # TODO: Solve this hack!!!!!!
-                    while True:
-                        samples = self.get_samples()
-                        if samples['mesh']['face'][0].size(0) <= 3000:
-                            break
+                    samples = self.get_samples()
+                    # # TODO: Solve this hack!!!!!!
+                    # while True:
+                    #     samples = self.get_samples()
+                    #     if samples['mesh']['face'][0].size(0) <= 3000:
+                    #         break
                     # print (samples['mesh']['face'][0].size())
                     large_scene['objects']['triangle']['material_idx'] = tch_var_l(
                         np.zeros(samples['mesh']['face'][0].shape[0], dtype=int).tolist())
@@ -592,11 +598,14 @@ class GAN(object):
                 # TODO: Thanh here?
 
                 eps=1e-3
-                z = -(F.relu(batch[idx][:, :1]) + z_min)
-                #z = batch[idx][:, :1]
-                #z = (z - z.min()) / (z.max() - z.min() + eps) * (z_max - z_min) + z_min
-                pos = torch.cat([pos, z], 1)
-                loss += torch.mean(F.relu(z_min - torch.abs(z))**2 + F.relu(torch.abs(z) - z_max)**2)
+                #z = (F.relu(batch[idx][:, :1]) + z_min)
+                z = batch[idx][:, :1]
+                if self.opt.use_zloss:
+                    loss += torch.mean(F.relu(z_min - torch.abs(z))**2 + F.relu(torch.abs(z) - z_max)**2)
+                else:
+                    z = (z - z.min()) / (z.max() - z.min() + eps) * (z_max - z_min) + z_min
+                pos = torch.cat([pos, -z], 1)
+
 
                 if self.opt.norm_sph_coord:
                     # TODO: Sigmoid here?
@@ -657,7 +666,7 @@ class GAN(object):
                 im_d = depth.unsqueeze(0)
                 im = res['image'].permute(2, 0, 1)
 
-                target_normal_ = get_data(res['normal']).reshape((H, W, 3))
+                target_normal_ = get_data(res['normal'])
                 target_normalmap_img_ = get_normalmap_image(target_normal_)
                 im_n=tch_var_f(target_normalmap_img_).permute(2, 0, 1)
 
@@ -691,7 +700,7 @@ class GAN(object):
                 #         fid.write('{}\n'.format(' '.join([str(x) for x in pos_normal[sub_idx]])))
 
 
-                pos_normal = torch.cat([res['pos'],res['normal']],1)
+                pos_normal = torch.cat([res['pos'],res['normal'].view(-1, 3)],1)
                 pos_normal = get_data(pos_normal)
                 filename_prefix="input"
                 with open(inpath+ str(self.iterationa_no)+ 'withnormal_{:05d}.xyz'.format(idx), 'w') as fid2:
@@ -855,17 +864,25 @@ class GAN(object):
                     raise ValueError('Unknown GAN criterium')
                 gnorm_G = torch.nn.utils.clip_grad_norm(self.netG.parameters(),
                                                         self.opt.max_gnorm)
-
-                if iteration < 10000:
-                    self.optG_z_lr_scheduler.step()
-                    self.optG2_normal_lr_scheduler.step()
-                self.optimizerG.step()
-                self.optimizerG2.step()
+                if self.opt.alt_opt_zn_interval is not None and iteration >= self.opt.alt_opt_zn_start:
+                    # update one of the generators
+                    if (iteration - self.opt.alt_opt_zn_start) % self.opt.alt_opt_zn_interval == 0:
+                        # switch generator vars to optimize
+                        curr_generator_idx = (1 - curr_generator_idx)
+                    if iteration < self.opt.lr_iter:
+                        self.LR_SCHED_MAP[curr_generator_idx].step()
+                        self.OPT_MAP[curr_generator_idx].step()
+                else:
+                    if iteration < self.opt.lr_iter:
+                        self.optG_z_lr_scheduler.step()
+                        self.optG2_normal_lr_scheduler.step()
+                    self.optimizerG.step()
+                    self.optimizerG2.step()
 
                 # Log print
                 mse_criterion = nn.MSELoss().cuda()
 
-                if iteration % 5 == 0:
+                if iteration % self.opt.print_interval == 0:
                     fake_rendered_cond2,fd2,fn2,fwn2,r2,loss3 = self.render_batch(fake, self.inputv_cond)
                     l2_loss=mse_criterion(fd2, self.inputv_depth)
                     Wassertein_D = (errD_real.data[0] - errD_fake.data[0])
@@ -890,7 +907,7 @@ class GAN(object):
                         self.exp.metric("Wassertein D", Wassertein_D)
 
                 # Save images
-                if iteration % 20 == 0:
+                if iteration % self.opt.save_image_interval == 0:
                     cs=tch_var_f(contrast_stretch_percentile(get_data(fd),  200, [fd.data.min(), fd.data.max()]))
                     torchvision.utils.save_image(self.inputv.data, os.path.join(self.opt.out_dir,  'input_%d.png' % (iteration)), nrow=2, normalize=True, scale_each=True)
                     torchvision.utils.save_image(self.inputv_normal.data, os.path.join(self.opt.out_dir,  'input_normal%d.png' % (iteration)), nrow=2, normalize=True, scale_each=True)
@@ -905,10 +922,10 @@ class GAN(object):
 
 
                 # Do checkpointing
-                if iteration % 2000 == 0:
+                if iteration % self.opt.save_interval == 0:
                     self.save_networks(iteration)
 
-            
+
 
     def save_networks(self, epoch):
         """Save networks to hard disk."""
