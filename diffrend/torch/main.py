@@ -1,7 +1,7 @@
 from diffrend.torch.params import SCENE_BASIC, SCENE_1, SCENE_2
 from diffrend.torch.renderer import render, render_splats_NDC, render_splats_along_ray
 from diffrend.torch.utils import (tch_var_f, tch_var_l, CUDA, get_data, get_normalmap_image, world_to_cam,
-                                  normalize, unit_norm2_L2loss, normalize_maxmin)
+cam_to_world, normalize, unit_norm2_L2loss, normalize_maxmin)
 import torch.nn as nn
 from torch import optim
 import torch.nn.functional as F
@@ -464,6 +464,17 @@ def optimize_splats_along_ray_shadow_test(out_dir, width=32, height=32, max_iter
 
     # world -> cam -> render_splats_along_ray
     cc_tform = world_to_cam(target_res['pos'].view((-1, 3)), target_res['normal'].view((-1, 3)), scene['camera'])
+    wc_cc_tform = cam_to_world(cc_tform['pos'], cc_tform['normal'], scene['camera'])
+
+    pos_diff = torch.abs(wc_cc_tform['pos'][:, :3] - target_res['pos'].view((-1, 3)))
+    mean_pos_diff = torch.mean(pos_diff)
+    normal_diff = torch.abs(wc_cc_tform['normal'][:, :3] - target_res['normal'].view(-1, 3))
+    mean_normal_diff = torch.mean(normal_diff)
+    print('mean_pos_diff', mean_pos_diff, 'mean_normal_diff', mean_normal_diff)
+
+    wc_cc_normal = wc_cc_tform['normal'].view(target_im_.shape)
+    wc_cc_normal_img = get_normalmap_image(get_data(wc_cc_normal))
+
     material_idx = tch_var_l(np.ones(cc_tform['pos'].shape[0]) * 3)
     input_scene = copy.deepcopy(scene)
     del input_scene['objects']['sphere']
@@ -476,11 +487,14 @@ def optimize_splats_along_ray_shadow_test(out_dir, width=32, height=32, max_iter
                                        'light_vis': light_vis,
                                        }
                               }
-    res = render_splats_along_ray(input_scene, use_old_sign=False)
+    target_res_noshadow = render(scene, tiled=True, shadow=False)
+    res = render_splats_along_ray(input_scene)
     test_img_ = get_data(normalize_maxmin(res['image']))
     test_depth_ = get_data(res['depth'])
     test_normal_ = get_data(res['normal']).reshape(test_img_.shape)
     test_normalmap_ = get_normalmap_image(test_normal_)
+    im_diff = np.abs(test_img_ - get_data(normalize_maxmin(target_res_noshadow['image'])))
+    print('mean image diff: {}'.format(np.mean(im_diff)))
     #### PLOT
     plt.ion()
     plt.figure()
@@ -511,6 +525,11 @@ def optimize_splats_along_ray_shadow_test(out_dir, width=32, height=32, max_iter
     plt.imshow(target_normalmap_img_, interpolation='none')
     plt.title('Normals')
     plt.savefig(out_dir + '/normal.png')
+
+    plt.figure()
+    plt.imshow(wc_cc_normal_img, interpolation='none')
+    plt.title('WC_CC Normals')
+    plt.savefig(out_dir + '/wc_cc_normal.png')
 
     input_scene = copy.deepcopy(scene)
     del input_scene['objects']['sphere']
@@ -558,7 +577,7 @@ def optimize_splats_along_ray_shadow_test(out_dir, width=32, height=32, max_iter
                                            'light_vis': torch.sigmoid(light_vis),
                                            }
                                   }
-        res = render_splats_along_ray(input_scene, use_old_sign=True)
+        res = render_splats_along_ray(input_scene)
         im_out = normalize_maxmin(res['image'])
         res_depth_ = get_data(res['depth'])
 
