@@ -18,7 +18,7 @@ import torchvision
 from diffrend.torch.GAN.datasets import Dataset_load
 from diffrend.torch.GAN.two_networks import create_networks
 from diffrend.torch.GAN.parameters_halfbox_shapenet import Parameters
-from diffrend.torch.GAN.utils import make_dot
+#from diffrend.torch.GAN.utils import make_dot
 from diffrend.torch.params import SCENE_BASIC, SCENE_SPHERE_HALFBOX
 from diffrend.torch.utils import tch_var_f, tch_var_l, where, get_data, normalize, cam_to_world
 from diffrend.torch.renderer import render, render_splats_NDC, render_splats_along_ray

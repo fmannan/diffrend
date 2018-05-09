@@ -1,4 +1,4 @@
-from graphviz import Digraph
+#from graphviz import Digraph
 import torch
 from torch.autograd import Variable
 

@@ -19,7 +19,7 @@ import torchvision
 from diffrend.torch.GAN.datasets import Dataset_load
 from diffrend.torch.GAN.twin_networks import create_networks
 from diffrend.torch.GAN.parameters_halfbox_shapenet import Parameters
-from diffrend.torch.GAN.utils import make_dot
+#from diffrend.torch.GAN.utils import make_dot
 from diffrend.torch.params import SCENE_BASIC, SCENE_SPHERE_HALFBOX
 from diffrend.torch.utils import tch_var_f, tch_var_l, where, get_data, normalize, cam_to_world, spatial_3x3, grad_spatial2d
 from diffrend.torch.renderer import render, render_splats_NDC, render_splats_along_ray
@@ -383,7 +383,7 @@ class GAN(object):
             light_posi = np.concatenate((y1,b), axis = 1)
 
             #print(light_posi.shape)
-            large_scene['lights']['pos'] = tch_var_f(light_posi)
+            #large_scene['lights']['pos'] = tch_var_f(light_posi)
 
             # Render scene
             view_dir = normalize(large_scene['camera']['at'] - large_scene['camera']['eye'])
@@ -493,7 +493,7 @@ class GAN(object):
             light_posi = np.concatenate((y1,b), axis = 1)
 
             #print(light_posi.shape)
-            large_scene['lights']['pos'] = tch_var_f(light_posi)
+            #large_scene['lights']['pos'] = tch_var_f(light_posi)
 
             # Render scene
             #view_dir = normalize(large_scene['camera']['at'] - large_scene['camera']['eye'])
@@ -656,7 +656,7 @@ class GAN(object):
             y1 = y1.reshape(1,-1)
             b = np.ones((1, 1))
             light_posi = np.concatenate((y1,b), axis = 1)
-            self.scene['lights']['pos'] = tch_var_f(light_posi)
+            #self.scene['lights']['pos'] = tch_var_f(light_posi)
 
             # Render scene
             # res = render_splats_NDC(self.scene)
@@ -693,11 +693,11 @@ class GAN(object):
 
                 target_normal_ = get_data(res['normal'])
                 target_normalmap_img_ = get_normalmap_image(target_normal_)
-                im_n=tch_var_f(target_normalmap_img_).permute(2, 0, 1)
+                im_n=tch_var_f(target_normalmap_img_).view(H, W, 3).permute(2, 0, 1)
 
                 target_worldnormal_ = get_data(world_tform['normal']).reshape((H, W, 3))
                 target_worldnormalmap_img_ = get_normalmap_image(target_normal_)
-                im_wn=tch_var_f(target_worldnormalmap_img_).permute(2, 0, 1)
+                im_wn=tch_var_f(target_worldnormalmap_img_).view(H, W, 3).permute(2, 0, 1)
             if self.iterationa_no % self.opt.save_image_interval == 0:
                 imsave(inpath+ str(self.iterationa_no)+ 'normalmap_{:05d}.png'.format(idx), target_normalmap_img_)
                 imsave(inpath+ str(self.iterationa_no)+ 'world_normalmap_{:05d}.png'.format(idx), target_worldnormalmap_img_)

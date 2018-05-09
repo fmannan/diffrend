@@ -402,7 +402,7 @@ class GAN(object):
 
                 target_normal_ = get_data(res['normal'])
                 target_normalmap_img_ = get_normalmap_image(target_normal_)
-                im_n=tch_var_f(target_normalmap_img_).permute(2, 0, 1)
+                im_n=tch_var_f(target_normalmap_img_).view(im.shape[1], im.shape[2], 3).permute(2, 0, 1)
 
 
             # Add depth image to the output structure
@@ -668,11 +668,11 @@ class GAN(object):
 
                 target_normal_ = get_data(res['normal'])
                 target_normalmap_img_ = get_normalmap_image(target_normal_)
-                im_n=tch_var_f(target_normalmap_img_).permute(2, 0, 1)
+                im_n=tch_var_f(target_normalmap_img_).view(im.shape[1], im.shape[2], 3).permute(2, 0, 1)
 
                 target_worldnormal_ = get_data(world_tform['normal']).reshape((H, W, 3))
                 target_worldnormalmap_img_ = get_normalmap_image(target_normal_)
-                im_wn=tch_var_f(target_worldnormalmap_img_).permute(2, 0, 1)
+                im_wn=tch_var_f(target_worldnormalmap_img_).view(H, W, 3).permute(2, 0, 1)
             if self.iterationa_no % 200 == 0:
                 im2 = get_data(res['image'])
                 depth2 = get_data(res['depth'])
