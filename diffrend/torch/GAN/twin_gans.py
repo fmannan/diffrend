@@ -752,9 +752,9 @@ class GAN(object):
             ))
         file_name = os.path.join(self.opt.out_dir, 'L2.txt')
         with open(file_name, 'wt') as l2_file:
+            curr_generator_idx = 0
             for iteration in range(self.opt.n_iter):
                 self.iterationa_no=iteration
-
                 # Train Discriminator critic_iters times
                 for j in range(self.opt.critic_iters):
                     # Train with real
