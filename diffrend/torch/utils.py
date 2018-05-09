@@ -292,27 +292,7 @@ def lookat(eye, at, up):
     :param up:
     :return:
     """
-    if up.size()[-1] == 4:
-        assert get_data(up)[3] == 0
-        up = up[:3]
-
-    if eye.size()[-1] == 4:
-        assert abs(get_data(eye)[3]) > 0
-        eye = eye[:3] / eye[3]
-
-    if at.size()[-1] == 4:
-        assert abs(get_data(at)[3]) > 0
-        at = at[:3] / at[3]
-
-    z = normalize(eye - at)
-    y = normalize(up)
-    x = normalize(torch.cross(y, z))
-    # The input `up` vector may not be orthogonal to z.
-    y = torch.cross(z, x)
-
-    rot_matrix = torch.stack((x, y, z), dim=1).transpose(1, 0)
-    rot_translate = torch.cat((rot_matrix, -eye[:3][:, np.newaxis]), dim=1)
-    return torch.cat((rot_translate, tch_var_f([0, 0, 0, 1])[np.newaxis, :]), dim=0)
+    return lookat_inv(eye, at, up).inverse()
 
 
 def lookat_inv(eye, at, up):
@@ -323,8 +303,9 @@ def lookat_inv(eye, at, up):
     :return: 4x4 inverse lookat matrix
     """
     rot_matrix = lookat_rot_inv(eye, at, up)
-    rot_translate = torch.cat((rot_matrix, torch.mm(rot_matrix, eye[:, np.newaxis])), dim=1)
+    rot_translate = torch.cat((rot_matrix, eye[:3][:, np.newaxis]), dim=1)
     return torch.cat((rot_translate, tch_var_f([0, 0, 0, 1.])[np.newaxis, :]), dim=0)
+
 
 
 def lookat_rot_inv(eye, at, up):
@@ -335,15 +316,15 @@ def lookat_rot_inv(eye, at, up):
     :return: 4x4 inverse lookat matrix
     """
     if up.size()[-1] == 4:
-        assert up.data.numpy()[3] == 0
+        assert get_data(up)[3] == 0
         up = up[:3]
 
     if eye.size()[-1] == 4:
-        assert abs(eye.data.numpy()[3]) > 0
+        assert abs(get_data(eye)[3]) > 0
         eye = eye[:3] / eye[3]
 
     if at.size()[-1] == 4:
-        assert abs(at.data.numpy()[3]) > 0
+        assert abs(get_data(at)[3]) > 0
         at = at[:3] / at[3]
 
     z = normalize(eye - at)
@@ -552,7 +533,7 @@ def cam_to_world(pos, normal, camera):
     if normal is not None:
         view_matrix = lookat(eye=eye, at=at, up=up)
         normal_CC = normal[:, :3]
-        normal_WC = torch.mm(normal_CC, view_matrix.transpose(1, 0)[:3, :3])
+        normal_WC = torch.mm(normal_CC, view_matrix[:3, :3])
 
     return {'pos': pos_WC, 'normal': normal_WC}
 
