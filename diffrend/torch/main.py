@@ -645,13 +645,15 @@ def optimize_splats_along_ray_shadow_test(out_dir, width=32, height=32, max_iter
             plt.axis('off')
             plt.imshow(light_vis_[0].reshape((H, W)), interpolation='none')
 
-            plt.subplot(gs1[7])
-            plt.axis('off')
-            plt.imshow(light_vis_[1].reshape((H, W)), interpolation='none')
+            if(light_vis_.shape[0] > 1):
+                plt.subplot(gs1[7])
+                plt.axis('off')
+                plt.imshow(light_vis_[1].reshape((H, W)), interpolation='none')
 
-            plt.subplot(gs1[8])
-            plt.axis('off')
-            plt.imshow(light_vis_[2].reshape((H, W)), interpolation='none')
+            if (light_vis_.shape[0] > 2):
+                plt.subplot(gs1[8])
+                plt.axis('off')
+                plt.imshow(light_vis_[2].reshape((H, W)), interpolation='none')
 
 
             plt.savefig(out_dir + '/fig_%05d.png' % iter)
@@ -777,4 +779,5 @@ if __name__ == '__main__':
 
     if args.opt_ray_shadow_test:
         optimize_splats_along_ray_shadow_test(out_dir=args.out_dir, width=args.width, height=args.height,
-                                       max_iter=args.max_iter, lr=args.lr, print_interval=args.print_interval)
+                                              vis_only=False, max_iter=args.max_iter, lr=args.lr,
+                                              print_interval=args.print_interval)
