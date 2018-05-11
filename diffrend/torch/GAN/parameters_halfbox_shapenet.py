@@ -37,8 +37,8 @@ class Parameters():
         elif username == 'sai' or username == 'root':
             #default_root = '/data/lisa/data/ShapeNetCore.v2'
             #default_root = '/home/dvazquez/datasets/shapenet/ShapeNetCore.v2'
-            default_root = '/home/sai/attenuation/diffrend/data/cube'
-            default_out = './output'
+            default_root = '/home/sai/attenuation/diffrend/data/sphere'
+            default_out = './output_7_05'
         else:
             raise ValueError('Add the route for the dataset of your system')
 
@@ -54,13 +54,16 @@ class Parameters():
         self.parser.add_argument('--toy_example', action='store_true', default=False, help='Use toy example')
         self.parser.add_argument('--use_old_sign', action='store_true', default=True, help='Use toy example')
         self.parser.add_argument('--use_quartic', action='store_true', default=False, help='Use toy example')
+        self.parser.add_argument('--rotate_foreground', action='store_true', default=False, help='Use toy example')
         self.parser.add_argument('--use_penality', action='store_true', default=True, help='Use toy example')
         self.parser.add_argument('--use_mesh', action='store_true', default=True, help='Render dataset with meshes')
         self.parser.add_argument('--gen_model_path', type=str, default=None, help='dataset root directory')
+        self.parser.add_argument('--gen_model_path2', type=str, default=None, help='dataset root directory')
         self.parser.add_argument('--dis_model_path', type=str, default=None, help='dataset root directory')
         self.parser.add_argument('--dis_model_path2', type=str, default=None, help='dataset root directory')
         self.parser.add_argument('--bg_model', type=str, default='../../../data/halfbox.obj', help='Background model path')
         self.parser.add_argument('--gz_gi_loss', type=float, default=0.0,help='grad z and grad img consistency.')
+        self.parser.add_argument('--pixel_samples', type=int, default=1, help="Samples per pixel.")
         # corresponding folders: 02691156, 03759954
 
         # other low-footprint objects:
@@ -110,7 +113,7 @@ class Parameters():
                                  help='Alternating optimization start interation. [-1: starts immediately,'
                                       '100: starts alternating after the first 100 iterations.')
         self.parser.add_argument('--beta1', type=float, default=0.0, help='beta1 for adam. default=0.5')
-        self.parser.add_argument('--n_iter', type=int, default=40201, help='number of iterations to train')
+        self.parser.add_argument('--n_iter', type=int, default=35201, help='number of iterations to train')
         self.parser.add_argument('--batchSize', type=int, default=4, help='input batch size')
 
         # GAN parameters
@@ -132,7 +135,7 @@ class Parameters():
         self.parser.add_argument('--height', type=int, default=128)
         self.parser.add_argument('--cam_dist', type=float, default=3.0, help='Camera distance from the center of the object')
         self.parser.add_argument('--nv', type=int, default=10, help='Number of views to generate')
-        self.parser.add_argument('--angle', type=int,  default=35,help='cam angle')
+        self.parser.add_argument('--angle', type=int,  default=45,help='cam angle')
         self.parser.add_argument('--fovy', type=float, default=20, help='Field of view in the vertical direction. Default: 15.0')
         self.parser.add_argument('--focal_length', type=float, default=0.1, help='focal length')
         self.parser.add_argument('--theta', nargs=2, type=float, default=None, help='Angle in degrees from the z-axis.')
@@ -149,13 +152,12 @@ class Parameters():
 
         # Rendering parameters
         self.parser.add_argument('--splats_img_size', type=int, default=128, help='the height / width of the number of generator splats')
-        self.parser.add_argument('--pixel_samples', type=int, default=1, help="Samples per pixel.")
         self.parser.add_argument('--render_type', type=str, default='img', help='render the image or the depth map [img, depth]')
         self.parser.add_argument('--render_img_size', type=int, default=128, help='Width/height of the rendering image')
         self.parser.add_argument('--splats_radius', type=float, default=0.05, help='radius of the splats (fix)')
         self.parser.add_argument('--same_view', action='store_true', help='data with view fixed') # before we add conditioning on cam pose, this is necessary
         self.parser.add_argument('--print_interval', type=int, default=5, help='Print loss interval.')
-        self.parser.add_argument('--save_image_interval', type=int, default=20, help='Save image interval.')
+        self.parser.add_argument('--save_image_interval', type=int, default=50, help='Save image interval.')
         self.parser.add_argument('--save_interval', type=int, default=2000, help='Save state interval.')
 
     def parse(self):

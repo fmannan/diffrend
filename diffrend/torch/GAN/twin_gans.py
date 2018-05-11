@@ -13,6 +13,7 @@ import torch.optim as optim
 import torch.utils.data
 from torch.autograd import Variable
 import torch.nn.functional as F
+from imageio import imsave
 import shutil
 import torchvision
 from diffrend.torch.GAN.datasets import Dataset_load
@@ -198,12 +199,10 @@ class GAN(object):
             self.opt.batchSize, 3)
         self.noise = torch.FloatTensor(
             self.opt.batchSize, int(self.opt.nz), 1, 1)
-        self.noise1 = torch.FloatTensor(
-            self.opt.batchSize, int(self.opt.nz), 1, 1)
+
         self.noise2 = torch.FloatTensor(
             self.opt.batchSize, int(self.opt.nz), 1, 1)
-        self.noise21 = torch.FloatTensor(
-            self.opt.batchSize, int(self.opt.nz), 1, 1)
+
         self.fixed_noise = torch.FloatTensor(
             self.opt.batchSize, int(self.opt.nz), 1, 1).normal_(0, 1)
         self.fixed_noise2 = torch.FloatTensor(
@@ -221,10 +220,10 @@ class GAN(object):
             self.input_cond2 = self.input_cond2.cuda()
             self.label = self.label.cuda()
             self.noise = self.noise.cuda()
-            self.noise1 = self.noise1.cuda()
+
             self.fixed_noise = self.fixed_noise.cuda()
             self.noise2 = self.noise2.cuda()
-            self.noise21 = self.noise21.cuda()
+
             self.fixed_noise2 = self.fixed_noise2.cuda()
             self.one = self.one.cuda()
             self.mone = self.mone.cuda()
@@ -323,6 +322,7 @@ class GAN(object):
         data_depth = []
         data_normal = []
         data_cond=[]
+        inpath=self.opt.out_dir+'/'
         for idx in range(self.opt.batchSize):
             # Save the splats into the rendering scene
             if not self.opt.toy_example:
@@ -402,10 +402,13 @@ class GAN(object):
 
                 target_normal_ = get_data(res['normal'])
                 target_normalmap_img_ = get_normalmap_image(target_normal_)
-                im_n=tch_var_f(target_normalmap_img_).view(im.shape[1], im.shape[2], 3).permute(2, 0, 1)
+                im_n=tch_var_f(target_normalmap_img_).permute(2, 0, 1)
 
 
             # Add depth image to the output structure
+            if self.iterationa_no % self.opt.save_image_interval == 0:
+                imsave(inpath+ str(self.iterationa_no)+ 'real_normalmap_{:05d}.png'.format(idx), target_normalmap_img_)
+                #imsave(inpath+ str(self.iterationa_no)+ 'world_normalmap_{:05d}.png'.format(idx), target_worldnormalmap_img_)
             data.append(im)
             data_depth.append(im_d)
             data_normal.append(im_n)
@@ -532,19 +535,15 @@ class GAN(object):
 
     def generate_noise_vector(self, ):
         """Generate a noise vector."""
-        # fm: Why are there multiple noises?
         self.noise.resize_(
             self.batch_size, int(self.opt.nz), 1, 1).normal_(0, 1)
         self.noisev = Variable(self.noise)  # TODO: Add volatile=True???
-        self.noise1.resize_(
-            self.batch_size, int(self.opt.nz), 1, 1).normal_(0, 1)
-        self.noisev1 = Variable(self.noise1)  # TODO: Add volatile=True???
+
+
         self.noise2.resize_(
             self.batch_size, int(self.opt.nz), 1, 1).normal_(0, 1)
         self.noisev2 = Variable(self.noise2)  # TODO: Add volatile=True???
-        self.noise21.resize_(
-            self.batch_size, int(self.opt.nz), 1, 1).normal_(0, 1)
-        self.noisev21 = Variable(self.noise21)  # TODO: Add volatile=True???
+
 
 
 
@@ -601,10 +600,10 @@ class GAN(object):
                 eps=1e-3
                 #z = (F.relu(batch[idx][:, :1]) + z_min)
                 z = batch[idx][:, :1]
-                if self.opt.use_zloss:
-                    loss += torch.mean(F.relu(z_min - torch.abs(z))**2 + F.relu(torch.abs(z) - z_max)**2)
-                else:
-                    z = (z - z.min()) / (z.max() - z.min() + eps) * (z_max - z_min) + z_min
+                z = (z - z.min()) / (z.max() - z.min() + eps) * (z_max - z_min) + z_min
+
+                #loss += 0.5*(torch.mean(F.relu(z_min - torch.abs(z))**2 + F.relu(torch.abs(z) - z_max)**2))
+
                 pos = torch.cat([pos, -z], 1)
 
 
@@ -637,6 +636,7 @@ class GAN(object):
             # Render scene
             # res = render_splats_NDC(self.scene)
             res = render_splats_along_ray(self.scene, samples=self.opt.pixel_samples, use_quartic=self.opt.use_quartic)
+
             world_tform = cam_to_world(res['pos'].view((-1, 3)), res['normal'].view((-1, 3)), self.scene['camera'])
 
             # Get rendered output
@@ -654,6 +654,9 @@ class GAN(object):
                 #       (torch.max(depth) - torch.min(depth)))
                 im = depth.unsqueeze(0)
             else:
+                W=128
+                H=128
+
                 depth = res['depth']
                 # Normalize depth image
                 cond = depth >= self.scene['camera']['far']
@@ -664,14 +667,16 @@ class GAN(object):
                 im_d = depth.unsqueeze(0)
                 im = res['image'].permute(2, 0, 1)
                 H, W = im.shape[1:]
-
                 target_normal_ = get_data(res['normal'])
                 target_normalmap_img_ = get_normalmap_image(target_normal_)
-                im_n=tch_var_f(target_normalmap_img_).view(im.shape[1], im.shape[2], 3).permute(2, 0, 1)
+                im_n=tch_var_f(target_normalmap_img_).permute(2, 0, 1)
 
                 target_worldnormal_ = get_data(world_tform['normal']).reshape((H, W, 3))
                 target_worldnormalmap_img_ = get_normalmap_image(target_normal_)
-                im_wn=tch_var_f(target_worldnormalmap_img_).view(H, W, 3).permute(2, 0, 1)
+                im_wn=tch_var_f(target_worldnormalmap_img_).permute(2, 0, 1)
+            if self.iterationa_no % self.opt.save_image_interval == 0:
+                imsave(inpath+ str(self.iterationa_no)+ 'normalmap_{:05d}.png'.format(idx), target_normalmap_img_)
+                imsave(inpath+ str(self.iterationa_no)+ 'world_normalmap_{:05d}.png'.format(idx), target_worldnormalmap_img_)
             if self.iterationa_no % 200 == 0:
                 im2 = get_data(res['image'])
                 depth2 = get_data(res['depth'])
@@ -691,6 +696,10 @@ class GAN(object):
 
                 out_file2 = ("depth"+".npy")
                 np.save(inpath+out_file2,depth2)
+
+                #with open(inpath+ str(self.iterationa_no)+ 'normalmap_{:05d}.png'.format(idx), 'w') as fid2:
+
+
                 # pos_normal = res['pos']
                 # pos_normal = get_data(pos_normal)
                 # filename_prefix="input"
@@ -754,6 +763,7 @@ class GAN(object):
             curr_generator_idx = 0
             for iteration in range(self.opt.n_iter):
                 self.iterationa_no=iteration
+
                 # Train Discriminator critic_iters times
                 for j in range(self.opt.critic_iters):
                     # Train with real
@@ -779,9 +789,9 @@ class GAN(object):
                     #################
                     self.generate_noise_vector()
                     fake_z = self.netG(self.noisev, self.inputv_cond)
-                    fake_n = self.netG2(self.noisev1, self.inputv_cond)
+                    fake_n = self.netG2(self.noisev, self.inputv_cond)
                     fake2_z = self.netG(self.noisev2, self.inputv_cond2)
-                    fake2_n = self.netG2(self.noisev21, self.inputv_cond2)
+                    fake2_n = self.netG2(self.noisev2, self.inputv_cond2)
                     fake=torch.cat([fake_z,fake_n],2)
                     fake2=torch.cat([fake2_z,fake2_n],2)
                     fake_rendered,fd,fn,fwn,r,loss = self.render_batch(fake, self.inputv_cond)
@@ -838,9 +848,9 @@ class GAN(object):
                 self.netG2.zero_grad()
                 self.generate_noise_vector()
                 fake_z = self.netG(self.noisev, self.inputv_cond)
-                fake_n = self.netG2(self.noisev1, self.inputv_cond)
+                fake_n = self.netG2(self.noisev, self.inputv_cond)
                 fake2_z = self.netG(self.noisev2, self.inputv_cond2)
-                fake2_n = self.netG2(self.noisev21, self.inputv_cond2)
+                fake2_n = self.netG2(self.noisev2, self.inputv_cond2)
                 fake=torch.cat([fake_z,fake_n],2)
                 fake2=torch.cat([fake2_z,fake2_n],2)
                 fake_rendered,fd,fn,fwn,r,loss = self.render_batch(fake, self.inputv_cond)
@@ -908,14 +918,20 @@ class GAN(object):
                 # Save images
                 if iteration % self.opt.save_image_interval == 0:
                     cs=tch_var_f(contrast_stretch_percentile(get_data(fd),  200, [fd.data.min(), fd.data.max()]))
-                    torchvision.utils.save_image(self.inputv.data, os.path.join(self.opt.out_dir,  'input_%d.png' % (iteration)), nrow=2, normalize=True, scale_each=True)
-                    torchvision.utils.save_image(self.inputv_normal.data, os.path.join(self.opt.out_dir,  'input_normal%d.png' % (iteration)), nrow=2, normalize=True, scale_each=True)
+                    #torchvision.utils.save_image(self.inputv_normal.data, os.path.join(self.opt.out_dir,  'input_normal%d.png' % (iteration)), nrow=2, normalize=False, scale_each=False)
                     torchvision.utils.save_image(fake_rendered.data, os.path.join(self.opt.out_dir,  'output_%d.png' % (iteration)), nrow=2, normalize=True, scale_each=True)
-                    torchvision.utils.save_image(self.inputv_depth.data, os.path.join(self.opt.out_dir,  'input_depth%d.png' % (iteration)), nrow=2, normalize=True, scale_each=True)
                     torchvision.utils.save_image(fd.data, os.path.join(self.opt.out_dir,  'output_depth%d.png' % (iteration)), nrow=2, normalize=True, scale_each=True)
-                    torchvision.utils.save_image(fn.data, os.path.join(self.opt.out_dir,  'output_normal%d.png' % (iteration)), nrow=2, normalize=True, scale_each=True)
-                    torchvision.utils.save_image(fwn.data, os.path.join(self.opt.out_dir,  'output_world_normal%d.png' % (iteration)), nrow=2, normalize=True, scale_each=True)
+                    #torchvision.utils.save_image(fn.data, os.path.join(self.opt.out_dir,  'output_normal%d.png' % (iteration)), nrow=2, normalize=False, scale_each=False)
+                    #torchvision.utils.save_image(fwn.data, os.path.join(self.opt.out_dir,  'output_world_normal%d.png' % (iteration)), nrow=2, normalize=False, scale_each=False)
                     torchvision.utils.save_image(cs.data, os.path.join(self.opt.out_dir,  'output_depth_cs%d.png' % (iteration)), nrow=2, normalize=True, scale_each=True)
+
+                if iteration % (self.opt.save_image_interval*2) == 0:
+                    cs=tch_var_f(contrast_stretch_percentile(get_data(fd),  200, [fd.data.min(), fd.data.max()]))
+                    torchvision.utils.save_image(self.inputv.data, os.path.join(self.opt.out_dir,  'input_%d.png' % (iteration)), nrow=2, normalize=True, scale_each=True)
+                    #torchvision.utils.save_image(self.inputv_normal.data, os.path.join(self.opt.out_dir,  'input_normal%d.png' % (iteration)), nrow=2, normalize=False, scale_each=False)
+                    torchvision.utils.save_image(self.inputv_depth.data, os.path.join(self.opt.out_dir,  'input_depth%d.png' % (iteration)), nrow=2, normalize=True, scale_each=True)
+                    #torchvision.utils.save_image(fn.data, os.path.join(self.opt.out_dir,  'output_normal%d.png' % (iteration)), nrow=2, normalize=False, scale_each=False)
+                    #torchvision.utils.save_image(fwn.data, os.path.join(self.opt.out_dir,  'output_world_normal%d.png' % (iteration)), nrow=2, normalize=False, scale_each=False)
 
 
 

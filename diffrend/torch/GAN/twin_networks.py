@@ -75,10 +75,10 @@ def create_networks(opt, verbose=True):
 
     # Create the discriminator network
     if opt.disc_type == 'cnn':
-        if render_img_size==128:
-            netD = _netD(ngpu, 3, ndf, render_img_size, use_sigmoid=use_sigmoid)
-        else:
-            netD = _netD_64(ngpu, 3, ndf, render_img_size, use_sigmoid=use_sigmoid)
+
+        netD = _netD(ngpu, 3, ndf, render_img_size, use_sigmoid=use_sigmoid)
+        # else:
+        #     netD = _netD_64(ngpu, 3, ndf, render_img_size, use_sigmoid=use_sigmoid)
     elif opt.disc_type == 'dcgan':
         netD = DCGAN_D(render_img_size, nz, render_img_nc, ndf, ngpu,
                        n_extra_layers=disc_nextra_layers,
@@ -94,10 +94,10 @@ def create_networks(opt, verbose=True):
 
     #############new network
     if opt.disc_type == 'cnn':
-        if render_img_size==128:
-            netD2 = _netD(ngpu, 3, ndf, render_img_size, use_sigmoid=use_sigmoid)
-        else:
-            netD2 = _netD_64(ngpu, 3, ndf, render_img_size, use_sigmoid=use_sigmoid)
+
+        netD2 = _netD(ngpu, 3, ndf, render_img_size, use_sigmoid=use_sigmoid)
+        # else:
+        #     netD2 = _netD_64(ngpu, 3, ndf, render_img_size, use_sigmoid=use_sigmoid)
     elif opt.disc_type == 'dcgan':
         netD2 = DCGAN_D(render_img_size, nz, render_img_nc, ndf, ngpu,
                        n_extra_layers=disc_nextra_layers,
@@ -634,6 +634,9 @@ class _netD(nn.Module):
 
             nn.LeakyReLU(),
             # state size. (ndf*2) x 16 x 16
+            nn.Conv2d(ndf*4, ndf * 4, 4, 2, 1, bias=True),
+
+            nn.LeakyReLU(),
 
             nn.Conv2d(ndf * 4, ndf * 8, 4, 2, 1, bias=True),
 
@@ -659,6 +662,7 @@ class _netD(nn.Module):
         )
 
     def forward(self, x,z):
+        #import ipdb; ipdb.set_trace()
         z=z.view(z.size(0),z.size(1),1,1)
         propogated = Variable(torch.ones((x.size(0), z.size(1), x.size(2), x.size(3))), requires_grad=False).cuda()* z
         x=torch.cat([x,propogated],1)

@@ -6,7 +6,6 @@ from diffrend.model import load_model, obj_to_triangle_spec
 from diffrend.utils.sample_generator import uniform_sample_mesh
 from diffrend.numpy.ops import axis_angle_matrix
 from diffrend.numpy.ops import normalize as np_normalize
-
 class ObjectsFolderMultiObjectDataset(Dataset):
     """Objects folder dataset."""
 
@@ -41,21 +40,32 @@ class ObjectsFolderMultiObjectDataset(Dataset):
         #print (obj_path)
 
         # Load obj model
-        obj_model = load_model(obj_path)  #'../../../data/sphere_halfbox_v2.obj'
+        #obj_model = load_model(obj_path)
+        #obj2 = load_model('../../../data/sphere_halfbox_v2.obj')
+        obj_model = load_model(obj_path)
         obj2 = load_model(self.opt.bg_model)
         v1 = (obj_model['v'] - obj_model['v'].mean()) / (obj_model['v'].max() - obj_model['v'].min())
         v2 = obj2['v']  # / (obj2['v'].max() - obj2['v'].min())
         scale = (obj2['v'].max() - obj2['v'].min()) * 0.25
-        offset = np.array([3.0, 3.0, 3.0]) + 2 * np.random.rand(3)  # np.array([4, 1.5, 3.0])
+        offset = np.array([3.0, 3.0, 5.0]) + 2 * np.random.rand(3)
 
         random_axis = np_normalize(np.random.rand(3))
         random_angle = np.random.rand(1) * np.pi * 2
         M = axis_angle_matrix(axis=random_axis, angle=random_angle)
         M[:3, 3] = offset
         v1 = np.matmul(scale * v1, M.transpose(1, 0)[:3, :3]) + M[:3, 3]
-        #print(idx, offset, scale)
         v = np.concatenate((v1, v2))
         f = np.concatenate((obj_model['f'], obj2['f'] + v1.shape[0]))
+        #print(offset)
+        # v = np.concatenate((scale * v1 + offset, v2))
+        # f = np.concatenate((obj_model['f'], obj2['f'] + v1.shape[0]))
+        # flag=np.random.rand(1)
+        # if flag<0.8:
+        #     v = np.concatenate((scale * v1 + offset, v2))
+        #     f = np.concatenate((obj_model['f'], obj2['f'] + v1.shape[0]))
+        # else:
+        #     v = v2
+        #     f = obj2['f']
         obj_model = {'v': v, 'f': f}
 
         if self.opt.use_mesh:
