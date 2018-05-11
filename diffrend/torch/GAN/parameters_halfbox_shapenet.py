@@ -149,6 +149,7 @@ class Parameters():
 
         # Rendering parameters
         self.parser.add_argument('--splats_img_size', type=int, default=128, help='the height / width of the number of generator splats')
+        self.parser.add_argument('--pixel_samples', type=int, default=1, help="Samples per pixel.")
         self.parser.add_argument('--render_type', type=str, default='img', help='render the image or the depth map [img, depth]')
         self.parser.add_argument('--render_img_size', type=int, default=128, help='Width/height of the rendering image')
         self.parser.add_argument('--splats_radius', type=float, default=0.05, help='radius of the splats (fix)')

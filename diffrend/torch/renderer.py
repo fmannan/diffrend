@@ -541,8 +541,9 @@ def render_splats_along_ray(scene, **params):
         pos_CC_supersampled = []
         normals_CC_supersampled = []
         material_idx_supersampled = []
-        light_visibility_supersampled = []
-        light_visibility = light_visibility.transpose(1, 0)
+        if light_visibility is not None:
+            light_visibility_supersampled = []
+            light_visibility = light_visibility.transpose(1, 0)
         for c, deltax in enumerate(np.linspace(-1, 1, samples)):
             xx = x + deltax * dx
             for r, deltay in enumerate(np.linspace(-1, 1, samples)):
@@ -559,12 +560,14 @@ def render_splats_along_ray(scene, **params):
         pos_CC_supersampled = torch.stack(pos_CC_supersampled, dim=2)
         normals_CC_supersampled = torch.stack(normals_CC_supersampled, dim=2)
         material_idx_supersampled = torch.stack(material_idx_supersampled, dim=2)
-        light_visibility_supersampled = torch.stack(light_visibility_supersampled, dim=2)
+        if light_visibility is not None:
+            light_visibility_supersampled = torch.stack(light_visibility_supersampled, dim=2)
 
         pos_CC = reshape_upsampled_data(pos_CC_supersampled, H, W, 3, samples)
         normals_CC = reshape_upsampled_data(normals_CC_supersampled, H, W, 3, samples)
         material_idx = reshape_upsampled_data(material_idx_supersampled, H, W, 1, samples).view(-1)
-        light_visibility = reshape_upsampled_data(light_visibility_supersampled, H, W, light_visibility.shape[1], samples).transpose(1, 0)
+        if light_visibility is not None:
+            light_visibility = reshape_upsampled_data(light_visibility_supersampled, H, W, light_visibility.shape[1], samples).transpose(1, 0)
         H *= samples
         W *= samples
         ####

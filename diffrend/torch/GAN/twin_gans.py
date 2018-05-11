@@ -175,7 +175,7 @@ class GAN(object):
     def create_scene(self, ):
         """Create a semi-empty scene with camera parameters."""
         self.scene = create_scene(
-            self.opt.width, self.opt.height, self.opt.fovy,
+            self.opt.splats_img_size, self.opt.splats_img_size, self.opt.fovy,
             self.opt.focal_length, self.opt.n_splats)
 
     def create_tensors(self, ):
@@ -532,6 +532,7 @@ class GAN(object):
 
     def generate_noise_vector(self, ):
         """Generate a noise vector."""
+        # fm: Why are there multiple noises?
         self.noise.resize_(
             self.batch_size, int(self.opt.nz), 1, 1).normal_(0, 1)
         self.noisev = Variable(self.noise)  # TODO: Add volatile=True???
@@ -635,12 +636,12 @@ class GAN(object):
 
             # Render scene
             # res = render_splats_NDC(self.scene)
-            res = render_splats_along_ray(self.scene,use_old_sign=self.opt.use_old_sign,use_quartic=self.opt.use_quartic)
+            res = render_splats_along_ray(self.scene, samples=self.opt.pixel_samples, use_quartic=self.opt.use_quartic)
             world_tform = cam_to_world(res['pos'].view((-1, 3)), res['normal'].view((-1, 3)), self.scene['camera'])
 
             # Get rendered output
             res_pos = res['pos'].contiguous()
-            res_pos_2D = res_pos.view((self.opt.splats_img_size, self.opt.splats_img_size, 3))
+            res_pos_2D = res_pos.view(res['image'].shape)
             spatial_loss = spatial_3x3(res_pos_2D)
             spatial_var = torch.mean(res_pos[:, 0].var() + res_pos[:, 1].var() + res_pos[:, 2].var())
             loss +=  0.01 * (1 / (spatial_var + 1e-4))+0.5 * spatial_loss

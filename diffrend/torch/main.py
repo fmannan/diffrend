@@ -362,6 +362,7 @@ def optimize_splats_along_ray_shadow_test(out_dir, width, height, max_iter=100, 
     h1 = plt.figure()
     h2 = plt.figure()
     h3 = plt.figure()
+    h4 = plt.figure()
 
     gs1 = gridspec.GridSpec(3, 3)
     gs1.update(wspace=0.0025, hspace=0.02)
@@ -408,6 +409,24 @@ def optimize_splats_along_ray_shadow_test(out_dir, width, height, max_iter=100, 
 
         if iter % imsave_interval == 0 or iter == max_iter - 1:
             z_ = get_data(z)
+            plt.figure(h4.number)
+            plt.clf()
+            plt.suptitle('%d. loss= %f [%f, %f]' % (iter, loss_, np.min(z_), np.max(z_)))
+            plt.subplot(121)
+            #plt.axis('off')
+            plt.imshow(im_out_, interpolation='none')
+            plt.title('Output')
+            plt.subplot(122)
+            #plt.axis('off')
+            plt.imshow(target_im_, interpolation='none')
+            plt.title('Ground truth')
+            # plt.subplot(223)
+            # plt.plot(loss_per_iter, linewidth=2)
+            # plt.xlabel('Iteration', fontsize=14)
+            # plt.title('Loss', fontsize=12)
+            # plt.grid(True)
+            plt.savefig(out_dir + '/fig_im_gt_loss_%05d.png' % iter)
+
             plt.figure(h1.number, figsize=(4, 4))
             plt.clf()
             plt.suptitle('%d. loss= %f [%f, %f]' % (iter, loss_, np.min(z_), np.max(z_)))
