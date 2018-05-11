@@ -637,6 +637,22 @@ def spatial_3x3(pos, norm=1):
     return torch.mean(cost)
 
 
+def normal_consistency_cost(pos, normal):
+    pass
+
+
+def estimate_surface_normals_plane_fit(pos, kernel_size):
+    diff_right, diff_down, diff_diag_down, diff_diag_up = grad_spatial2d(pos)
+
+
+NORMAL_EST_FN_MAP = {'plane': estimate_surface_normals_plane_fit,
+                     'quadric': None}
+
+
+def estimate_surface_normals(pos, kernel_size, method):
+    return NORMAL_EST_FN_MAP[method](pos, kernel_size)
+
+
 def contrast_stretch(im, low=0.01, high=0.099):
     return torch.clamp((im - low) / (high - low), 0.0, 1.0)
 
