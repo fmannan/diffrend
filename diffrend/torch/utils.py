@@ -638,7 +638,19 @@ def spatial_3x3(pos, norm=1):
 
 
 def normal_consistency_cost(pos, normal):
-    pass
+    # TODO (fmannan): Add left part
+    diff_right, diff_down, diff_diag_down, diff_diag_up = grad_spatial2d(pos)
+    diff_right = normalize(diff_right)
+    diff_down = normalize(diff_down)
+    diff_diag_down = normalize(diff_diag_down)
+    diff_diag_up = normalize(diff_diag_up)
+
+    dot_right_nbr = torch.mean(torch.abs(torch.sum(diff_right * normal[:, :-1, :], dim=-1)))
+    dot_down_nbr = torch.mean(torch.abs(torch.sum(diff_down * normal[:-1, :, :], dim=-1)))
+    dot_diag_down_nbr = torch.mean(torch.abs(torch.sum(diff_diag_down * normal[:-1, :-1, :], dim=-1)))
+    dot_diag_up_nbr = torch.mean(torch.abs(torch.sum(diff_diag_up * normal[1:, :-1, :], dim=-1)))
+
+    return dot_right_nbr + dot_down_nbr + dot_diag_down_nbr + dot_diag_up_nbr
 
 
 def estimate_surface_normals_plane_fit(pos, kernel_size):
