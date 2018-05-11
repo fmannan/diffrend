@@ -653,9 +653,6 @@ class GAN(object):
                 #       (torch.max(depth) - torch.min(depth)))
                 im = depth.unsqueeze(0)
             else:
-                W=128
-                H=128
-
                 depth = res['depth']
                 # Normalize depth image
                 cond = depth >= self.scene['camera']['far']
@@ -665,6 +662,7 @@ class GAN(object):
                 #im_d = where(cond, torch.min(depth), depth)
                 im_d = depth.unsqueeze(0)
                 im = res['image'].permute(2, 0, 1)
+                H, W = im.shape[1:]
 
                 target_normal_ = get_data(res['normal'])
                 target_normalmap_img_ = get_normalmap_image(target_normal_)

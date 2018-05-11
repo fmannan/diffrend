@@ -465,6 +465,13 @@ def render_splats_NDC(scene, **params):
     }
 
 
+def reshape_upsampled_data(x, H, W, C, K):
+    x = x.view(H, W, C, K, K)
+    # In numpy transpose(0, 3, 1, 4, 2)
+    x = x.transpose(3, 1).transpose(3, 2).transpose(4, 3)
+    return x.contiguous().view(H * W * K * K, C)
+
+
 def render_splats_along_ray(scene, **params):
     """Render splats specified in the camera's coordinate system
 
@@ -488,17 +495,16 @@ def render_splats_along_ray(scene, **params):
     normals_CC = splats['normal']
     #num_objects = pos_ray.size()[0]
 
-    ##### Find (X, Y) in the Camera's view frustum
-    x, y = np.meshgrid(np.linspace(-1, 1, W), np.linspace(1, -1, H))
-    # Force the caller to set the z coordinate with the correct sign
-    Z = -torch.nn.functional.relu(-pos_ray[:, 2]) #-torch.abs(pos_ray[:, 2])
-    #n_pixels = x.size
-
     fovy = camera['fovy']
     focal_length = camera['focal_length']
     h = np.tan(fovy / 2) * 2 * focal_length
     w = h * aspect_ratio
 
+    ##### Find (X, Y) in the Camera's view frustum
+    # Force the caller to set the z coordinate with the correct sign
+    Z = -torch.nn.functional.relu(-pos_ray[:, 2]) #-torch.abs(pos_ray[:, 2])
+
+    x, y = np.meshgrid(np.linspace(-1, 1, W), np.linspace(1, -1, H))
     x *= w / 2
     y *= h / 2
 
@@ -507,8 +513,61 @@ def render_splats_along_ray(scene, **params):
     #sgn = 1 if get_param_value('use_old_sign', params, False) else -1
     X = -Z * x / focal_length
     Y = -Z * y / focal_length
+
     pos_CC = torch.stack((X, Y, Z), dim=1)
-    ####
+    material_idx = scene['objects']['disk']['material_idx']
+    light_visibility = None
+    if 'light_vis' in scene['objects']['disk']:
+        light_visibility = scene['objects']['disk']['light_vis']
+
+    # Samples per pixel (supersampling)
+    samples = get_param_value('samples', params, 1)
+    if samples > 1:
+        # plane parameter
+        d = torch.sum(pos_CC * normals_CC[:, :3], dim=1)
+        z = tch_var_f(np.ones(x.shape) * -focal_length)
+        # # Test consistency
+        # pos_CC_projplane = torch.stack((x, y, z), dim=1)
+        # dot_ray_normal = torch.sum(pos_CC_projplane * normals_CC[:, :3], dim=1)
+        # t = d / dot_ray_normal
+        # pos_CC_test = t[:, np.newaxis] * pos_CC_projplane
+        # diff = torch.mean(torch.abs(pos_CC_test - pos_CC))
+        # print(diff)
+        # End of consistency check
+
+        # Find ray-plane intersection for the plane bounded by the frustum
+        dx = 2 / (samples * W - 1)
+        dy = 2 / (samples * H - 1)
+        pos_CC_supersampled = []
+        normals_CC_supersampled = []
+        material_idx_supersampled = []
+        light_visibility_supersampled = []
+        light_visibility = light_visibility.transpose(1, 0)
+        for c, deltax in enumerate(np.linspace(-1, 1, samples)):
+            xx = x + deltax * dx
+            for r, deltay in enumerate(np.linspace(-1, 1, samples)):
+                yy = y + deltay * dy
+                pos_CC_projplane = torch.stack((xx, yy, z), dim=1)
+                dot_ray_normal = torch.sum(pos_CC_projplane * normals_CC[:, :3], dim=1)
+                t = d / dot_ray_normal
+
+                pos_CC_supersampled.append(t[:, np.newaxis] * pos_CC_projplane)
+                normals_CC_supersampled.append(normals_CC[:, :3])
+                material_idx_supersampled.append(material_idx[:, np.newaxis])
+                if light_visibility is not None:
+                    light_visibility_supersampled.append(light_visibility)
+        pos_CC_supersampled = torch.stack(pos_CC_supersampled, dim=2)
+        normals_CC_supersampled = torch.stack(normals_CC_supersampled, dim=2)
+        material_idx_supersampled = torch.stack(material_idx_supersampled, dim=2)
+        light_visibility_supersampled = torch.stack(light_visibility_supersampled, dim=2)
+
+        pos_CC = reshape_upsampled_data(pos_CC_supersampled, H, W, 3, samples)
+        normals_CC = reshape_upsampled_data(normals_CC_supersampled, H, W, 3, samples)
+        material_idx = reshape_upsampled_data(material_idx_supersampled, H, W, 1, samples).view(-1)
+        light_visibility = reshape_upsampled_data(light_visibility_supersampled, H, W, light_visibility.shape[1], samples).transpose(1, 0)
+        H *= samples
+        W *= samples
+        ####
     im_depth = norm_p(pos_CC[..., :3]).view(H, W)
 
     if get_param_value('norm_depth_image_only', params, False):
@@ -538,7 +597,7 @@ def render_splats_along_ray(scene, **params):
 
     material_albedo = scene['materials']['albedo']
     material_coeffs = scene['materials']['coeffs']
-    material_idx = scene['objects']['disk']['material_idx']
+
 
     light_pos_CC = torch.mm(light_pos, Mcam.transpose(1, 0))
 
@@ -552,9 +611,7 @@ def render_splats_along_ray(scene, **params):
     frag_albedo = torch.index_select(material_albedo, 0, material_idx)
     frag_coeffs = torch.index_select(material_coeffs, 0, material_idx)
 
-    light_visibility = None
-    if 'light_vis' in scene['objects']['disk']:
-        light_visibility = scene['objects']['disk']['light_vis']
+
 
     im_color = fragment_shader(frag_normals=frag_normals,
                                light_dir=light_pos_CC[:, np.newaxis, :3] - frag_pos[:, :3],
