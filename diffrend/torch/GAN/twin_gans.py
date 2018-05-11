@@ -402,7 +402,7 @@ class GAN(object):
 
                 target_normal_ = get_data(res['normal'])
                 target_normalmap_img_ = get_normalmap_image(target_normal_)
-                im_n=tch_var_f(target_normalmap_img_).permute(2, 0, 1)
+                im_n=tch_var_f(target_normalmap_img_).view(im.shape[1], im.shape[2], 3).permute(2, 0, 1)
 
 
             # Add depth image to the output structure
@@ -600,9 +600,11 @@ class GAN(object):
                 eps=1e-3
                 #z = (F.relu(batch[idx][:, :1]) + z_min)
                 z = batch[idx][:, :1]
-                z = (z - z.min()) / (z.max() - z.min() + eps) * (z_max - z_min) + z_min
+                if self.opt.use_zloss:
+                    loss += torch.mean(F.relu(z_min - torch.abs(z))**2 + F.relu(torch.abs(z) - z_max)**2)
+                else:
+                    z = (z - z.min()) / (z.max() - z.min() + eps) * (z_max - z_min) + z_min
 
-                #loss += 0.5*(torch.mean(F.relu(z_min - torch.abs(z))**2 + F.relu(torch.abs(z) - z_max)**2))
 
                 pos = torch.cat([pos, -z], 1)
 
@@ -654,9 +656,6 @@ class GAN(object):
                 #       (torch.max(depth) - torch.min(depth)))
                 im = depth.unsqueeze(0)
             else:
-                W=128
-                H=128
-
                 depth = res['depth']
                 # Normalize depth image
                 cond = depth >= self.scene['camera']['far']
@@ -669,23 +668,17 @@ class GAN(object):
                 H, W = im.shape[1:]
                 target_normal_ = get_data(res['normal'])
                 target_normalmap_img_ = get_normalmap_image(target_normal_)
-                im_n=tch_var_f(target_normalmap_img_).permute(2, 0, 1)
+                im_n=tch_var_f(target_normalmap_img_).view(im.shape[1], im.shape[2], 3).permute(2, 0, 1)
 
-                target_worldnormal_ = get_data(world_tform['normal']).reshape((H, W, 3))
-                target_worldnormalmap_img_ = get_normalmap_image(target_normal_)
-                im_wn=tch_var_f(target_worldnormalmap_img_).permute(2, 0, 1)
+                target_worldnormal_ = get_data(world_tform['normal'])
+                target_worldnormalmap_img_ = get_normalmap_image(target_worldnormal_)
+                im_wn=tch_var_f(target_worldnormalmap_img_).view(H, W, 3).permute(2, 0, 1)
             if self.iterationa_no % self.opt.save_image_interval == 0:
                 imsave(inpath+ str(self.iterationa_no)+ 'normalmap_{:05d}.png'.format(idx), target_normalmap_img_)
                 imsave(inpath+ str(self.iterationa_no)+ 'world_normalmap_{:05d}.png'.format(idx), target_worldnormalmap_img_)
             if self.iterationa_no % 200 == 0:
                 im2 = get_data(res['image'])
                 depth2 = get_data(res['depth'])
-
-                # plt.figure()
-                # plt.imshow(im)
-
-                #
-
                 pos = get_data(res['pos'])
 
                 out_file2 = ("pos"+".npy")
@@ -697,17 +690,7 @@ class GAN(object):
                 out_file2 = ("depth"+".npy")
                 np.save(inpath+out_file2,depth2)
 
-                #with open(inpath+ str(self.iterationa_no)+ 'normalmap_{:05d}.png'.format(idx), 'w') as fid2:
-
-
-                # pos_normal = res['pos']
-                # pos_normal = get_data(pos_normal)
-                # filename_prefix="input"
-                # with open(inpath+ '_{:05d}.xyz'.format(idx), 'w') as fid:
-                #     for sub_idx in range(pos_normal.shape[0]):
-                #         fid.write('{}\n'.format(' '.join([str(x) for x in pos_normal[sub_idx]])))
-
-
+                #save xyz file
                 pos_normal = torch.cat([res['pos'],res['normal'].view(-1, 3)],1)
                 pos_normal = get_data(pos_normal)
                 filename_prefix="input"
@@ -715,6 +698,7 @@ class GAN(object):
                     for sub_idx in range(pos_normal.shape[0]):
                         fid2.write('{}\n'.format(' '.join([str(x) for x in pos_normal[sub_idx]])))
 
+                #save xyz file in world co-ordinates
                 pos_normal = torch.cat([world_tform['pos'],world_tform['normal']],1)
                 pos_normal = get_data(pos_normal)
                 filename_prefix="input"
@@ -918,20 +902,14 @@ class GAN(object):
                 # Save images
                 if iteration % self.opt.save_image_interval == 0:
                     cs=tch_var_f(contrast_stretch_percentile(get_data(fd),  200, [fd.data.min(), fd.data.max()]))
-                    #torchvision.utils.save_image(self.inputv_normal.data, os.path.join(self.opt.out_dir,  'input_normal%d.png' % (iteration)), nrow=2, normalize=False, scale_each=False)
                     torchvision.utils.save_image(fake_rendered.data, os.path.join(self.opt.out_dir,  'output_%d.png' % (iteration)), nrow=2, normalize=True, scale_each=True)
                     torchvision.utils.save_image(fd.data, os.path.join(self.opt.out_dir,  'output_depth%d.png' % (iteration)), nrow=2, normalize=True, scale_each=True)
-                    #torchvision.utils.save_image(fn.data, os.path.join(self.opt.out_dir,  'output_normal%d.png' % (iteration)), nrow=2, normalize=False, scale_each=False)
-                    #torchvision.utils.save_image(fwn.data, os.path.join(self.opt.out_dir,  'output_world_normal%d.png' % (iteration)), nrow=2, normalize=False, scale_each=False)
                     torchvision.utils.save_image(cs.data, os.path.join(self.opt.out_dir,  'output_depth_cs%d.png' % (iteration)), nrow=2, normalize=True, scale_each=True)
 
                 if iteration % (self.opt.save_image_interval*2) == 0:
                     cs=tch_var_f(contrast_stretch_percentile(get_data(fd),  200, [fd.data.min(), fd.data.max()]))
                     torchvision.utils.save_image(self.inputv.data, os.path.join(self.opt.out_dir,  'input_%d.png' % (iteration)), nrow=2, normalize=True, scale_each=True)
-                    #torchvision.utils.save_image(self.inputv_normal.data, os.path.join(self.opt.out_dir,  'input_normal%d.png' % (iteration)), nrow=2, normalize=False, scale_each=False)
                     torchvision.utils.save_image(self.inputv_depth.data, os.path.join(self.opt.out_dir,  'input_depth%d.png' % (iteration)), nrow=2, normalize=True, scale_each=True)
-                    #torchvision.utils.save_image(fn.data, os.path.join(self.opt.out_dir,  'output_normal%d.png' % (iteration)), nrow=2, normalize=False, scale_each=False)
-                    #torchvision.utils.save_image(fwn.data, os.path.join(self.opt.out_dir,  'output_world_normal%d.png' % (iteration)), nrow=2, normalize=False, scale_each=False)
 
 
 
@@ -1011,3 +989,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           
