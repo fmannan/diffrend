@@ -453,9 +453,9 @@ def render_splats_NDC(scene, **params):
     # clip non-negative
     im = torch.nn.functional.relu(im)
 
-    # Tonemapping
-    if 'tonemap' in scene:
-        im = tonemap(im, **scene['tonemap'])
+    # # Tonemapping
+    # if 'tonemap' in scene:
+    #     im = tonemap(im, **scene['tonemap'])
 
     return {
         'image': im,
@@ -634,8 +634,8 @@ def render_splats_along_ray(scene, **params):
     im = torch.nn.functional.relu(im)
 
     # Tonemapping
-    if 'tonemap' in scene:
-        im = tonemap(im, **scene['tonemap'])
+    #if 'tonemap' in scene:
+    #    im = tonemap(im, **scene['tonemap'])
 
     return {
         'image': im,
