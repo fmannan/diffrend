@@ -460,8 +460,8 @@ def render_splats_NDC(scene, **params):
     return {
         'image': im,
         'depth': im_depth,
-        'pos': pos_CC[:, :3],
-        'normal': normals_CC[:, :3]
+        'pos': pos_CC[:, :3].view(H, W, 3),
+        'normal': normals_CC[:, :3].view(H, W, 3)
     }
 
 
@@ -621,8 +621,6 @@ def render_splats_along_ray(scene, **params):
     frag_albedo = torch.index_select(material_albedo, 0, material_idx)
     frag_coeffs = torch.index_select(material_coeffs, 0, material_idx)
 
-
-
     im_color = fragment_shader(frag_normals=frag_normals,
                                light_dir=light_pos_CC[:, np.newaxis, :3] - frag_pos[:, :3],
                                cam_dir=-normalize(frag_pos[np.newaxis, :, :3]),
@@ -647,8 +645,8 @@ def render_splats_along_ray(scene, **params):
     return {
         'image': im,
         'depth': im_depth,
-        'pos': pos_CC,
-        'normal': normals_CC
+        'pos': pos_CC.view(H, W, 3),
+        'normal': normals_CC.view(H, W, 3)
     }
 
 
