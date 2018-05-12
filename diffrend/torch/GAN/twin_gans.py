@@ -24,7 +24,7 @@ from diffrend.torch.utils import tch_var_f, tch_var_l, where, get_data, normaliz
 from diffrend.torch.renderer import render, render_splats_NDC, render_splats_along_ray
 from diffrend.utils.sample_generator import uniform_sample_sphere
 from diffrend.torch.ops import sph2cart_unit
-from diffrend.utils.utils import contrast_stretch_percentile
+from diffrend.utils.utils import contrast_stretch_percentile, save_xyz
 
 import matplotlib
 matplotlib.use('Agg')
@@ -565,7 +565,7 @@ class GAN(object):
         rendered_res_world=[]
         scenes=[]
         inpath=self.opt.out_dir+'/'
-        z_min=self.scene['camera']['focal_length'] + 3
+        z_min=self.scene['camera']['focal_length'] + 0.5
         z_max=z_min+5
         # Set splats into rendering scene
         if 'sphere' in self.scene['objects']:
@@ -594,25 +594,18 @@ class GAN(object):
                 pos = np.stack((x.ravel(), y.ravel()), axis=1)
                 pos = tch_var_f(pos)
                 #import ipdb; ipdb.set_trace()
-                # TODO: Thanh here?
-
                 eps=1e-3
                 #z = (F.relu(batch[idx][:, :1]) + z_min)
                 z = batch[idx][:, :1]
-                if self.opt.use_zloss:
-                    loss += torch.mean(F.relu(z_min - torch.abs(z))**2 + F.relu(torch.abs(z) - z_max)**2)
-                else:
+                if not self.opt.use_zloss:
                     z = (z - z.min()) / (z.max() - z.min() + eps) * (z_max - z_min) + z_min
-
 
                 pos = torch.cat([pos, -z], 1)
 
-
                 if self.opt.norm_sph_coord:
-                    # TODO: Sigmoid here?
                     # phi_theta = F.sigmoid(batch[idx][:, 1:]) * tch_var_f([2 * np.pi, np.pi / 2.])[np.newaxis, :]
                     phi = F.sigmoid(batch[idx][:, 1]) * 2 * np.pi
-                    theta = F.tanh(batch[idx][:, 2]) * np.pi / 2
+                    theta = F.sigmoid(batch[idx][:, 2]) * np.pi / 2
                     normals = sph2cart_unit(torch.stack((phi, theta), dim=1))
                 else:
                     normals = batch[idx][:, 1:]
@@ -643,9 +636,16 @@ class GAN(object):
             # Get rendered output
             res_pos = res['pos'].contiguous()
             res_pos_2D = res_pos.view(res['image'].shape)
+            # With supersampling the z_loss needs to be applied after supersampling
+            if self.opt.use_zloss:
+                loss += torch.mean(F.relu(z_min - torch.abs(z))**2 + F.relu(torch.abs(z) - z_max)**2)
+                # TODO: Enable this (currently final loss becomes NaN!!)
+                #loss += torch.mean(
+                #    (10 * F.relu(z_min - torch.abs(res_pos[..., 2]))) ** 2 +
+                #    (10 * F.relu(torch.abs(res_pos[..., 2]) - z_max)) ** 2)
             spatial_loss = spatial_3x3(res_pos_2D)
             spatial_var = torch.mean(res_pos[:, 0].var() + res_pos[:, 1].var() + res_pos[:, 2].var())
-            loss +=  0.01 * (1 / (spatial_var + 1e-4))+0.5 * spatial_loss
+            loss += 0.01 * (1 / (spatial_var + 1e-4)) + 0.5 * spatial_loss
             if self.opt.render_img_nc == 1:
                 depth = res['depth']
                 # Normalize depth image
@@ -690,20 +690,12 @@ class GAN(object):
                 np.save(inpath+out_file2,depth2)
 
                 #save xyz file
-                pos_normal = torch.cat([res['pos'],res['normal'].view(-1, 3)],1)
-                pos_normal = get_data(pos_normal)
-                filename_prefix="input"
-                with open(inpath+ str(self.iterationa_no)+ 'withnormal_{:05d}.xyz'.format(idx), 'w') as fid2:
-                    for sub_idx in range(pos_normal.shape[0]):
-                        fid2.write('{}\n'.format(' '.join([str(x) for x in pos_normal[sub_idx]])))
+                save_xyz(inpath + str(self.iterationa_no) + 'withnormal_{:05d}.xyz'.format(idx),
+                         pos=get_data(res['pos']), normal=get_data(res['normal']))
 
                 #save xyz file in world co-ordinates
-                pos_normal = torch.cat([world_tform['pos'],world_tform['normal']],1)
-                pos_normal = get_data(pos_normal)
-                filename_prefix="input"
-                with open(inpath+ str(self.iterationa_no)+ 'withnormal_world_{:05d}.xyz'.format(idx), 'w') as fid2:
-                    for sub_idx in range(pos_normal.shape[0]):
-                        fid2.write('{}\n'.format(' '.join([str(x) for x in pos_normal[sub_idx]])))
+                save_xyz(inpath + str(self.iterationa_no) + 'withnormal_world_{:05d}.xyz'.format(idx),
+                         pos=get_data(world_tform['pos']), normal=get_data(world_tform['normal']))
             if self.opt.gz_gi_loss is not None and self.opt.gz_gi_loss > 0:
                 gradZ = grad_spatial2d(res_pos_2D[:, :, 2][:, :, np.newaxis])
                 gradImg = grad_spatial2d(torch.mean(im, dim=0)[:, :, np.newaxis])

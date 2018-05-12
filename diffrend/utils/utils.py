@@ -28,10 +28,16 @@ def contrast_stretch_percentile(im, nbins, hist_range, new_range=None,
 
 
 def save_xyz(filename, pos, normal):
+    """
+    Args:
+        filename: full output filename
+        pos: N-D Tensor with the last dimension being either 3 or 4
+        normal: N-D Tensor wth last dimension being either 3 or 4
+    """
     if normal is not None:
-        data = np.concatenate([pos.reshape(-1, 3), normal.reshape(-1, 3)], axis=1)
+        data = np.concatenate([pos[..., :3].reshape(-1, 3), normal[..., :3].reshape(-1, 3)], axis=1)
     else:
-        data = pos.reshape(-1, 3)
+        data = pos[..., :3].reshape(-1, 3)
 
     with open(filename, 'w') as fid:
         for sub_idx in range(data.shape[0]):
