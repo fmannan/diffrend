@@ -4,7 +4,7 @@ import torch
 from diffrend.torch.utils import (tonemap, ray_object_intersections,
                                   generate_rays, where, backface_labeler,
                                   bincount, tch_var_f, norm_p, normalize,
-                                  lookat, reflect_ray)
+                                  lookat, reflect_ray, estimate_surface_normals)
 from diffrend.utils.utils import get_param_value
 from diffrend.torch.ops import perspective, inv_perspective, tensor_dot
 """
@@ -460,8 +460,8 @@ def render_splats_NDC(scene, **params):
     return {
         'image': im,
         'depth': im_depth,
-        'pos': pos_CC[:, :3],
-        'normal': normals_CC[:, :3]
+        'pos': pos_CC[:, :3].view(H, W, 3),
+        'normal': normals_CC[:, :3].view(H, W, 3)
     }
 
 
@@ -492,7 +492,7 @@ def render_splats_along_ray(scene, **params):
 
     splats = scene['objects']['disk']
     pos_ray = splats['pos']
-    normals_CC = splats['normal']
+    normals_CC = get_param_value('normal', splats, None)
     #num_objects = pos_ray.size()[0]
 
     fovy = camera['fovy']
@@ -515,6 +515,13 @@ def render_splats_along_ray(scene, **params):
     Y = -Z * y / focal_length
 
     pos_CC = torch.stack((X, Y, Z), dim=1)
+
+    # Estimate normals from splats/point-cloud if no normals were provided
+    if normals_CC is None:
+        normal_est_method = get_param_value(params, 'normal_estimation_method', 'plane_fitting')
+        kernel_size = get_param_value(params, 'normal_estimation_kernel_size', 3)
+        normals_CC = estimate_surface_normals(pos_CC, kernel_size, normal_est_method)
+
     material_idx = scene['objects']['disk']['material_idx']
     light_visibility = None
     if 'light_vis' in scene['objects']['disk']:
@@ -614,8 +621,6 @@ def render_splats_along_ray(scene, **params):
     frag_albedo = torch.index_select(material_albedo, 0, material_idx)
     frag_coeffs = torch.index_select(material_coeffs, 0, material_idx)
 
-
-
     im_color = fragment_shader(frag_normals=frag_normals,
                                light_dir=light_pos_CC[:, np.newaxis, :3] - frag_pos[:, :3],
                                cam_dir=-normalize(frag_pos[np.newaxis, :, :3]),
@@ -640,8 +645,8 @@ def render_splats_along_ray(scene, **params):
     return {
         'image': im,
         'depth': im_depth,
-        'pos': pos_CC,
-        'normal': normals_CC
+        'pos': pos_CC.view(H, W, 3),
+        'normal': normals_CC.view(H, W, 3)
     }
 
 

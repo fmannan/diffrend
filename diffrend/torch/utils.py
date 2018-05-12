@@ -619,22 +619,102 @@ def test_tform_cc_wc():
     y = tch_var_f(y.ravel())
 
 
+def pad2d(x, pad, pad_type):
+    FN_PADDING_TYPE_MAP = {'replicate': torch.nn.ReplicationPad2d}
+    if x.dim() == 2:
+        xx = x[np.newaxis, :, :, np.newaxis]
+    elif x.dim() == 3:
+        xx = x[np.newaxis, ...]
+    elif x.dim() == 4:
+        xx = x
+    else:
+        print(x.dim())
+        raise ValueError('Unsupported number of dimensions.')
+
+    xx = xx.transpose(3, 1)
+    xx = FN_PADDING_TYPE_MAP[pad_type](pad)(xx).transpose(1, 3)
+
+    if x.dim() == 2:
+        xx = xx.squeeze()
+    elif x.dim() == 3:
+        xx = xx[0]
+    return xx
+
+
 def grad_spatial2d(x):
-    diff_right = x[:, 1:, :] - x[:, :-1, :]
-    diff_down = x[1:, :, :] - x[:-1, :, :]
-    diff_diag_down = x[1:, 1:, :] - x[:-1, :-1, :]
-    diff_diag_up = x[:-1, 1:, :] - x[1:, :-1, :]
-    return diff_right, diff_down, diff_diag_down, diff_diag_up
+    """
+    Args:
+        x: 3D Tensor [H, W, C]
+
+    Returns:
+        4D Tensor [8, H, W, C]
+
+    """
+    x = pad2d(x, (1, 1, 1, 1), 'replicate')
+    H, W = x.shape[:2]
+    center = x[1:-1, 1:-1, :]
+    nbhr_diff = []
+    delta = [-1, 0, 1]
+    for dy in delta:
+        for dx in delta:
+            if dx == 0 and dy == 0:
+                continue
+            nbhr_diff.append(x[1 + dy:H + dy - 1, 1 + dx:W + dx - 1, :] - center)
+
+    return torch.stack(nbhr_diff, dim=0)
 
 
 def spatial_3x3(pos, norm=1):
-    diff_right, diff_down, diff_diag_down, diff_diag_up = grad_spatial2d(pos)
-    inv_norm = 1 / norm
-    cost = torch.mean(torch.pow(torch.sum(torch.abs(diff_right) ** norm, dim=2), inv_norm)) + \
-           torch.mean(torch.pow(torch.sum(torch.abs(diff_down) ** norm, dim=2), inv_norm)) + \
-           torch.mean(torch.pow(torch.sum(torch.abs(diff_diag_down) ** norm, dim=2), inv_norm)) + \
-           torch.mean(torch.pow(torch.sum(torch.abs(diff_diag_up) ** norm, dim=2), inv_norm))
-    return torch.mean(cost)
+    nbhr_diff = grad_spatial2d(pos)
+    return torch.mean(torch.pow(torch.sum(torch.abs(nbhr_diff) ** norm, dim=-1), 1 / norm))
+
+
+def normal_consistency_cost(pos, normal, norm):
+    """
+    Args:
+        pos: [N, 3] position
+        normal: [N, 3] normals
+
+    Returns:
+        mean of cosine difference from the true normal
+
+    """
+    nbhr_diff = grad_spatial2d(pos)
+    dot_normal_vec = torch.pow(torch.sum(torch.abs(nbhr_diff * normal[np.newaxis, ...]) ** norm, dim=-1), 1 / norm)
+    return torch.mean(dot_normal_vec)
+
+
+def estimate_surface_normals_plane_fit(pos, kernel_size):
+    """
+    Args:
+        pos:
+        kernel_size:
+
+    Returns:
+
+    """
+    nbhr_diff = grad_spatial2d(pos)
+    nbhr_diff = nbhr_diff.view(nbhr_diff.shape[0], -1, 3)
+    M = nbhr_diff[:, :, :2].transpose(1, 0)
+    Mt = M.transpose(2, 1)
+    MtM = Mt.matmul(M)
+    ad_m_bc = MtM[:, 0, 0] * MtM[:, 1, 1] - MtM[:, 0, 1] * MtM[:, 1, 0]
+    # [[a, b], [c, d]] --> [[d, -b], [-c, a]]
+    MtM = MtM.index_select(1, torch.LongTensor([1, 0])).transpose(2, 1).index_select(1, torch.LongTensor([1, 0])) * \
+          tch_var_f([[1, -1], [-1, 1]])[np.newaxis, ...]
+    MtMinv = MtM / ad_m_bc[:, np.newaxis, np.newaxis]
+    normal = MtMinv.matmul(Mt.matmul(nbhr_diff[..., 2]))
+
+    return normal
+
+
+
+NORMAL_EST_FN_MAP = {'plane': estimate_surface_normals_plane_fit,
+                     'quadric': None}
+
+
+def estimate_surface_normals(pos, kernel_size, method):
+    return NORMAL_EST_FN_MAP[method](pos, kernel_size)
 
 
 def contrast_stretch(im, low=0.01, high=0.099):
@@ -658,6 +738,8 @@ if __name__ == '__main__':
     test_cam_to_world_offset0()
     test_cam_to_world_offset1()
     test_no_cost()
-    cost = spatial_3x3(tch_var_f(np.random.rand(5, 5, 3)))
+    rand_val = np.random.rand(5, 5, 3)
+    cost = spatial_3x3(tch_var_f(rand_val))
+    print(rand_val)
     print(cost)
 

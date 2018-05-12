@@ -25,3 +25,14 @@ def contrast_stretch_percentile(im, nbins, hist_range, new_range=None,
         im = im * (max(new_range) - min(new_range)) + min(new_range)
 
     return im
+
+
+def save_xyz(filename, pos, normal):
+    if normal is not None:
+        data = np.concatenate([pos.reshape(-1, 3), normal.reshape(-1, 3)], axis=1)
+    else:
+        data = pos.reshape(-1, 3)
+
+    with open(filename, 'w') as fid:
+        for sub_idx in range(data.shape[0]):
+            fid.write('{}\n'.format(' '.join([str(x) for x in data[sub_idx]])))
