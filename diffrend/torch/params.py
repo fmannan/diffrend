@@ -544,4 +544,3 @@ SCENE_SPHERE_HALFBOX_1 = {
         'gamma': tch_var_f([1.0])
     },
 }
-
