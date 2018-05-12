@@ -1,7 +1,9 @@
 from diffrend.torch.params import SCENE_BASIC, SCENE_1, SCENE_2
 from diffrend.torch.renderer import render, render_splats_NDC, render_splats_along_ray
 from diffrend.torch.utils import (tch_var_f, tch_var_l, CUDA, get_data, get_normalmap_image, world_to_cam,
-cam_to_world, normalize, unit_norm2_L2loss, normalize_maxmin)
+cam_to_world, normalize, unit_norm2_L2loss, normalize_maxmin, normal_consistency_cost)
+from diffrend.torch.ops import sph2cart_unit
+from diffrend.utils.utils import save_xyz
 import torch.nn as nn
 from torch import optim
 import torch.nn.functional as F
@@ -226,7 +228,7 @@ def optimize_NDC_test(out_dir, width=32, height=32, max_iter=100, lr=1e-3, scale
 
 def optimize_splats_along_ray_shadow_test(out_dir, width, height, max_iter=100, lr=1e-3, scale=10,
                                           shadow=True, vis_only=False, samples=1,
-                                          print_interval=10, imsave_interval=10):
+                                          print_interval=10, imsave_interval=10, xyz_save_interval=100):
     """A demo function to check if the differentiable renderer can optimize splats rendered along ray.
     :param scene:
     :param out_dir:
@@ -331,15 +333,15 @@ def optimize_splats_along_ray_shadow_test(out_dir, width, height, max_iter=100, 
     input_scene['camera']['viewport'] = [0, 0, int(width / samples), int(height / samples)]
 
     num_splats = int(width * height / (samples * samples))
-    x, y = np.meshgrid(np.linspace(-1, 1, width / samples), np.linspace(-1, 1, height / samples))
+    x, y = np.meshgrid(np.linspace(-1, 1, int(width / samples)), np.linspace(-1, 1, int(height / samples)))
     z_min = scene['camera']['focal_length']
     z_max = 3
 
     z = -torch.clamp(tch_var_f(2 * np.random.rand(num_splats)), z_min, z_max)
     z.requires_grad = True
 
-    normals = tch_var_f(np.ones((num_splats, 4)) * np.array([0, 0, 1, 0]))
-    normals.requires_grad = True
+    normal_angles = tch_var_f(np.random.rand(num_splats, 2))
+    normal_angles.requires_grad = True
     material_idx = tch_var_l(np.ones(num_splats) * 3)
 
     light_vis = tch_var_f(np.ones((input_scene['lights']['pos'].shape[0], num_splats)))
@@ -349,14 +351,15 @@ def optimize_splats_along_ray_shadow_test(out_dir, width, height, max_iter=100, 
         assert shadow is True
         opt_vars = [light_vis]
         z = cc_tform['pos'][:, 2]
-        normals = cc_tform['normal']
+        # FIXME: sph2cart
+        #normals = cc_tform['normal']
     else:
-        opt_vars = [z, normals]
+        opt_vars = [z, normal_angles]
         if shadow:
             opt_vars += [light_vis]
 
     optimizer = optim.Adam(opt_vars, lr=lr)
-    lr_scheduler = StepLR(optimizer, step_size=5000, gamma=0.8)
+    lr_scheduler = StepLR(optimizer, step_size=10000, gamma=0.8)
 
     h0 = plt.figure()
     h1 = plt.figure()
@@ -367,11 +370,24 @@ def optimize_splats_along_ray_shadow_test(out_dir, width, height, max_iter=100, 
     gs1 = gridspec.GridSpec(3, 3)
     gs1.update(wspace=0.0025, hspace=0.02)
 
+    # Two options for z_norm_consistency
+    # 1. start after N iterations
+    # 2. start at the beginning and decay
+    # 3. start after N iterations and decay to 0
+    no_decay = lambda x: x
+    exp_decay = lambda x, scale: torch.exp(-x / scale)
+    linear_decay = lambda x, scale: scale / (x + 1e-6)
+
+    z_norm_weight_init = 1e-2 #1e-5
+    z_norm_activate_iter = 1000
+    decay_fn = lambda x: linear_decay(x, 10)
     loss_per_iter = []
     for iter in range(max_iter):
         lr_scheduler.step()
-        unit_normal_loss = unit_norm2_L2loss(normals, 10.0)
-        z_loss = torch.mean((10 * F.relu(z_min - torch.abs(z))) ** 2 + (10 * F.relu(torch.abs(z) - z_max)) ** 2)
+        phi = F.sigmoid(normal_angles[:, 0]) * 2 * np.pi
+        theta = F.sigmoid(normal_angles[:, 1]) * np.pi / 2  # / 2 #F.tanh(normal_angles[:, 1]) * np.pi / 2
+        normals = sph2cart_unit(torch.stack((phi, theta), dim=1))
+
         pos = torch.stack((tch_var_f(x.ravel()), tch_var_f(y.ravel()), z), dim=1)
         input_scene['objects'] = {'disk': {'pos': pos,
                                            'normal': normalize(normals),
@@ -380,18 +396,31 @@ def optimize_splats_along_ray_shadow_test(out_dir, width, height, max_iter=100, 
                                            }
                                   }
         res = render_splats_along_ray(input_scene, samples=samples)
+        res_pos = res['pos']
+        res_normal = res['normal']
+        unit_normal_loss = unit_norm2_L2loss(normals, 10.0)
+        z_pos = res_pos[..., 2]
+        z_loss = torch.mean((10 * F.relu(z_min - torch.abs(z_pos))) ** 2 + (10 * F.relu(torch.abs(z_pos) - z_max)) ** 2)
+        z_norm_loss = normal_consistency_cost(res_pos, res_normal, norm=1)
+        spatial_var = torch.mean(res_pos[..., 0].var() + res_pos[..., 1].var() + res_pos[..., 2].var())
+        spatial_var_loss = (1 / (spatial_var + 1e-4))
         im_out = normalize_maxmin(res['image'])
         res_depth_ = get_data(res['depth'])
 
         optimizer.zero_grad()
-        loss = criterion(scale * im_out, scale * target_im) + z_loss + unit_normal_loss
+        z_norm_weight = z_norm_weight_init * float(iter > z_norm_activate_iter) * decay_fn(iter - z_norm_activate_iter)
+        loss = criterion(scale * im_out, scale * target_im) + z_loss + unit_normal_loss + \
+            z_norm_weight * z_norm_loss + \
+            0.0 * spatial_var_loss
 
         im_out_ = get_data(im_out)
-        im_out_normal_ = get_data(res['normal'])[:, :3].reshape(im_out_.shape)
+        im_out_normal_ = get_data(res['normal']) #[:, :3].reshape(im_out_.shape)
         pos_out_ = get_data(res['pos'])
 
         loss_ = get_data(loss)
         z_loss_ = get_data(z_loss)
+        z_norm_loss_ = get_data(z_norm_loss)
+        spatial_var_loss_ = get_data(spatial_var_loss)
         unit_normal_loss_ = get_data(unit_normal_loss)
         loss_per_iter.append(loss_)
 
@@ -403,9 +432,12 @@ def optimize_splats_along_ray_shadow_test(out_dir, width, height, max_iter=100, 
         if iter % print_interval == 0 or iter == max_iter - 1:
             z_ = get_data(z)
             z__ = pos_out_[..., 2]
-            print('%d. loss= %f nloss=%f z_loss=%f [%f, %f] [%f, %f]' % (iter, loss_, unit_normal_loss_, z_loss_,
-                                                                         np.min(z_), np.max(z_), np.min(z__),
-                                                                         np.max(z__)))
+            print('%d. loss= %f nloss=%f z_loss=%f [%f, %f] [%f, %f], z_normal_loss: %f, spatial_var_loss: %f' %
+                  (iter, loss_, unit_normal_loss_, z_loss_, np.min(z_), np.max(z_), np.min(z__),
+                   np.max(z__), z_norm_loss_, spatial_var_loss_))
+
+        if iter % xyz_save_interval == 0 or iter == max_iter - 1:
+            save_xyz(out_dir + '/res_{:05d}.xyz'.format(iter), get_data(res_pos), get_data(res_normal))
 
         if iter % imsave_interval == 0 or iter == max_iter - 1:
             z_ = get_data(z)
@@ -595,9 +627,6 @@ if __name__ == '__main__':
     if args.opt_ndc_test:
         optimize_NDC_test(out_dir=args.out_dir, width=args.width, height=args.height,
                           max_iter=args.max_iter, lr=args.lr, print_interval=args.print_interval)
-    # if args.opt_ray_test:
-    #     optimize_splats_along_ray_test(out_dir=args.out_dir, width=args.width, height=args.height,
-    #                                    max_iter=args.max_iter, lr=args.lr, print_interval=args.print_interval)
 
     if args.opt_ray_shadow_test or args.opt_ray_test:
         optimize_splats_along_ray_shadow_test(out_dir=args.out_dir, width=args.width, height=args.height,

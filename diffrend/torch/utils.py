@@ -680,7 +680,7 @@ def normal_consistency_cost(pos, normal, norm):
 
     """
     nbhr_diff = grad_spatial2d(pos)
-    dot_normal_vec = torch.pow(torch.sum(torch.abs(nbhr_diff * normal[np.newaxis, ...]) ** norm), 1 / norm)
+    dot_normal_vec = torch.pow(torch.sum(torch.abs(nbhr_diff * normal[np.newaxis, ...]) ** norm, dim=-1), 1 / norm)
     return torch.mean(dot_normal_vec)
 
 

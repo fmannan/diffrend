@@ -422,7 +422,7 @@ SCENE_SPHERE_HALFBOX_0 = {
             [1.0, 0.0, 0.0],
             [1.0, 0.0, 0.0],
             [1.0, 0.0, 0.0],
-            [0.5, 0.2, 8.0],
+            [0.8, 0.0, 0.0], #[0.5, 0.2, 8.0],
             [1.0, 0.0, 0.0],
             [1.0, 0.0, 0.0],
         ]),
@@ -461,10 +461,10 @@ SCENE_SPHERE_HALFBOX_0 = {
                      'material_idx': tch_var_l([3, 3, 3, 3, 3, 3])
         },
     },
-    'tonemap': {
-        'type': 'gamma',
-        'gamma': tch_var_f([1.0])
-    },
+    #'tonemap': {
+    #    'type': 'gamma',
+    #    'gamma': tch_var_f([1.0])
+    #},
 }
 
 SCENE_SPHERE_HALFBOX_1 = {
