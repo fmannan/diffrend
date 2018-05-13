@@ -761,7 +761,7 @@ def test_no_cost():
 
 
 def test_plane_estimation_xy_plane():
-    x, y = np.meshgrid(np.linspace(-1, 1, 5), np.linspace(-1, 1, 5))
+    x, y = np.meshgrid(np.linspace(-1, 1, 5), np.linspace(1, -1, 5))
     z = np.ones_like(x) * -1
 
     pos = tch_var_f(np.stack((x, y, z), axis=2))

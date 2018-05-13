@@ -108,6 +108,10 @@ def calc_gradient_penalty(discriminator, real_data, fake_data, fake_data_cond,
     return gradient_penalty
 
 
+def generate_normals(z, cam_pos, camera):
+    pass
+
+
 class GAN(object):
     """GAN class."""
 
@@ -378,7 +382,7 @@ class GAN(object):
                 large_scene['camera']['eye'] = tch_var_f(self.cam_pos[0])
 
             # Render scene
-            view_dir = normalize(large_scene['camera']['at'] - large_scene['camera']['eye'])
+            #view_dir = normalize(large_scene['camera']['at'] - large_scene['camera']['eye'])
             res = render(large_scene,
                          norm_depth_image_only=self.opt.norm_depth_image_only,
                          double_sided=True, use_quartic=self.opt.use_quartic)
@@ -444,12 +448,6 @@ class GAN(object):
                             'triangle': {'face': None, 'normal': None,
                                          'material_idx': None}}
                     samples = self.get_samples()
-                    # # TODO: Solve this hack!!!!!!
-                    # while True:
-                    #     samples = self.get_samples()
-                    #     if samples['mesh']['face'][0].size(0) <= 3000:
-                    #         break
-                    # print (samples['mesh']['face'][0].size())
                     large_scene['objects']['triangle']['material_idx'] = tch_var_l(
                         np.zeros(samples['mesh']['face'][0].shape[0], dtype=int).tolist())
                     large_scene['objects']['triangle']['face'] = Variable(
@@ -483,7 +481,6 @@ class GAN(object):
                 large_scene['camera']['eye'] = tch_var_f(self.cam_pos2[0])
 
             # Render scene
-            # view_dir = normalize(large_scene['camera']['at'] - large_scene['camera']['eye'])
             res = render(large_scene,
                          norm_depth_image_only=self.opt.norm_depth_image_only,
                          double_sided=True,use_quartic=self.opt.use_quartic)
@@ -552,7 +549,7 @@ class GAN(object):
         batch_size = batch.size()[0]
 
         # Generate camera positions on a sphere
-        if not self.opt.same_view:
+        if batch_cond is None:
             cam_pos = uniform_sample_sphere(
                 radius=self.opt.cam_dist, num_samples=self.opt.batchSize,
                 axis=self.opt.axis, angle=np.deg2rad(self.opt.angle),
@@ -565,9 +562,11 @@ class GAN(object):
         rendered_data_cond = []
         rendered_res_world = []
         scenes = []
-        inpath = self.opt.out_dir+'/'
+        inpath = self.opt.out_dir + '/'
         z_min = self.scene['camera']['focal_length'] + 0.5
-        z_max = z_min+5
+        z_max = z_min + 5
+
+        # TODO (fmannan): Move this in init. This only needs to be done once!
         # Set splats into rendering scene
         if 'sphere' in self.scene['objects']:
             del self.scene['objects']['sphere']
@@ -576,9 +575,6 @@ class GAN(object):
         if 'disk' not in self.scene['objects']:
             self.scene['objects'] = {'disk': {'pos': None, 'normal': None,
                                               'material_idx': None}}
-        if self.opt.fix_splat_pos:
-            x, y = np.meshgrid(np.linspace(-1, 1, self.opt.splats_img_size),
-                               np.linspace(-1, 1, self.opt.splats_img_size))
         lookat = self.opt.at if self.opt.at is not None else [0.0, 0.0, 0.0, 1.0]
         self.scene['camera']['at'] = tch_var_f(lookat)
         self.scene['objects']['disk']['material_idx'] = tch_var_l(
@@ -586,44 +582,27 @@ class GAN(object):
         loss = 0.0
         for idx in range(batch_size):
             # Get splats positions and normals
-            if not self.opt.fix_splat_pos:
-                pos = batch[idx][:, :3]
-                pos = ((pos - torch.mean(pos, 0)) /
-                       (torch.max(pos) - torch.min(pos)))
-                normals = batch[idx][:, 3:]
-            else:
-                pos = np.stack((x.ravel(), y.ravel()), axis=1)
-                pos = tch_var_f(pos)
-                # import ipdb; ipdb.set_trace()
-                eps=1e-3
-                # z = (F.relu(batch[idx][:, :1]) + z_min)
-                z = batch[idx][:, :1]
-                if not self.opt.use_zloss:
-                    z = (z - z.min()) / (z.max() - z.min() + eps) * (z_max - z_min) + z_min
+            eps = 1e-3
+            # z = (F.relu(batch[idx][:, :1]) + z_min)
+            z = batch[idx][:, 0]
+            if not self.opt.use_zloss:
+                z = (z - z.min()) / (z.max() - z.min() + eps) * (z_max - z_min) + z_min
 
-                pos = torch.cat([pos, -z], 1)
-
-                if self.opt.norm_sph_coord:
-                    # phi_theta = F.sigmoid(batch[idx][:, 1:]) * tch_var_f([2 * np.pi, np.pi / 2.])[np.newaxis, :]
-                    phi = F.sigmoid(batch[idx][:, 1]) * 2 * np.pi
-                    theta = F.sigmoid(batch[idx][:, 2]) * np.pi / 2
-                    normals = sph2cart_unit(torch.stack((phi, theta), dim=1))
-                else:
-                    normals = batch[idx][:, 1:]
+            pos = -z[np.newaxis, np.newaxis, :]
+            normals = batch[idx][:, 1:]
 
             self.scene['objects']['disk']['pos'] = pos
-            # If est_normals is enabled then the splat normal is set to None, and render_splats_along_ray will
-            # estimate the normals based on the neighboring splat positions.
-            self.scene['objects']['disk']['normal'] = normals if self.opt.est_normals is False else None
+
+            # Normal estimation network and est_normals don't go together
+            assert self.opt.est_normals is False
+            self.scene['objects']['disk']['normal'] = normals
 
             # Set camera position
             if batch_cond is None:
-
                 if not self.opt.same_view:
                     self.scene['camera']['eye'] = tch_var_f(cam_pos[idx])
                 else:
                     self.scene['camera']['eye'] = tch_var_f(cam_pos[0])
-
             else:
                 if not self.opt.same_view:
                     self.scene['camera']['eye'] = batch_cond[idx]
@@ -673,11 +652,11 @@ class GAN(object):
                 H, W = im.shape[1:]
                 target_normal_ = get_data(res['normal'])
                 target_normalmap_img_ = get_normalmap_image(target_normal_)
-                im_n=tch_var_f(target_normalmap_img_).view(im.shape[1], im.shape[2], 3).permute(2, 0, 1)
+                im_n = tch_var_f(target_normalmap_img_).view(im.shape[1], im.shape[2], 3).permute(2, 0, 1)
 
                 target_worldnormal_ = get_data(world_tform['normal'])
                 target_worldnormalmap_img_ = get_normalmap_image(target_worldnormal_)
-                im_wn=tch_var_f(target_worldnormalmap_img_).view(H, W, 3).permute(2, 0, 1)
+                im_wn = tch_var_f(target_worldnormalmap_img_).view(H, W, 3).permute(2, 0, 1)
             if self.iterationa_no % self.opt.save_image_interval == 0:
                 imsave(inpath+ str(self.iterationa_no)+ 'normalmap_{:05d}.png'.format(idx), target_normalmap_img_)
                 imsave(inpath+ str(self.iterationa_no)+ 'world_normalmap_{:05d}.png'.format(idx), target_worldnormalmap_img_)
@@ -687,13 +666,13 @@ class GAN(object):
                 pos = get_data(res['pos'])
 
                 out_file2 = ("pos"+".npy")
-                np.save(inpath+out_file2,pos)
+                np.save(inpath+out_file2, pos)
 
                 out_file2 = ("im"+".npy")
-                np.save(inpath+out_file2,im2)
+                np.save(inpath+out_file2, im2)
 
                 out_file2 = ("depth"+".npy")
-                np.save(inpath+out_file2,depth2)
+                np.save(inpath+out_file2, depth2)
 
                 #save xyz file
                 save_xyz(inpath + str(self.iterationa_no) + 'withnormal_{:05d}.xyz'.format(idx),
@@ -725,7 +704,7 @@ class GAN(object):
         return rendered_data, rendered_data_depth, rendered_data_normal, rendered_data_world_normal, rendered_res_world, loss/self.opt.batchSize
 
     def train(self, ):
-        """Train networtk."""
+        """Train network."""
         # Load pretrained model if required
         if self.opt.gen_model_path is not None:
             print("Reloading networks from")
@@ -776,14 +755,18 @@ class GAN(object):
                     #################
                     self.generate_noise_vector()
                     fake_z = self.netG(self.noisev, self.inputv_cond)
-                    fake_n = self.netG2(self.noisev, self.inputv_cond)
+                    # The normal generator is dependent on z
+                    fake_n = generate_normals(fake_z, self.inputv_cond)
+                    #fake_n = self.netG2(self.noisev, self.inputv_cond)
                     fake2_z = self.netG(self.noisev2, self.inputv_cond2)
-                    fake2_n = self.netG2(self.noisev2, self.inputv_cond2)
-                    fake = torch.cat([fake_z, fake_n], 2)
-                    fake2 = torch.cat([fake2_z, fake2_n], 2)
+                    #fake2_n = self.netG2(self.noisev2, self.inputv_cond2)
+                    #fake = torch.cat([fake_z, fake_n], 2)
+                    #fake2 = torch.cat([fake2_z, fake2_n], 2)
+                    # Note: self.render_batch will project fake_z to the camera space and
+                    # run the normal generator with that data
                     fake_rendered, fd, fn, fwn, r, loss = self.render_batch(
-                        fake, self.inputv_cond)
-                    fake_rendered2, fd2, fn2, fwn2, r2, loss2 = self.render_batch(fake2, self.inputv_cond2)
+                        fake_z, self.inputv_cond)
+                    fake_rendered2, fd2, fn2, fwn2, r2, loss2 = self.render_batch(fake2_z, self.inputv_cond2)
                     fake_D = torch.cat([fake_rendered.detach(), fd.detach()], 1)
                     # Do not bp through gen
                     outD_fake = self.netD(fake_rendered.detach(), self.inputv_cond.detach())
