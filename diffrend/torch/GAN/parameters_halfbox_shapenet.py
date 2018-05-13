@@ -22,9 +22,9 @@ class Parameters():
         # Define training set depending on the user name
         username = getpass.getuser()
         if username == 'dvazquez':
-            #default_root = '/home/dvazquez/datasets/shapenet/ShapeNetCore.v2'
-            default_root = './my_data/'
+            # default_root = '/home/dvazquez/datasets/shapenet/ShapeNetCore.v2'
             # default_root = '/mnt/home/dvazquez/datasets/shapenet/ShapeNetCore.v2'
+            default_root = '/home/dvazquez/Repositories/diffrend/data/sphere/'
             default_out = './render_samples/'
         elif username == 'florian':
             default_root = '/lindata/datasets/shapenet/ShapeNetCore.v2'

@@ -6,6 +6,8 @@ from diffrend.model import load_model, obj_to_triangle_spec
 from diffrend.utils.sample_generator import uniform_sample_mesh
 from diffrend.numpy.ops import axis_angle_matrix
 from diffrend.numpy.ops import normalize as np_normalize
+
+
 class ObjectsFolderMultiObjectDataset(Dataset):
     """Objects folder dataset."""
 
@@ -99,6 +101,7 @@ class ObjectsFolderMultiObjectDataset(Dataset):
         return sample
 
     def _get_objects_paths(self,):
+        print (self.opt.root_dir)
         for o in os.listdir(self.opt.root_dir):
             self.samples.append(o)
 
