@@ -1,7 +1,7 @@
 from diffrend.torch.params import SCENE_BASIC, SCENE_1, SCENE_2
 from diffrend.torch.renderer import render, render_splats_NDC, render_splats_along_ray
 from diffrend.torch.utils import (tch_var_f, tch_var_l, CUDA, get_data, get_normalmap_image, world_to_cam,
-cam_to_world, normalize, unit_norm2_L2loss, normalize_maxmin, normal_consistency_cost)
+cam_to_world, normalize, unit_norm2_L2loss, normalize_maxmin, normal_consistency_cost, away_from_camera_penalty)
 from diffrend.torch.ops import sph2cart_unit
 from diffrend.utils.utils import save_xyz
 import torch.nn as nn
@@ -385,7 +385,7 @@ def optimize_splats_along_ray_shadow_test(out_dir, width, height, max_iter=100, 
     for iter in range(max_iter):
         lr_scheduler.step()
         phi = F.sigmoid(normal_angles[:, 0]) * 2 * np.pi
-        theta = F.sigmoid(normal_angles[:, 1]) * np.pi / 2  # / 2 #F.tanh(normal_angles[:, 1]) * np.pi / 2
+        theta = F.sigmoid(normal_angles[:, 1]) * np.pi / 2  # F.tanh(normal_angles[:, 1]) * np.pi / 2
         normals = sph2cart_unit(torch.stack((phi, theta), dim=1))
 
         pos = torch.stack((tch_var_f(x.ravel()), tch_var_f(y.ravel()), z), dim=1)
@@ -399,6 +399,7 @@ def optimize_splats_along_ray_shadow_test(out_dir, width, height, max_iter=100, 
         res_pos = res['pos']
         res_normal = res['normal']
         unit_normal_loss = unit_norm2_L2loss(normals, 10.0)
+        normal_away_from_cam_loss = away_from_camera_penalty(res_pos, res_normal)
         z_pos = res_pos[..., 2]
         z_loss = torch.mean((10 * F.relu(z_min - torch.abs(z_pos))) ** 2 + (10 * F.relu(torch.abs(z_pos) - z_max)) ** 2)
         z_norm_loss = normal_consistency_cost(res_pos, res_normal, norm=1)
@@ -411,7 +412,8 @@ def optimize_splats_along_ray_shadow_test(out_dir, width, height, max_iter=100, 
         z_norm_weight = z_norm_weight_init * float(iter > z_norm_activate_iter) * decay_fn(iter - z_norm_activate_iter)
         loss = criterion(scale * im_out, scale * target_im) + z_loss + unit_normal_loss + \
             z_norm_weight * z_norm_loss + \
-            0.0 * spatial_var_loss
+            0.0 * spatial_var_loss + \
+            0.0 * normal_away_from_cam_loss
 
         im_out_ = get_data(im_out)
         im_out_normal_ = get_data(res['normal']) #[:, :3].reshape(im_out_.shape)
@@ -422,6 +424,8 @@ def optimize_splats_along_ray_shadow_test(out_dir, width, height, max_iter=100, 
         z_norm_loss_ = get_data(z_norm_loss)
         spatial_var_loss_ = get_data(spatial_var_loss)
         unit_normal_loss_ = get_data(unit_normal_loss)
+        normal_away_from_cam_loss_ = get_data(normal_away_from_cam_loss)
+        normals_ = get_data(res_normal)
         loss_per_iter.append(loss_)
 
         if iter == 0:
@@ -432,9 +436,12 @@ def optimize_splats_along_ray_shadow_test(out_dir, width, height, max_iter=100, 
         if iter % print_interval == 0 or iter == max_iter - 1:
             z_ = get_data(z)
             z__ = pos_out_[..., 2]
-            print('%d. loss= %f nloss=%f z_loss=%f [%f, %f] [%f, %f], z_normal_loss: %f, spatial_var_loss: %f' %
+            print('%d. loss= %f nloss=%f z_loss=%f [%f, %f] [%f, %f], z_normal_loss: %f,'
+                  ' spatial_var_loss: %f, normal_away_loss: %f'
+                  ' nz_range: [%f, %f]' %
                   (iter, loss_, unit_normal_loss_, z_loss_, np.min(z_), np.max(z_), np.min(z__),
-                   np.max(z__), z_norm_loss_, spatial_var_loss_))
+                   np.max(z__), z_norm_loss_, spatial_var_loss_, normal_away_from_cam_loss_,
+                   normals_[..., 2].min(), normals_[..., 2].max()))
 
         if iter % xyz_save_interval == 0 or iter == max_iter - 1:
             save_xyz(out_dir + '/res_{:05d}.xyz'.format(iter), get_data(res_pos), get_data(res_normal))

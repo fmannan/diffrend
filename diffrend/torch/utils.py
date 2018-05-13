@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 from torch.autograd import Variable
-from diffrend.utils.utils import get_param_value
+
 
 # TODO: SPLIT THIS INTO UTILS AND OPS (like diffrend.numpy)
 CPU_ONLY = False
@@ -57,6 +57,10 @@ def norm_p(u, p=2):
     return torch.pow(torch.sum(torch.pow(u, p), dim=-1), 1./p)
 
 
+def tensor_dot(x, y, axis=0):
+    return torch.sum(x * y, dim=axis)
+
+
 def tensor_cross_prod(u, M):
     """
     :param u:  N x 3
@@ -68,7 +72,6 @@ def tensor_cross_prod(u, M):
     s2 = u[:, 0][:, np.newaxis] * M[..., 1] - u[:, 1][:, np.newaxis] * M[..., 0]
 
     return torch.stack((s0, s1, s2), dim=2)
-
 
 def nonzero_divide(x, y):
     """ x and y need to have the same dimensions.
@@ -619,8 +622,26 @@ def test_tform_cc_wc():
     y = tch_var_f(y.ravel())
 
 
+def away_from_camera_penalty(pos, normal, camera_pos=None):
+    """
+    Args:
+        pos:
+        normal:
+        camera_pos: None if position are in the camera's coordinate system
+
+    Returns:
+
+    """
+    if camera_pos is not None:
+        cam_dir = normalize(camera_pos[np.newaxis, :3] - pos.view(-1, 3))
+    else:
+        cam_dir = normalize(-pos.view(-1, 3))
+    return torch.sum(torch.nn.functional.relu(-tensor_dot(normal.view(-1, 3), cam_dir, axis=-1)))
+
 def pad2d(x, pad, pad_type):
-    FN_PADDING_TYPE_MAP = {'replicate': torch.nn.ReplicationPad2d}
+    FN_PADDING_TYPE_MAP = {'replicate': torch.nn.ReplicationPad2d,
+                           'reflect': torch.nn.ReflectionPad2d,
+                           }
     if x.dim() == 2:
         xx = x[np.newaxis, :, :, np.newaxis]
     elif x.dim() == 3:
@@ -641,7 +662,7 @@ def pad2d(x, pad, pad_type):
     return xx
 
 
-def grad_spatial2d(x):
+def grad_spatial2d(x, pad_type='reflect'):
     """
     Args:
         x: 3D Tensor [H, W, C]
@@ -650,7 +671,7 @@ def grad_spatial2d(x):
         4D Tensor [8, H, W, C]
 
     """
-    x = pad2d(x, (1, 1, 1, 1), 'replicate')
+    x = pad2d(x, (1, 1, 1, 1), pad_type)
     H, W = x.shape[:2]
     center = x[1:-1, 1:-1, :]
     nbhr_diff = []
@@ -691,6 +712,7 @@ def estimate_surface_normals_plane_fit(pos, kernel_size):
         kernel_size:
 
     Returns:
+        normals: [
 
     """
     nbhr_diff = grad_spatial2d(pos)
@@ -700,13 +722,14 @@ def estimate_surface_normals_plane_fit(pos, kernel_size):
     MtM = Mt.matmul(M)
     ad_m_bc = MtM[:, 0, 0] * MtM[:, 1, 1] - MtM[:, 0, 1] * MtM[:, 1, 0]
     # [[a, b], [c, d]] --> [[d, -b], [-c, a]]
-    MtM = MtM.index_select(1, torch.LongTensor([1, 0])).transpose(2, 1).index_select(1, torch.LongTensor([1, 0])) * \
+    MtM = MtM.index_select(1, tch_var_l([1, 0])).transpose(2, 1).index_select(1, tch_var_l([1, 0])) * \
           tch_var_f([[1, -1], [-1, 1]])[np.newaxis, ...]
     MtMinv = MtM / ad_m_bc[:, np.newaxis, np.newaxis]
-    normal = MtMinv.matmul(Mt.matmul(nbhr_diff[..., 2]))
+    # (M^TM)^{-1}M^T -(z - z0)
+    normal = MtMinv.matmul(Mt.matmul(-nbhr_diff[..., 2].transpose(1, 0)[:, :, np.newaxis])).squeeze()
+    normal = torch.cat([normal, tch_var_f(np.ones((normal.shape[0], 1)))], dim=1).view(pos.shape)
 
-    return normal
-
+    return normalize(normal)
 
 
 NORMAL_EST_FN_MAP = {'plane': estimate_surface_normals_plane_fit,
@@ -733,6 +756,69 @@ def test_no_cost():
     print(cost)
 
 
+def test_plane_estimation_xy_plane():
+    x, y = np.meshgrid(np.linspace(-1, 1, 5), np.linspace(-1, 1, 5))
+    z = np.ones_like(x) * -1
+
+    pos = tch_var_f(np.stack((x, y, z), axis=2))
+    normals = get_data(estimate_surface_normals_plane_fit(pos, None))
+    tmp = normals.reshape(-1, 3)
+    np.testing.assert_equal(tmp, np.array([[0, 0, 1]] * tmp.shape[0]))
+    pos_grad = get_data(grad_spatial2d(pos))
+    dot_prod = np.sum(pos_grad * normals[np.newaxis, ...], axis=-1)
+    np.testing.assert_array_almost_equal(dot_prod, np.zeros_like(dot_prod))
+
+
+def test_plane_estimation_roty_plane():
+    from diffrend.numpy.ops import axis_angle_matrix
+    x, y = np.meshgrid(np.linspace(-1, 1, 5), np.linspace(1, -1, 5))
+    z = np.zeros_like(x)
+
+    pos = tch_var_f(np.stack((x, y, z), axis=2))
+
+    M = tch_var_f(axis_angle_matrix(axis=[0, 1, 0], angle=np.pi / 4))
+    pos = pos.view(-1, 3).matmul(M[:, :3].transpose(1, 0))[:, :3].contiguous().view(pos.shape)
+    normals = get_data(estimate_surface_normals_plane_fit(pos, None))
+    print(normals)
+    np.testing.assert_array_almost_equal(np.sum(get_data(pos) * normals, axis=-1), np.zeros(normals.shape[:2]))
+
+    M = tch_var_f(axis_angle_matrix(axis=[0, 1, 0], angle=-np.pi / 4))
+    pos = pos.view(-1, 3).matmul(M[:, :3].transpose(1, 0))[:, :3].contiguous().view(pos.shape)
+    normals = get_data(estimate_surface_normals_plane_fit(pos, None))
+    print(normals)
+    pos_grad = get_data(grad_spatial2d(pos))
+    dot_prod = np.sum(pos_grad * normals[np.newaxis, ...], axis=-1)
+    np.testing.assert_array_almost_equal(dot_prod, np.zeros_like(dot_prod))
+
+
+def test_plane_estimation_rotx_plane():
+    from diffrend.numpy.ops import axis_angle_matrix
+    # rotation about x
+    x, y = np.meshgrid(np.linspace(-1, 1, 5), np.linspace(1, -1, 5))
+    z = np.zeros_like(x)
+
+    pos = tch_var_f(np.stack((x, y, z), axis=2))
+    M = tch_var_f(axis_angle_matrix(axis=[1, 0, 0], angle=np.pi / 4))
+    pos = pos.view(-1, 3).matmul(M[:, :3].transpose(1, 0))[:, :3].contiguous().view(pos.shape)
+    normals = get_data(estimate_surface_normals_plane_fit(pos, None))
+    print(normals)
+    pos_grad = get_data(grad_spatial2d(pos))
+    dot_prod = np.sum(pos_grad * normals[np.newaxis, ...], axis=-1)
+    np.testing.assert_array_almost_equal(dot_prod, np.zeros_like(dot_prod))
+
+
+def test_plane_estimation_on_hemisphere():
+    x, y = np.meshgrid(np.linspace(-1, 1, 101), np.linspace(1, -1, 101))
+    z = np.sqrt(np.abs(1 - (x ** 2 + y ** 2)))
+    z[np.sqrt(x ** 2 + y ** 2) > 1] = 0
+
+    pos = tch_var_f(np.stack((x, y, z), axis=2))
+    normals_gt = normalize(pos)
+
+    normals = get_data(estimate_surface_normals_plane_fit(pos, None))
+    #print(normals)
+
+
 if __name__ == '__main__':
     test_cam_to_world_identity()
     test_cam_to_world_offset0()
@@ -742,4 +828,6 @@ if __name__ == '__main__':
     cost = spatial_3x3(tch_var_f(rand_val))
     print(rand_val)
     print(cost)
-
+    test_plane_estimation_xy_plane()
+    test_plane_estimation_roty_plane()
+    test_plane_estimation_rotx_plane()
