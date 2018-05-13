@@ -22,7 +22,7 @@ from diffrend.torch.GAN.parameters_halfbox_shapenet import Parameters
 from diffrend.torch.params import SCENE_SPHERE_HALFBOX
 from diffrend.torch.utils import (tch_var_f, tch_var_l, where, get_data,
                                   normalize, cam_to_world, spatial_3x3,
-                                  grad_spatial2d)
+                                  grad_spatial2d, normal_consistency_cost)
 from diffrend.torch.renderer import (render, render_splats_NDC,
                                      render_splats_along_ray)
 from diffrend.utils.sample_generator import uniform_sample_sphere
@@ -632,9 +632,12 @@ class GAN(object):
                 #loss += torch.mean(
                 #    (10 * F.relu(z_min - torch.abs(res_pos[..., 2]))) ** 2 +
                 #    (10 * F.relu(torch.abs(res_pos[..., 2]) - z_max)) ** 2)
+            normal_consistency_loss = normal_consistency_cost(res_pos, res['normal'], norm=1)
             spatial_loss = spatial_3x3(res_pos_2D)
             spatial_var = torch.mean(res_pos[:, 0].var() + res_pos[:, 1].var() + res_pos[:, 2].var())
-            loss += 0.01 * (1 / (spatial_var + 1e-4)) + 0.5 * spatial_loss
+            loss += self.opt.spatial_var_loss_weight * (1 / (spatial_var + 1e-4)) + \
+                    self.opt.spatial_loss_weight * spatial_loss + \
+                    self.opt.normal_consistency_loss_weight * normal_consistency_loss
             if self.opt.render_img_nc == 1:
                 depth = res['depth']
                 # Normalize depth image

@@ -112,6 +112,12 @@ class Parameters():
         self.parser.add_argument('--alt_opt_zn_start', type=int, default=10000,
                                  help='Alternating optimization start interation. [-1: starts immediately,'
                                       '100: starts alternating after the first 100 iterations.')
+        self.parser.add_argument('--normal_consistency_loss_weight', type=float, default=1e-3,
+                                 help='Normal consistency loss weight.')
+        self.parser.add_argument('--spatial_var_loss_weight', type=float, default=1e-2,
+                                 help='Spatial variance loss weight.')
+        self.parser.add_argument('--spatial_loss_weight', type=float, default=0.5,
+                                 help='Spatial smoothness loss weight.')
         self.parser.add_argument('--beta1', type=float, default=0.0, help='beta1 for adam. default=0.5')
         self.parser.add_argument('--n_iter', type=int, default=35201, help='number of iterations to train')
         self.parser.add_argument('--batchSize', type=int, default=4, help='input batch size')
