@@ -600,7 +600,9 @@ class GAN(object):
                     normals = batch[idx][:, 1:]
 
             self.scene['objects']['disk']['pos'] = pos
-            self.scene['objects']['disk']['normal'] = normals
+            # If est_normals is enabled then the splat normal is set to None, and render_splats_along_ray will
+            # estimate the normals based on the neighboring splat positions.
+            self.scene['objects']['disk']['normal'] = normals if self.opt.est_normals is False else None
 
             # Set camera position
             if batch_cond is None:

@@ -161,6 +161,7 @@ class Parameters():
         self.parser.add_argument('--render_type', type=str, default='img', help='render the image or the depth map [img, depth]')
         self.parser.add_argument('--render_img_size', type=int, default=128, help='Width/height of the rendering image')
         self.parser.add_argument('--splats_radius', type=float, default=0.05, help='radius of the splats (fix)')
+        self.parser.add_argument('--est_normals', action='store_true', help='Estimate normals from splat positions.')
         self.parser.add_argument('--same_view', action='store_true', help='data with view fixed') # before we add conditioning on cam pose, this is necessary
         self.parser.add_argument('--print_interval', type=int, default=5, help='Print loss interval.')
         self.parser.add_argument('--save_image_interval', type=int, default=50, help='Save image interval.')

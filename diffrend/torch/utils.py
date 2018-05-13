@@ -724,7 +724,7 @@ def estimate_surface_normals_plane_fit(pos, kernel_size):
     # [[a, b], [c, d]] --> [[d, -b], [-c, a]]
     MtM = MtM.index_select(1, tch_var_l([1, 0])).transpose(2, 1).index_select(1, tch_var_l([1, 0])) * \
           tch_var_f([[1, -1], [-1, 1]])[np.newaxis, ...]
-    MtMinv = MtM / ad_m_bc[:, np.newaxis, np.newaxis]
+    MtMinv = MtM / (ad_m_bc[:, np.newaxis, np.newaxis] + 1e-12)
     # (M^TM)^{-1}M^T -(z - z0)
     normal = MtMinv.matmul(Mt.matmul(-nbhr_diff[..., 2].transpose(1, 0)[:, :, np.newaxis])).squeeze()
     normal = torch.cat([normal, tch_var_f(np.ones((normal.shape[0], 1)))], dim=1).view(pos.shape)

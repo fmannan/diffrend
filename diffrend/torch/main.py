@@ -1,7 +1,9 @@
 from diffrend.torch.params import SCENE_BASIC, SCENE_1, SCENE_2
 from diffrend.torch.renderer import render, render_splats_NDC, render_splats_along_ray
-from diffrend.torch.utils import (tch_var_f, tch_var_l, CUDA, get_data, get_normalmap_image, world_to_cam,
-cam_to_world, normalize, unit_norm2_L2loss, normalize_maxmin, normal_consistency_cost, away_from_camera_penalty)
+from diffrend.torch.utils import (tch_var_f, tch_var_l, CUDA, get_data, get_normalmap_image,
+                                  world_to_cam, cam_to_world, normalize, unit_norm2_L2loss,
+                                  normalize_maxmin, normal_consistency_cost, away_from_camera_penalty,
+                                  spatial_3x3)
 from diffrend.torch.ops import sph2cart_unit
 from diffrend.utils.utils import save_xyz
 import torch.nn as nn
@@ -227,7 +229,7 @@ def optimize_NDC_test(out_dir, width=32, height=32, max_iter=100, lr=1e-3, scale
 
 
 def optimize_splats_along_ray_shadow_test(out_dir, width, height, max_iter=100, lr=1e-3, scale=10,
-                                          shadow=True, vis_only=False, samples=1,
+                                          shadow=True, vis_only=False, samples=1, est_normals=False,
                                           print_interval=10, imsave_interval=10, xyz_save_interval=100):
     """A demo function to check if the differentiable renderer can optimize splats rendered along ray.
     :param scene:
@@ -378,9 +380,9 @@ def optimize_splats_along_ray_shadow_test(out_dir, width, height, max_iter=100, 
     exp_decay = lambda x, scale: torch.exp(-x / scale)
     linear_decay = lambda x, scale: scale / (x + 1e-6)
 
-    z_norm_weight_init = 1e-2 #1e-5
+    z_norm_weight_init = 1e-2 # 1e-5
     z_norm_activate_iter = 1000
-    decay_fn = lambda x: linear_decay(x, 10)
+    decay_fn = lambda x: linear_decay(x, 100)
     loss_per_iter = []
     for iter in range(max_iter):
         lr_scheduler.step()
@@ -389,8 +391,9 @@ def optimize_splats_along_ray_shadow_test(out_dir, width, height, max_iter=100, 
         normals = sph2cart_unit(torch.stack((phi, theta), dim=1))
 
         pos = torch.stack((tch_var_f(x.ravel()), tch_var_f(y.ravel()), z), dim=1)
+
         input_scene['objects'] = {'disk': {'pos': pos,
-                                           'normal': normalize(normals),
+                                           'normal': normalize(normals) if not est_normals else None,
                                            'material_idx': material_idx,
                                            'light_vis': torch.sigmoid(light_vis),
                                            }
@@ -398,6 +401,7 @@ def optimize_splats_along_ray_shadow_test(out_dir, width, height, max_iter=100, 
         res = render_splats_along_ray(input_scene, samples=samples)
         res_pos = res['pos']
         res_normal = res['normal']
+        spatial_loss = spatial_3x3(res_pos)
         unit_normal_loss = unit_norm2_L2loss(normals, 10.0)
         normal_away_from_cam_loss = away_from_camera_penalty(res_pos, res_normal)
         z_pos = res_pos[..., 2]
@@ -412,16 +416,17 @@ def optimize_splats_along_ray_shadow_test(out_dir, width, height, max_iter=100, 
         z_norm_weight = z_norm_weight_init * float(iter > z_norm_activate_iter) * decay_fn(iter - z_norm_activate_iter)
         loss = criterion(scale * im_out, scale * target_im) + z_loss + unit_normal_loss + \
             z_norm_weight * z_norm_loss + \
-            0.0 * spatial_var_loss + \
-            0.0 * normal_away_from_cam_loss
+            0.01 * spatial_var_loss + \
+            0.0 * normal_away_from_cam_loss + 1e-2 * spatial_loss
 
         im_out_ = get_data(im_out)
-        im_out_normal_ = get_data(res['normal']) #[:, :3].reshape(im_out_.shape)
+        im_out_normal_ = get_data(res['normal'])
         pos_out_ = get_data(res['pos'])
 
         loss_ = get_data(loss)
         z_loss_ = get_data(z_loss)
         z_norm_loss_ = get_data(z_norm_loss)
+        spatial_loss_ = get_data(spatial_loss)
         spatial_var_loss_ = get_data(spatial_var_loss)
         unit_normal_loss_ = get_data(unit_normal_loss)
         normal_away_from_cam_loss_ = get_data(normal_away_from_cam_loss)
@@ -438,10 +443,10 @@ def optimize_splats_along_ray_shadow_test(out_dir, width, height, max_iter=100, 
             z__ = pos_out_[..., 2]
             print('%d. loss= %f nloss=%f z_loss=%f [%f, %f] [%f, %f], z_normal_loss: %f,'
                   ' spatial_var_loss: %f, normal_away_loss: %f'
-                  ' nz_range: [%f, %f]' %
+                  ' nz_range: [%f, %f], spatial_loss: %f' %
                   (iter, loss_, unit_normal_loss_, z_loss_, np.min(z_), np.max(z_), np.min(z__),
                    np.max(z__), z_norm_loss_, spatial_var_loss_, normal_away_from_cam_loss_,
-                   normals_[..., 2].min(), normals_[..., 2].max()))
+                   normals_[..., 2].min(), normals_[..., 2].max(), spatial_loss_))
 
         if iter % xyz_save_interval == 0 or iter == max_iter - 1:
             save_xyz(out_dir + '/res_{:05d}.xyz'.format(iter), get_data(res_pos), get_data(res_normal))
@@ -598,6 +603,7 @@ if __name__ == '__main__':
     parser.add_argument('--opt-ray-test', action='store_true', help='Test optimization render along ray.')
     parser.add_argument('--opt-ray-shadow-test', action='store_true', help='Test optimization render along ray.')
     parser.add_argument('--vis-only', action='store_true', help='Optimize only shadow map.')
+    parser.add_argument('--est-normals', action='store_true', help='Estimates normals from position if enabled.')
     parser.add_argument('--samples', type=int, default=1, help='Pixel supersampling.')
     parser.add_argument('--lr', type=float, default=1e-3, help='Learning rate for optimization.')
     parser.add_argument('--max-iter', type=int, default=2000, help='Maximum number of iterations.')
@@ -639,4 +645,5 @@ if __name__ == '__main__':
         optimize_splats_along_ray_shadow_test(out_dir=args.out_dir, width=args.width, height=args.height,
                                               max_iter=args.max_iter, lr=args.lr,
                                               vis_only=args.vis_only, shadow=args.opt_ray_shadow_test,
-                                              samples=args.samples, print_interval=args.print_interval)
+                                              samples=args.samples, est_normals=args.est_normals,
+                                              print_interval=args.print_interval)

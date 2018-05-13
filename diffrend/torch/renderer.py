@@ -525,9 +525,9 @@ def render_splats_along_ray(scene, **params):
 
     # Estimate normals from splats/point-cloud if no normals were provided
     if normals_CC is None:
-        normal_est_method = get_param_value(params, 'normal_estimation_method', 'plane_fitting')
-        kernel_size = get_param_value(params, 'normal_estimation_kernel_size', 3)
-        normals_CC = estimate_surface_normals(pos_CC, kernel_size, normal_est_method)
+        normal_est_method = get_param_value('normal_estimation_method', params, 'plane')
+        kernel_size = get_param_value('normal_estimation_kernel_size', params, 3)
+        normals_CC = estimate_surface_normals(pos_CC.view(H, W, 3), kernel_size, normal_est_method)[..., :3].view(-1, 3)
 
     material_idx = scene['objects']['disk']['material_idx']
     light_visibility = None
