@@ -638,6 +638,7 @@ def away_from_camera_penalty(pos, normal, camera_pos=None):
         cam_dir = normalize(-pos.view(-1, 3))
     return torch.sum(torch.nn.functional.relu(-tensor_dot(normal.view(-1, 3), cam_dir, axis=-1)))
 
+
 def pad2d(x, pad, pad_type):
     FN_PADDING_TYPE_MAP = {'replicate': torch.nn.ReplicationPad2d,
                            'reflect': torch.nn.ReflectionPad2d,
@@ -700,9 +701,12 @@ def normal_consistency_cost(pos, normal, norm):
         mean of cosine difference from the true normal
 
     """
-    nbhr_diff = grad_spatial2d(pos)
-    dot_normal_vec = torch.pow(torch.sum(torch.abs(nbhr_diff * normal[np.newaxis, ...]) ** norm, dim=-1), 1 / norm)
-    return torch.mean(dot_normal_vec)
+    # Unit vectors on a grid
+    pos_vector = normalize(grad_spatial2d(pos))
+    # Per-pixel cosine difference
+    dot_prod = torch.sum(pos_vector * normal[np.newaxis, ...], dim=-1)
+    # We want the |cosine_difference|^norm value to be exactly zero
+    return torch.mean(torch.abs(dot_prod) ** norm)
 
 
 def estimate_surface_normals_plane_fit(pos, kernel_size):
@@ -715,7 +719,7 @@ def estimate_surface_normals_plane_fit(pos, kernel_size):
         normals: [
 
     """
-    nbhr_diff = grad_spatial2d(pos)
+    nbhr_diff = normalize(grad_spatial2d(pos))
     nbhr_diff = nbhr_diff.view(nbhr_diff.shape[0], -1, 3)
     M = nbhr_diff[:, :, :2].transpose(1, 0)
     Mt = M.transpose(2, 1)
@@ -761,12 +765,16 @@ def test_plane_estimation_xy_plane():
     z = np.ones_like(x) * -1
 
     pos = tch_var_f(np.stack((x, y, z), axis=2))
-    normals = get_data(estimate_surface_normals_plane_fit(pos, None))
-    tmp = normals.reshape(-1, 3)
+    normals = estimate_surface_normals_plane_fit(pos, None)
+    normals_ = get_data(normals)
+    tmp = normals_.reshape(-1, 3)
     np.testing.assert_equal(tmp, np.array([[0, 0, 1]] * tmp.shape[0]))
     pos_grad = get_data(grad_spatial2d(pos))
-    dot_prod = np.sum(pos_grad * normals[np.newaxis, ...], axis=-1)
+    dot_prod = np.sum(pos_grad * normals_[np.newaxis, ...], axis=-1)
     np.testing.assert_array_almost_equal(dot_prod, np.zeros_like(dot_prod))
+    nc_cost = get_data(normal_consistency_cost(pos, normals, 1))
+    print('nc_cost', nc_cost)
+    np.testing.assert_equal(nc_cost, 0.0)
 
 
 def test_plane_estimation_roty_plane():
@@ -778,17 +786,23 @@ def test_plane_estimation_roty_plane():
 
     M = tch_var_f(axis_angle_matrix(axis=[0, 1, 0], angle=np.pi / 4))
     pos = pos.view(-1, 3).matmul(M[:, :3].transpose(1, 0))[:, :3].contiguous().view(pos.shape)
-    normals = get_data(estimate_surface_normals_plane_fit(pos, None))
-    print(normals)
-    np.testing.assert_array_almost_equal(np.sum(get_data(pos) * normals, axis=-1), np.zeros(normals.shape[:2]))
+    normals = estimate_surface_normals_plane_fit(pos, None)
+    normals_ = get_data(normals)
+    np.testing.assert_array_almost_equal(np.sum(get_data(pos) * normals_, axis=-1), np.zeros(normals.shape[:2]))
+    nc_cost = get_data(normal_consistency_cost(pos, normals, 1))
+    print('nc_cost', nc_cost)
+    np.testing.assert_almost_equal(nc_cost, 0.0)
 
     M = tch_var_f(axis_angle_matrix(axis=[0, 1, 0], angle=-np.pi / 4))
     pos = pos.view(-1, 3).matmul(M[:, :3].transpose(1, 0))[:, :3].contiguous().view(pos.shape)
-    normals = get_data(estimate_surface_normals_plane_fit(pos, None))
-    print(normals)
+    normals = estimate_surface_normals_plane_fit(pos, None)
+    normals_ = get_data(normals)
     pos_grad = get_data(grad_spatial2d(pos))
-    dot_prod = np.sum(pos_grad * normals[np.newaxis, ...], axis=-1)
+    dot_prod = np.sum(pos_grad * normals_[np.newaxis, ...], axis=-1)
     np.testing.assert_array_almost_equal(dot_prod, np.zeros_like(dot_prod))
+    nc_cost = get_data(normal_consistency_cost(pos, normals, 1))
+    print('nc_cost', nc_cost)
+    np.testing.assert_almost_equal(nc_cost, 0.0)
 
 
 def test_plane_estimation_rotx_plane():
@@ -800,11 +814,14 @@ def test_plane_estimation_rotx_plane():
     pos = tch_var_f(np.stack((x, y, z), axis=2))
     M = tch_var_f(axis_angle_matrix(axis=[1, 0, 0], angle=np.pi / 4))
     pos = pos.view(-1, 3).matmul(M[:, :3].transpose(1, 0))[:, :3].contiguous().view(pos.shape)
-    normals = get_data(estimate_surface_normals_plane_fit(pos, None))
-    print(normals)
+    normals = estimate_surface_normals_plane_fit(pos, None)
+    normals_ = get_data(normals)
     pos_grad = get_data(grad_spatial2d(pos))
-    dot_prod = np.sum(pos_grad * normals[np.newaxis, ...], axis=-1)
+    dot_prod = np.sum(pos_grad * normals_[np.newaxis, ...], axis=-1)
     np.testing.assert_array_almost_equal(dot_prod, np.zeros_like(dot_prod))
+    nc_cost = get_data(normal_consistency_cost(pos, normals, 1))
+    print('nc_cost', nc_cost)
+    np.testing.assert_almost_equal(nc_cost, 0.0)
 
 
 def test_plane_estimation_on_hemisphere():

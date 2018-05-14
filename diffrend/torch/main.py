@@ -380,8 +380,12 @@ def optimize_splats_along_ray_shadow_test(out_dir, width, height, max_iter=100, 
     exp_decay = lambda x, scale: torch.exp(-x / scale)
     linear_decay = lambda x, scale: scale / (x + 1e-6)
 
-    z_norm_weight_init = 1e-2 # 1e-5
-    z_norm_activate_iter = 1000
+    spatial_var_loss_weight = 0.0
+    normal_away_from_cam_loss_weight = 0.0
+    spatial_loss_weight = 0.0
+
+    z_norm_weight_init = 1e-2  # 1e-5
+    z_norm_activate_iter = 0  # 1000
     decay_fn = lambda x: linear_decay(x, 100)
     loss_per_iter = []
     for iter in range(max_iter):
@@ -416,8 +420,9 @@ def optimize_splats_along_ray_shadow_test(out_dir, width, height, max_iter=100, 
         z_norm_weight = z_norm_weight_init * float(iter > z_norm_activate_iter) * decay_fn(iter - z_norm_activate_iter)
         loss = criterion(scale * im_out, scale * target_im) + z_loss + unit_normal_loss + \
             z_norm_weight * z_norm_loss + \
-            0.01 * spatial_var_loss + \
-            0.0 * normal_away_from_cam_loss + 1e-2 * spatial_loss
+            spatial_var_loss_weight * spatial_var_loss + \
+            normal_away_from_cam_loss_weight * normal_away_from_cam_loss + \
+            spatial_loss_weight * spatial_loss
 
         im_out_ = get_data(im_out)
         im_out_normal_ = get_data(res['normal'])
