@@ -38,7 +38,7 @@ class Parameters():
             #default_root = '/data/lisa/data/ShapeNetCore.v2'
             #default_root = '/home/dvazquez/datasets/shapenet/ShapeNetCore.v2'
             default_root = '/home/sai/attenuation/diffrend/data/sphere'
-            default_out = './output_7_05'
+            default_out = './output'
         else:
             raise ValueError('Add the route for the dataset of your system')
 
@@ -54,6 +54,7 @@ class Parameters():
         self.parser.add_argument('--toy_example', action='store_true', default=False, help='Use toy example')
         self.parser.add_argument('--use_old_sign', action='store_true', default=True, help='Use toy example')
         self.parser.add_argument('--use_quartic', action='store_true', default=False, help='Use toy example')
+        self.parser.add_argument('--random_rotation', action='store_true', default=False, help='Use toy example')
         self.parser.add_argument('--rotate_foreground', action='store_true', default=False, help='Use toy example')
         self.parser.add_argument('--use_penality', action='store_true', default=True, help='Use toy example')
         self.parser.add_argument('--use_mesh', action='store_true', default=True, help='Render dataset with meshes')
@@ -113,6 +114,10 @@ class Parameters():
                                  help='Alternating optimization start interation. [-1: starts immediately,'
                                       '100: starts alternating after the first 100 iterations.')
         self.parser.add_argument('--normal_consistency_loss_weight', type=float, default=1e-3,
+                                 help='Normal consistency loss weight.')
+        self.parser.add_argument('--z_norm_weight_init', type=float, default=1e-2,
+                                 help='Normal consistency loss weight.')
+        self.parser.add_argument('--z_norm_activate_iter', type=float, default=500,
                                  help='Normal consistency loss weight.')
         self.parser.add_argument('--spatial_var_loss_weight', type=float, default=1e-2,
                                  help='Spatial variance loss weight.')

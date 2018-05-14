@@ -19,7 +19,7 @@ import torchvision
 from diffrend.torch.GAN.datasets import Dataset_load
 from diffrend.torch.GAN.twin_networks import create_networks
 from diffrend.torch.GAN.parameters_halfbox_shapenet import Parameters
-from diffrend.torch.params import SCENE_SPHERE_HALFBOX
+from diffrend.torch.params import SCENE_SPHERE_HALFBOX_0
 from diffrend.torch.utils import (tch_var_f, tch_var_l, where, get_data,
                                   normalize, cam_to_world, spatial_3x3,
                                   grad_spatial2d, normal_consistency_cost)
@@ -69,7 +69,7 @@ def mkdir(path):
 def create_scene(width, height, fovy, focal_length, n_samples):
     """Create a semi-empty scene with camera parameters."""
     # Create a splats rendering scene
-    scene = copy.deepcopy(SCENE_SPHERE_HALFBOX)
+    scene = copy.deepcopy(SCENE_SPHERE_HALFBOX_0)
 
     # Define the camera parameters
     scene['camera']['viewport'] = [0, 0, width, height]
@@ -131,6 +131,15 @@ class GAN(object):
 
         # Create splats rendering scene
         self.create_scene()
+
+        #no_decay = lambda x: x
+        #exp_decay = lambda x, scale: torch.exp(-x / scale)
+        linear_decay = lambda x, scale: scale / (x + 1e-6)
+
+
+
+
+        self.decay_fn = lambda x: linear_decay(x, 100)
 
     def create_dataset_loader(self, ):
         """Create dataset leader."""
@@ -554,7 +563,7 @@ class GAN(object):
         rendered_res_world = []
         scenes = []
         inpath = self.opt.out_dir+'/'
-        z_min = self.scene['camera']['focal_length'] + 0.5
+        z_min = self.scene['camera']['focal_length'] + 2
         z_max = z_min+5
         # Set splats into rendering scene
         if 'sphere' in self.scene['objects']:
@@ -634,12 +643,15 @@ class GAN(object):
                 #loss += torch.mean(
                 #    (10 * F.relu(z_min - torch.abs(res_pos[..., 2]))) ** 2 +
                 #    (10 * F.relu(torch.abs(res_pos[..., 2]) - z_max)) ** 2)
-            normal_consistency_loss = normal_consistency_cost(res_pos, res['normal'], norm=1)
+            z_norm_weight = self.opt.z_norm_weight_init * float(self.iterationa_no > self.opt.z_norm_activate_iter) * self.decay_fn(self.iterationa_no - self.opt.z_norm_activate_iter)
+            normal_consistency_loss = z_norm_weight*normal_consistency_cost(res_pos, res['normal'], norm=1)
+            if self.iterationa_no % 40 ==0 and self.iterationa_no > self.opt.z_norm_activate_iter:
+                print("ieration_no: "+str(self.iterationa_no)+" normal consistency loss: "+str(normal_consistency_loss.data[0])+" "+"normal consistency weight: "+str(z_norm_weight))
             spatial_loss = spatial_3x3(res_pos_2D)
             spatial_var = torch.mean(res_pos[:, 0].var() + res_pos[:, 1].var() + res_pos[:, 2].var())
             loss += self.opt.spatial_var_loss_weight * (1 / (spatial_var + 1e-4)) + \
                     self.opt.spatial_loss_weight * spatial_loss + \
-                    self.opt.normal_consistency_loss_weight * normal_consistency_loss
+                     normal_consistency_loss
             if self.opt.render_img_nc == 1:
                 depth = res['depth']
                 # Normalize depth image
@@ -659,11 +671,11 @@ class GAN(object):
                 im_d = depth.unsqueeze(0)
                 im = res['image'].permute(2, 0, 1)
                 H, W = im.shape[1:]
-                target_normal_ = get_data(res['normal'])
+                target_normal_ = get_data(res['normal']).reshape((H, W, 3))
                 target_normalmap_img_ = get_normalmap_image(target_normal_)
                 im_n=tch_var_f(target_normalmap_img_).view(im.shape[1], im.shape[2], 3).permute(2, 0, 1)
 
-                target_worldnormal_ = get_data(world_tform['normal'])
+                target_worldnormal_ = get_data(world_tform['normal']).reshape((H, W, 3))
                 target_worldnormalmap_img_ = get_normalmap_image(target_worldnormal_)
                 im_wn=tch_var_f(target_worldnormalmap_img_).view(H, W, 3).permute(2, 0, 1)
             if self.iterationa_no % self.opt.save_image_interval == 0:
