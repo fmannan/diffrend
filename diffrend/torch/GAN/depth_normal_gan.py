@@ -108,9 +108,6 @@ def calc_gradient_penalty(discriminator, real_data, fake_data, fake_data_cond,
     return gradient_penalty
 
 
-
-
-
 class GAN(object):
     """GAN class."""
 
