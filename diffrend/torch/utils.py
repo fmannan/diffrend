@@ -709,6 +709,38 @@ def normal_consistency_cost(pos, normal, norm):
     return torch.mean(torch.abs(dot_prod) ** norm)
 
 
+def find_average_normal(pos, kernel_size):
+    """Estimate the normal from the average normal of the local patches
+    Args:
+        pos:
+        kernel_size:
+
+    Returns:
+
+    """
+    nbhr_diff = normalize(grad_spatial2d(pos))
+    # cross-prod of neighboring difference
+    # 0 1 2
+    # 3 4 5
+    # 6 7 8
+    # In grad_spatial2d the middle difference is ignored
+    # 0 1 2
+    # 3 - 4
+    # 5 6 7
+    # Take cross products in counter-clockwise direction
+    normal = torch.stack([torch.cross(nbhr_diff[4], nbhr_diff[2], dim=-1),
+                          torch.cross(nbhr_diff[2], nbhr_diff[1], dim=-1),
+                          torch.cross(nbhr_diff[1], nbhr_diff[0], dim=-1),
+                          torch.cross(nbhr_diff[0], nbhr_diff[3], dim=-1),
+                          torch.cross(nbhr_diff[3], nbhr_diff[5], dim=-1),
+                          torch.cross(nbhr_diff[5], nbhr_diff[6], dim=-1),
+                          torch.cross(nbhr_diff[6], nbhr_diff[7], dim=-1),
+                          torch.cross(nbhr_diff[7], nbhr_diff[4], dim=-1)], dim=0)
+    if np.any(np.isnan(get_data(normal))):
+        assert not np.any(np.isnan(get_data(normal)))
+    return normalize(torch.mean(normal, dim=0))
+
+
 def estimate_surface_normals_plane_fit(pos, kernel_size):
     """
     Args:
@@ -737,7 +769,8 @@ def estimate_surface_normals_plane_fit(pos, kernel_size):
 
 
 NORMAL_EST_FN_MAP = {'plane': estimate_surface_normals_plane_fit,
-                     'quadric': None}
+                     'quadric': None,
+                     'avg_normal': find_average_normal}
 
 
 def estimate_surface_normals(pos, kernel_size, method):
