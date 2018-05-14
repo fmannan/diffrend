@@ -11,7 +11,7 @@ from torch import optim
 import torch.nn.functional as F
 from torch.optim.lr_scheduler import StepLR
 import numpy as np
-from diffrend.torch.NEstNet import NEstNet
+from diffrend.torch.NEstNet import NEstNet_v0, NEstNet_Affine
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -560,7 +560,7 @@ def generate_normals(z, camera, norm_est_net_fn):
     W, H = camera['viewport'][2:]
     pcl = z_to_pcl_CC(z.squeeze(), camera)
     n = norm_est_net_fn(pcl.view(H, W, 3).permute(2, 0, 1)[np.newaxis, ...])
-    return n.squeeze().permute(1, 2, 0).view(-1, 3).contiguous()
+    return n.squeeze().permute(1, 2, 0).contiguous().view(-1, 3)
 
 
 def optimize_splats_along_ray_shadow_with_normalest_test(out_dir, width, height, max_iter=100, lr=1e-3, scale=10,
@@ -720,15 +720,21 @@ def optimize_splats_along_ray_shadow_with_normalest_test(out_dir, width, height,
     normal_away_from_cam_loss_weight = 0.0
     spatial_loss_weight = 0.0
 
-    z_norm_weight_init = 1e-2  # 1e-5
+    z_norm_weight_init = 0.0 #1e-2  # 1e-5
     z_norm_activate_iter = 0  # 1000
     decay_fn = lambda x: linear_decay(x, 100)
     loss_per_iter = []
-    normal_est_network = NEstNet(sph=True)
+    if b_generate_normals:
+        est_normals = False
+        normal_est_network = NEstNet_Affine(kernel_size=3, sph=False)
+        print(normal_est_network)
+        normal_est_network.cuda()
     for iter in range(max_iter):
         lr_scheduler.step()
         if b_generate_normals:
             normals = generate_normals(z, scene['camera'], normal_est_network)
+            #if iter > 100 and iter % 10 == 0:
+            #    print(normals)
         else:
             phi = F.sigmoid(normal_angles[:, 0]) * 2 * np.pi
             theta = F.sigmoid(normal_angles[:, 1]) * np.pi / 2  # F.tanh(normal_angles[:, 1]) * np.pi / 2
@@ -758,11 +764,11 @@ def optimize_splats_along_ray_shadow_with_normalest_test(out_dir, width, height,
 
         optimizer.zero_grad()
         z_norm_weight = z_norm_weight_init * float(iter > z_norm_activate_iter) * decay_fn(iter - z_norm_activate_iter)
-        loss = criterion(scale * im_out, scale * target_im) + z_loss + unit_normal_loss + \
-            z_norm_weight * z_norm_loss + \
-            spatial_var_loss_weight * spatial_var_loss + \
-            normal_away_from_cam_loss_weight * normal_away_from_cam_loss + \
-            spatial_loss_weight * spatial_loss
+        loss = criterion(scale * im_out, scale * target_im) + z_loss + unit_normal_loss
+            #z_norm_weight * z_norm_loss + \
+            #spatial_var_loss_weight * spatial_var_loss + \
+            #normal_away_from_cam_loss_weight * normal_away_from_cam_loss + \
+            #spatial_loss_weight * spatial_loss
 
         im_out_ = get_data(im_out)
         im_out_normal_ = get_data(res['normal'])
@@ -949,6 +955,7 @@ if __name__ == '__main__':
     parser.add_argument('--opt-ray-shadow-test', action='store_true', help='Test optimization render along ray.')
     parser.add_argument('--vis-only', action='store_true', help='Optimize only shadow map.')
     parser.add_argument('--est-normals', action='store_true', help='Estimates normals from position if enabled.')
+    parser.add_argument('--nestnet', action='store_true', help='Use Normal Estimation Network.')
     parser.add_argument('--samples', type=int, default=1, help='Pixel supersampling.')
     parser.add_argument('--lr', type=float, default=1e-3, help='Learning rate for optimization.')
     parser.add_argument('--max-iter', type=int, default=2000, help='Maximum number of iterations.')
@@ -988,7 +995,8 @@ if __name__ == '__main__':
 
     if args.opt_ray_shadow_test or args.opt_ray_test:
         optimize_splats_along_ray_shadow_with_normalest_test(out_dir=args.out_dir, width=args.width, height=args.height,
-                                              max_iter=args.max_iter, lr=args.lr,
-                                              vis_only=args.vis_only, shadow=args.opt_ray_shadow_test,
-                                              samples=args.samples, est_normals=args.est_normals,
-                                              print_interval=args.print_interval)
+                                                             max_iter=args.max_iter, lr=args.lr,
+                                                             vis_only=args.vis_only, shadow=args.opt_ray_shadow_test,
+                                                             samples=args.samples, est_normals=args.est_normals,
+                                                             b_generate_normals=args.nestnet,
+                                                             print_interval=args.print_interval)
