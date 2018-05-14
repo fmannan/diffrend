@@ -53,8 +53,8 @@ def norm2_sqr(u):
     return torch.sum(u ** 2, dim=-1)
 
 
-def norm_p(u, p=2):
-    return torch.pow(torch.sum(torch.pow(u, p), dim=-1), 1./p)
+def norm_p(u, p=2, eps=0):
+    return torch.pow(torch.sum(torch.pow(u, p) + eps, dim=-1), 1./p)
 
 
 def tensor_dot(x, y, axis=0):
@@ -122,12 +122,17 @@ def normalize_maxmin(x):
     return (x - min_val) / (torch.max(x) - min_val)
 
 
-def normalize(u):
-    denom = norm_p(u, 2)
+def normalize(u, eps=0.0):
+    denom = norm_p(u, 2, eps=eps)
     if u.dim() > 1:
         denom = denom[..., np.newaxis]
     # TODO: nonzero_divide for rows with norm = 0
     return u / denom
+    # if u.dim() == 2:
+    #     return torch.renorm(u, 2, 0, 1)
+    # elif u.dim() == 3:
+    #     return torch.renorm(u, 2, )
+
 
 
 def reflect_ray(incident, normal):
@@ -379,49 +384,6 @@ def generate_rays(camera):
         ray_dir = torch.stack((x, y, tch_var_f(-np.ones(n_pixels) * focal_length)), dim=0)
         inv_view_matrix = lookat_rot_inv(eye=eye, at=at, up=up)
         ray_dir = torch.mm(inv_view_matrix, ray_dir)
-
-        # normalize ray direction
-        ray_dir /= torch.sqrt(torch.sum(ray_dir ** 2, dim=0))
-
-    return ray_orig, ray_dir, H, W
-
-
-def generate_rays_TEST(camera):
-    viewport = np.array(camera['viewport'])
-    W, H = viewport[2] - viewport[0], viewport[3] - viewport[1]
-    aspect_ratio = W / H
-
-    x, y = np.meshgrid(np.linspace(-1, 1, W), np.linspace(1, -1, H))
-    n_pixels = x.size
-
-    fovy = np.array(camera['fovy'])
-    focal_length = np.array(camera['focal_length'])
-    h = np.tan(fovy / 2) * 2 * focal_length
-    w = h * aspect_ratio
-
-    x *= w / 2
-    y *= h / 2
-
-    x = tch_var_f(x.ravel())
-    y = tch_var_f(y.ravel())
-
-    eye = camera['eye'][:3]
-    at = camera['at'][:3]
-    up = camera['up'][:3]
-
-    proj_type = camera['proj_type']
-    if proj_type == 'ortho' or proj_type == 'orthographic':
-        ray_dir = normalize(at - eye)[:, np.newaxis]
-        ray_orig = torch.stack((x, y, tch_var_f(np.zeros(n_pixels)), tch_var_f(np.ones(n_pixels))), dim=0)
-        inv_view_matrix = lookat_inv(eye=eye, at=at, up=up)
-        ray_orig = torch.mm(inv_view_matrix, ray_orig)
-        ray_orig = (ray_orig[:3] / ray_orig[3][np.newaxis, :]).permute(1, 0)
-    elif proj_type == 'persp' or proj_type == 'perspective':
-        ray_orig = eye[np.newaxis, :]
-        proj_plane = torch.stack((x, y, tch_var_f(-np.ones(n_pixels) * focal_length), tch_var_f(np.ones(n_pixels))), dim=0)
-        inv_view_matrix = lookat_inv(eye=eye, at=at, up=up)
-        proj_plane_tformed = torch.mm(inv_view_matrix, proj_plane)
-        ray_dir = proj_plane_tformed[:3] - ray_orig.transpose(1, 0)
 
         # normalize ray direction
         ray_dir /= torch.sqrt(torch.sum(ray_dir ** 2, dim=0))
@@ -702,7 +664,7 @@ def normal_consistency_cost(pos, normal, norm):
 
     """
     # Unit vectors on a grid
-    pos_vector = normalize(grad_spatial2d(pos))
+    pos_vector = normalize(grad_spatial2d(pos), 1e-10)
     # Per-pixel cosine difference
     dot_prod = torch.sum(pos_vector * normal[np.newaxis, ...], dim=-1)
     # We want the |cosine_difference|^norm value to be exactly zero
@@ -718,7 +680,7 @@ def find_average_normal(pos, kernel_size):
     Returns:
 
     """
-    nbhr_diff = normalize(grad_spatial2d(pos))
+    nbhr_diff = normalize(grad_spatial2d(pos), 1e-10)
     # cross-prod of neighboring difference
     # 0 1 2
     # 3 4 5
@@ -738,7 +700,7 @@ def find_average_normal(pos, kernel_size):
                           torch.cross(nbhr_diff[7], nbhr_diff[4], dim=-1)], dim=0)
     if np.any(np.isnan(get_data(normal))):
         assert not np.any(np.isnan(get_data(normal)))
-    return normalize(torch.mean(normal, dim=0))
+    return torch.clamp(normalize(torch.mean(normal, dim=0), 1e-10), 0.0, 1.0)
 
 
 def estimate_surface_normals_plane_fit(pos, kernel_size):
@@ -751,7 +713,7 @@ def estimate_surface_normals_plane_fit(pos, kernel_size):
         normals: [
 
     """
-    nbhr_diff = normalize(grad_spatial2d(pos))
+    nbhr_diff = normalize(grad_spatial2d(pos), 1e-10)
     nbhr_diff = nbhr_diff.view(nbhr_diff.shape[0], -1, 3)
     M = nbhr_diff[:, :, :2].transpose(1, 0)
     Mt = M.transpose(2, 1)

@@ -424,7 +424,7 @@ def optimize_splats_along_ray_shadow_with_normalest_test(out_dir, width, height,
                                            'light_vis': torch.sigmoid(light_vis),
                                            }
                                   }
-        res = render_splats_along_ray(input_scene, samples=samples, normal_estimation_method='plane')
+        res = render_splats_along_ray(input_scene, samples=samples, normal_estimation_method='avg_normal')
         res_pos = res['pos']
         res_normal = res['normal']
         spatial_loss = spatial_3x3(res_pos)
