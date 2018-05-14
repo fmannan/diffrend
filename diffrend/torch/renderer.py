@@ -472,14 +472,10 @@ def reshape_upsampled_data(x, H, W, C, K):
     return x.contiguous().view(H * W * K * K, C)
 
 
-def z_to_pcl_CC(scene):
-    camera = scene['camera']
+def z_to_pcl_CC(z, camera):
     viewport = np.array(camera['viewport'])
     W, H = int(viewport[2] - viewport[0]), int(viewport[3] - viewport[1])
     aspect_ratio = W / H
-
-    splats = scene['objects']['disk']
-    pos_ray = splats['pos']
 
     fovy = camera['fovy']
     focal_length = camera['focal_length']
@@ -488,7 +484,7 @@ def z_to_pcl_CC(scene):
 
     ##### Find (X, Y) in the Camera's view frustum
     # Force the caller to set the z coordinate with the correct sign
-    Z = -torch.nn.functional.relu(-pos_ray[:, 2])  # -torch.abs(pos_ray[:, 2])
+    Z = -torch.nn.functional.relu(-z)
 
     x, y = np.meshgrid(np.linspace(-1, 1, W), np.linspace(1, -1, H))
     x *= w / 2
@@ -534,7 +530,10 @@ def render_splats_along_ray(scene, **params):
 
     ##### Find (X, Y) in the Camera's view frustum
     # Force the caller to set the z coordinate with the correct sign
-    Z = -torch.nn.functional.relu(-pos_ray[:, 2]) #-torch.abs(pos_ray[:, 2])
+    if pos_ray.dim() == 1:
+        Z = -torch.nn.functional.relu(-pos_ray)  # -torch.abs(pos_ray[:, 2])
+    else:
+        Z = -torch.nn.functional.relu(-pos_ray[:, 2]) #-torch.abs(pos_ray[:, 2])
 
     x, y = np.meshgrid(np.linspace(-1, 1, W), np.linspace(1, -1, H))
     x *= w / 2
@@ -685,7 +684,7 @@ def render_splats_along_ray(scene, **params):
         'image': im,
         'depth': im_depth,
         'pos': pos_CC.view(H, W, 3),
-        'normal': normals_CC.view(H, W, 3)
+        'normal': normals_CC.contiguous().view(H, W, 3)
     }
 
 

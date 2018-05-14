@@ -24,7 +24,7 @@ from diffrend.torch.utils import (tch_var_f, tch_var_l, where, get_data,
                                   normalize, cam_to_world, spatial_3x3,
                                   grad_spatial2d, normal_consistency_cost)
 from diffrend.torch.renderer import (render, render_splats_NDC,
-                                     render_splats_along_ray)
+                                     render_splats_along_ray, z_to_pcl_CC)
 from diffrend.torch.NEstNet import NEstNet
 from diffrend.utils.sample_generator import uniform_sample_sphere
 from diffrend.torch.ops import sph2cart_unit
@@ -108,8 +108,7 @@ def calc_gradient_penalty(discriminator, real_data, fake_data, fake_data_cond,
     return gradient_penalty
 
 
-def generate_normals(z, cam_pos, camera):
-    pass
+
 
 
 class GAN(object):
@@ -168,7 +167,8 @@ class GAN(object):
         assert self.netG2 is None
         # Create the normal estimation network which takes pointclouds in the camera space
         # and outputs the normals
-        self.netG2 = NEstNet()
+        self.sph_normals = True
+        self.netG2 = NEstNet(sph=self.sph_normals)
         print(self.netG2)
         if not self.opt.no_cuda:
             self.netD = self.netD.cuda()
@@ -544,6 +544,19 @@ class GAN(object):
             self.batch_size, int(self.opt.nz), 1, 1).normal_(0, 1)
         self.noisev2 = Variable(self.noise2)  # TODO: Add volatile=True???
 
+    def generate_normals(self, z_batch, cam_pos, camera):
+        W, H = camera['viewport'][2:]
+        normals = []
+        for z, eye in zip(z_batch, cam_pos):
+            camera['eye'] = eye
+            pcl = z_to_pcl_CC(z.squeeze(), camera)
+            n = self.netG2(pcl.view(H, W, 3).permute(2, 0, 1)[np.newaxis, ...])
+            n = n.squeeze().permute(1, 2, 0).view(-1, 3).contiguous()
+            # if self.sph_normals:
+            #     n = sph2cart_unit(n.view(-1, 2))
+            normals.append(n)
+        return torch.stack(normals)
+
     def render_batch(self, batch, batch_cond=None):
         """Render a batch of splats."""
         batch_size = batch.size()[0]
@@ -588,7 +601,7 @@ class GAN(object):
             if not self.opt.use_zloss:
                 z = (z - z.min()) / (z.max() - z.min() + eps) * (z_max - z_min) + z_min
 
-            pos = -z[np.newaxis, np.newaxis, :]
+            pos = -z
             normals = batch[idx][:, 1:]
 
             self.scene['objects']['disk']['pos'] = pos
@@ -756,17 +769,14 @@ class GAN(object):
                     self.generate_noise_vector()
                     fake_z = self.netG(self.noisev, self.inputv_cond)
                     # The normal generator is dependent on z
-                    fake_n = generate_normals(fake_z, self.inputv_cond)
-                    #fake_n = self.netG2(self.noisev, self.inputv_cond)
+                    fake_n = self.generate_normals(fake_z, self.inputv_cond, self.scene['camera'])
                     fake2_z = self.netG(self.noisev2, self.inputv_cond2)
-                    #fake2_n = self.netG2(self.noisev2, self.inputv_cond2)
-                    #fake = torch.cat([fake_z, fake_n], 2)
-                    #fake2 = torch.cat([fake2_z, fake2_n], 2)
-                    # Note: self.render_batch will project fake_z to the camera space and
-                    # run the normal generator with that data
+                    fake2_n = self.generate_normals(fake2_z, self.inputv_cond2, self.scene['camera'])
+                    fake = torch.cat([fake_z, fake_n], 2)
+                    fake2 = torch.cat([fake2_z, fake2_n], 2)
                     fake_rendered, fd, fn, fwn, r, loss = self.render_batch(
-                        fake_z, self.inputv_cond)
-                    fake_rendered2, fd2, fn2, fwn2, r2, loss2 = self.render_batch(fake2_z, self.inputv_cond2)
+                        fake, self.inputv_cond)
+                    fake_rendered2, fd2, fn2, fwn2, r2, loss2 = self.render_batch(fake2, self.inputv_cond2)
                     fake_D = torch.cat([fake_rendered.detach(), fd.detach()], 1)
                     # Do not bp through gen
                     outD_fake = self.netD(fake_rendered.detach(), self.inputv_cond.detach())
@@ -821,9 +831,9 @@ class GAN(object):
                 self.netG2.zero_grad()
                 self.generate_noise_vector()
                 fake_z = self.netG(self.noisev, self.inputv_cond)
-                fake_n = self.netG2(self.noisev, self.inputv_cond)
+                fake_n = self.generate_normals(fake_z, self.inputv_cond, self.scene['camera'])
                 fake2_z = self.netG(self.noisev2, self.inputv_cond2)
-                fake2_n = self.netG2(self.noisev2, self.inputv_cond2)
+                fake2_n = self.generate_normals(fake2_z, self.inputv_cond2, self.scene['camera'])
                 fake = torch.cat([fake_z, fake_n], 2)
                 fake2 = torch.cat([fake2_z, fake2_n], 2)
                 fake_rendered, fd, fn, fwn, r, loss = self.render_batch(

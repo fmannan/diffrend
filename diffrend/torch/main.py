@@ -11,6 +11,8 @@ from torch import optim
 import torch.nn.functional as F
 from torch.optim.lr_scheduler import StepLR
 import numpy as np
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 from mpl_toolkits.axes_grid1 import make_axes_locatable
