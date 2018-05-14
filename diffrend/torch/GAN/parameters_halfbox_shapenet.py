@@ -85,6 +85,7 @@ class Parameters():
         self.parser.add_argument('--gen_nextra_layers', type=int, default=0, help='number of extra layers in the generator network')
         self.parser.add_argument('--gen_bias_type', type=str, default=None, help='One of: None, plane')
         self.parser.add_argument('--netG', default='', help="path to netG (to continue training)")
+        self.parser.add_argument('--netG2', default='', help="path to netG2 (normal generator to continue training)")
         self.parser.add_argument('--fix_splat_pos', action='store_true', default=True, help='X and Y coordinates are fix')
         self.parser.add_argument('--use_zloss', action='store_true', default=False, help='use Z loss')
         self.parser.add_argument('--norm_sph_coord', action='store_true', default=True, help='Use spherical coordinates for the normal')

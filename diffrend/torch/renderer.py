@@ -472,6 +472,33 @@ def reshape_upsampled_data(x, H, W, C, K):
     return x.contiguous().view(H * W * K * K, C)
 
 
+def z_to_pcl_CC(z, camera):
+    viewport = np.array(camera['viewport'])
+    W, H = int(viewport[2] - viewport[0]), int(viewport[3] - viewport[1])
+    aspect_ratio = W / H
+
+    fovy = camera['fovy']
+    focal_length = camera['focal_length']
+    h = np.tan(fovy / 2) * 2 * focal_length
+    w = h * aspect_ratio
+
+    ##### Find (X, Y) in the Camera's view frustum
+    # Force the caller to set the z coordinate with the correct sign
+    Z = -torch.nn.functional.relu(-z)
+
+    x, y = np.meshgrid(np.linspace(-1, 1, W), np.linspace(1, -1, H))
+    x *= w / 2
+    y *= h / 2
+
+    x = tch_var_f(x.ravel())
+    y = tch_var_f(y.ravel())
+
+    X = -Z * x / focal_length
+    Y = -Z * y / focal_length
+
+    return torch.stack((X, Y, Z), dim=1)
+
+
 def render_splats_along_ray(scene, **params):
     """Render splats specified in the camera's coordinate system
 
@@ -479,6 +506,7 @@ def render_splats_along_ray(scene, **params):
     :param scene: Scene description
     :return: [H, W, 3] image
     """
+    # TODO (fmannan): reuse z_to_pcl_CC
     camera = scene['camera']
     viewport = np.array(camera['viewport'])
     W, H = int(viewport[2] - viewport[0]), int(viewport[3] - viewport[1])
@@ -502,7 +530,10 @@ def render_splats_along_ray(scene, **params):
 
     ##### Find (X, Y) in the Camera's view frustum
     # Force the caller to set the z coordinate with the correct sign
-    Z = -torch.nn.functional.relu(-pos_ray[:, 2]) #-torch.abs(pos_ray[:, 2])
+    if pos_ray.dim() == 1:
+        Z = -torch.nn.functional.relu(-pos_ray)  # -torch.abs(pos_ray[:, 2])
+    else:
+        Z = -torch.nn.functional.relu(-pos_ray[:, 2]) #-torch.abs(pos_ray[:, 2])
 
     x, y = np.meshgrid(np.linspace(-1, 1, W), np.linspace(1, -1, H))
     x *= w / 2
@@ -653,7 +684,7 @@ def render_splats_along_ray(scene, **params):
         'image': im,
         'depth': im_depth,
         'pos': pos_CC.view(H, W, 3),
-        'normal': normals_CC.view(H, W, 3)
+        'normal': normals_CC.contiguous().view(H, W, 3)
     }
 
 

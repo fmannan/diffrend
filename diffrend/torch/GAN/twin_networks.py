@@ -8,7 +8,7 @@ import numpy as np
 import math
 
 
-def create_networks(opt, verbose=True):
+def create_networks(opt, verbose=True, **params):
     """Create the networks."""
     # Parameters
     ngpu = int(opt.ngpu)
@@ -48,10 +48,12 @@ def create_networks(opt, verbose=True):
         netG = DCGAN_G(splats_img_size, nz, splats_n_dims, ngf, ngpu,
                        n_extra_layers=gen_nextra_layers, use_tanh=False,
                        norm=gen_norm)
-
-        netG2 = DCGAN_G2(splats_img_size, nz, splats_n_dims, ngf, ngpu,
-                       n_extra_layers=gen_nextra_layers, use_tanh=False,
-                       norm=gen_norm)
+        if 'depth_only' in params and params['depth_only'] is True:
+            netG2 = None
+        else:
+            netG2 = DCGAN_G2(splats_img_size, nz, splats_n_dims, ngf, ngpu,
+                           n_extra_layers=gen_nextra_layers, use_tanh=False,
+                           norm=gen_norm)
     elif opt.gen_type == 'resnet':
         netG = _netG_resnet(nz, splats_n_dims, n_splats)
     else:
@@ -62,9 +64,9 @@ def create_networks(opt, verbose=True):
         netG.load_state_dict(torch.load(opt.netG))
     else:
         netG.apply(weights_init)
-    if opt.netG != '':
+    if opt.netG2 != '' and netG2 is not None:
         netG2.load_state_dict(torch.load(opt.netG2))
-    else:
+    elif netG2 is not None:
         netG2.apply(weights_init)
 
     # If WGAN not use no_sigmoid
