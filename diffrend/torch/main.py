@@ -260,9 +260,22 @@ def optimize_splats_along_ray_shadow_with_normalest_test(out_dir, width, height,
     scene['camera']['focal_length'] = 1
     scene['camera']['eye'] = tch_var_f([2, 1, 2, 1])  # tch_var_f([1, 1, 1, 1]) # tch_var_f([2, 2, 2, 1]) #
     scene['camera']['at'] = tch_var_f([0, 0.8, 0, 1])  # tch_var_f([0, 1, 0, 1]) # tch_var_f([2, 2, 0, 1])  #
+    scene['lights']['attenuation'] = tch_var_f([
+            [0., 0.0, 0.01],
+            [0., 0.0, 0.01],
+            [0., 0.0, 0.01],
+        ])
+    scene['materials']['coeffs'] = tch_var_f([
+            [1.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.5, 0.2, 8.0],
+            [1.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+        ])
 
     target_res = render(scene, tiled=True, shadow=shadow)
-    target_im = target_res['image']  # normalize_maxmin(target_res['image'])
+    target_im = normalize_maxmin(target_res['image'])
     target_im.require_grad = False
     target_im_ = get_data(target_im)
     target_pos_ = get_data(target_res['pos'])
@@ -391,11 +404,11 @@ def optimize_splats_along_ray_shadow_with_normalest_test(out_dir, width, height,
     exp_decay = lambda x, scale: torch.exp(-x / scale)
     linear_decay = lambda x, scale: scale / (x + 1e-6)
 
-    spatial_var_loss_weight = 1e-2
+    spatial_var_loss_weight = 0.0
     normal_away_from_cam_loss_weight = 0.0
-    spatial_loss_weight = 0.0
+    spatial_loss_weight = 2
 
-    z_norm_weight_init = 0.0 #1e-2  # 1e-5
+    z_norm_weight_init = 1  # 1e-5
     z_norm_activate_iter = 0  # 1000
     decay_fn = lambda x: linear_decay(x, 100)
     loss_per_iter = []
@@ -428,6 +441,7 @@ def optimize_splats_along_ray_shadow_with_normalest_test(out_dir, width, height,
         res_pos = res['pos']
         res_normal = res['normal']
         spatial_loss = spatial_3x3(res_pos)
+        depth_grad_loss = spatial_3x3(res['depth'])
         unit_normal_loss = unit_norm2_L2loss(res_normal, 10.0)
         normal_away_from_cam_loss = away_from_camera_penalty(res_pos, res_normal)
         z_pos = res_pos[..., 2]
@@ -435,7 +449,7 @@ def optimize_splats_along_ray_shadow_with_normalest_test(out_dir, width, height,
         z_norm_loss = normal_consistency_cost(res_pos, res_normal, norm=1)
         spatial_var = torch.mean(res_pos[..., 0].var() + res_pos[..., 1].var() + res_pos[..., 2].var())
         spatial_var_loss = (1 / (spatial_var + 1e-4))
-        im_out = res['image']  # normalize_maxmin(res['image'])
+        im_out = normalize_maxmin(res['image'])
         res_depth_ = get_data(res['depth'])
 
         optimizer.zero_grad()
