@@ -48,8 +48,8 @@ class ObjectsFolderMultiObjectDataset(Dataset):
         obj2 = load_model(self.opt.bg_model)
         v1 = (obj_model['v'] - obj_model['v'].mean()) / (obj_model['v'].max() - obj_model['v'].min())
         v2 = obj2['v']  # / (obj2['v'].max() - obj2['v'].min())
-        scale = (obj2['v'].max() - obj2['v'].min()) * 0.25
-        offset = np.array([3.0, 3.0, 5.0]) + 2 * np.random.rand(3)
+        scale = (obj2['v'].max() - obj2['v'].min()) * 0.4
+        offset = np.array([5.0, 5.0, 5.0]) + 2 * np.random.rand(3)
 
         if self.opt.random_rotation:
             random_axis = np_normalize(np.random.rand(3))

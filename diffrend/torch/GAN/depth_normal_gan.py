@@ -19,13 +19,13 @@ import torchvision
 from diffrend.torch.GAN.datasets import Dataset_load
 from diffrend.torch.GAN.twin_networks import create_networks
 from diffrend.torch.GAN.parameters_halfbox_shapenet import Parameters
-from diffrend.torch.params import SCENE_SPHERE_HALFBOX
+from diffrend.torch.params import SCENE_SPHERE_HALFBOX_0
 from diffrend.torch.utils import (tch_var_f, tch_var_l, where, get_data,
                                   normalize, cam_to_world, spatial_3x3,
-                                  grad_spatial2d, normal_consistency_cost)
+                                  grad_spatial2d, normal_consistency_cost, depth_rgb_gradient_consistency, grad_spatial2d)
 from diffrend.torch.renderer import (render, render_splats_NDC,
                                      render_splats_along_ray, z_to_pcl_CC)
-from diffrend.torch.NEstNet import NEstNet
+from diffrend.torch.NEstNet import NEstNet_v0
 from diffrend.utils.sample_generator import uniform_sample_sphere
 from diffrend.torch.ops import sph2cart_unit
 from diffrend.utils.utils import contrast_stretch_percentile, save_xyz
@@ -76,7 +76,7 @@ def mkdir(path):
 def create_scene(width, height, fovy, focal_length, n_samples):
     """Create a semi-empty scene with camera parameters."""
     # Create a splats rendering scene
-    scene = copy.deepcopy(SCENE_SPHERE_HALFBOX)
+    scene = copy.deepcopy(SCENE_SPHERE_HALFBOX_0)
 
     # Define the camera parameters
     scene['camera']['viewport'] = [0, 0, width, height]
@@ -165,7 +165,7 @@ class GAN(object):
         # Create the normal estimation network which takes pointclouds in the camera space
         # and outputs the normals
         self.sph_normals = True
-        self.netG2 = NEstNet(sph=self.sph_normals)
+        self.netG2 = NEstNet_v0(sph=self.sph_normals)
         print(self.netG2)
         if not self.opt.no_cuda:
             self.netD = self.netD.cuda()
@@ -573,7 +573,7 @@ class GAN(object):
         rendered_res_world = []
         scenes = []
         inpath = self.opt.out_dir + '/'
-        z_min = self.scene['camera']['focal_length'] + 0.5
+        z_min = self.scene['camera']['focal_length'] + 1.5
         z_max = z_min + 5
 
         # TODO (fmannan): Move this in init. This only needs to be done once!
@@ -604,8 +604,8 @@ class GAN(object):
             self.scene['objects']['disk']['pos'] = pos
 
             # Normal estimation network and est_normals don't go together
-            assert self.opt.est_normals is False
-            self.scene['objects']['disk']['normal'] = normals
+            #assert self.opt.est_normals is False
+            self.scene['objects']['disk']['normal'] = normals if self.opt.est_normals is False else None
 
             # Set camera position
             if batch_cond is None:
@@ -635,12 +635,12 @@ class GAN(object):
                 #loss += torch.mean(
                 #    (10 * F.relu(z_min - torch.abs(res_pos[..., 2]))) ** 2 +
                 #    (10 * F.relu(torch.abs(res_pos[..., 2]) - z_max)) ** 2)
+            grad_img_depth_loss_weight = 2.0
             normal_consistency_loss = normal_consistency_cost(res_pos, res['normal'], norm=1)
             spatial_loss = spatial_3x3(res_pos_2D)
+            image_depth_consistency_loss = depth_rgb_gradient_consistency(res['image'], res['depth'])
             spatial_var = torch.mean(res_pos[:, 0].var() + res_pos[:, 1].var() + res_pos[:, 2].var())
-            loss += self.opt.spatial_var_loss_weight * (1 / (spatial_var + 1e-4)) + \
-                    self.opt.spatial_loss_weight * spatial_loss + \
-                    self.opt.normal_consistency_loss_weight * normal_consistency_loss
+            loss += self.opt.normal_consistency_loss_weight * normal_consistency_loss+grad_img_depth_loss_weight * image_depth_consistency_loss
             if self.opt.render_img_nc == 1:
                 depth = res['depth']
                 # Normalize depth image
@@ -660,11 +660,11 @@ class GAN(object):
                 im_d = depth.unsqueeze(0)
                 im = res['image'].permute(2, 0, 1)
                 H, W = im.shape[1:]
-                target_normal_ = get_data(res['normal'])
+                target_normal_ = get_data(res['normal']).reshape((H, W, 3))
                 target_normalmap_img_ = get_normalmap_image(target_normal_)
                 im_n = tch_var_f(target_normalmap_img_).view(im.shape[1], im.shape[2], 3).permute(2, 0, 1)
 
-                target_worldnormal_ = get_data(world_tform['normal'])
+                target_worldnormal_ = get_data(world_tform['normal']).reshape((H, W, 3))
                 target_worldnormalmap_img_ = get_normalmap_image(target_worldnormal_)
                 im_wn = tch_var_f(target_worldnormalmap_img_).view(H, W, 3).permute(2, 0, 1)
             if self.iterationa_no % self.opt.save_image_interval == 0:
@@ -849,8 +849,7 @@ class GAN(object):
                     errG = self.criterion(outG_fake, labelv)
                     errG.backward()
                 elif self.opt.criterion == 'WGAN':
-                    errG = (0.5*outG_fake.mean() + 0.5*outG_fake_depth.mean() +
-                            0.5*(loss+loss2))
+                    errG = 0.5*outG_fake.mean() + 0.5*outG_fake_depth.mean() +0.5*(loss+loss2)
                     errG.backward(self.mone)
                 else:
                     raise ValueError('Unknown GAN criterium')
