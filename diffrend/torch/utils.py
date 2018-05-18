@@ -665,6 +665,20 @@ def spatial_3x3(pos, norm=1):
     return torch.mean(torch.pow(torch.sum(torch.abs(nbhr_diff) ** norm, dim=-1), 1 / norm))
 
 
+def depth_rgb_gradient_consistency(image, depth):
+    """
+    Args:
+        image: RGB image
+        depth: Depth image
+
+    Returns: consistency loss. The gradients should be the same for diffusely lit scene
+
+    """
+    im_grad = grad_spatial2d(torch.mean(image, dim=-1)[..., np.newaxis])
+    depth_grad = grad_spatial2d(depth[..., np.newaxis])
+    return torch.mean(torch.abs(torch.abs(im_grad) - torch.abs(depth_grad)))
+
+
 def normal_consistency_cost(pos, normal, norm):
     """
     Args:
