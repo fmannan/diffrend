@@ -3,7 +3,7 @@ from diffrend.torch.renderer import render, render_splats_NDC, render_splats_alo
 from diffrend.torch.utils import (tch_var_f, tch_var_l, CUDA, get_data, get_normalmap_image,
                                   world_to_cam, cam_to_world, normalize, unit_norm2_L2loss,
                                   normalize_maxmin, normal_consistency_cost, away_from_camera_penalty,
-                                  spatial_3x3)
+                                  spatial_3x3, depth_rgb_gradient_consistency, grad_spatial2d)
 from diffrend.torch.ops import sph2cart_unit
 from diffrend.utils.utils import save_xyz
 import torch.nn as nn
@@ -13,7 +13,7 @@ from torch.optim.lr_scheduler import StepLR
 import numpy as np
 from diffrend.torch.NEstNet import NEstNet_v0, NEstNet_Affine
 import matplotlib
-matplotlib.use('Agg')
+#matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 from mpl_toolkits.axes_grid1 import make_axes_locatable
@@ -404,8 +404,9 @@ def optimize_splats_along_ray_shadow_with_normalest_test(out_dir, width, height,
     exp_decay = lambda x, scale: torch.exp(-x / scale)
     linear_decay = lambda x, scale: scale / (x + 1e-6)
 
-    spatial_var_loss_weight = 0.0
+    spatial_var_loss_weight = 10.0 #0.0
     normal_away_from_cam_loss_weight = 0.0
+    grad_img_depth_loss_weight = 1.0
     spatial_loss_weight = 2
 
     z_norm_weight_init = 1  # 1e-5
@@ -437,11 +438,14 @@ def optimize_splats_along_ray_shadow_with_normalest_test(out_dir, width, height,
                                            'light_vis': torch.sigmoid(light_vis),
                                            }
                                   }
-        res = render_splats_along_ray(input_scene, samples=samples, normal_estimation_method='avg_normal')
+        res = render_splats_along_ray(input_scene, samples=samples, normal_estimation_method='plane')
         res_pos = res['pos']
         res_normal = res['normal']
         spatial_loss = spatial_3x3(res_pos)
-        depth_grad_loss = spatial_3x3(res['depth'])
+        depth_grad_loss = spatial_3x3(res['depth'][..., np.newaxis])
+        grad_img = grad_spatial2d(torch.mean(res['image'], dim=-1)[..., np.newaxis])
+        grad_depth_img = grad_spatial2d(res['depth'][..., np.newaxis])
+        image_depth_consistency_loss = depth_rgb_gradient_consistency(res['image'], res['depth'])
         unit_normal_loss = unit_norm2_L2loss(res_normal, 10.0)
         normal_away_from_cam_loss = away_from_camera_penalty(res_pos, res_normal)
         z_pos = res_pos[..., 2]
@@ -456,7 +460,8 @@ def optimize_splats_along_ray_shadow_with_normalest_test(out_dir, width, height,
         z_norm_weight = z_norm_weight_init * float(iter > z_norm_activate_iter) * decay_fn(iter - z_norm_activate_iter)
         loss = criterion(scale * im_out, scale * target_im) + z_loss + unit_normal_loss + \
             z_norm_weight * z_norm_loss + \
-            spatial_var_loss_weight * spatial_var_loss
+            spatial_var_loss_weight * spatial_var_loss + \
+            grad_img_depth_loss_weight * image_depth_consistency_loss
             #normal_away_from_cam_loss_weight * normal_away_from_cam_loss + \
             #spatial_loss_weight * spatial_loss
 
@@ -472,6 +477,7 @@ def optimize_splats_along_ray_shadow_with_normalest_test(out_dir, width, height,
         unit_normal_loss_ = get_data(unit_normal_loss)
         normal_away_from_cam_loss_ = get_data(normal_away_from_cam_loss)
         normals_ = get_data(res_normal)
+        image_depth_consistency_loss_ = get_data(image_depth_consistency_loss)
         loss_per_iter.append(loss_)
 
         if iter == 0:
@@ -484,10 +490,10 @@ def optimize_splats_along_ray_shadow_with_normalest_test(out_dir, width, height,
             z__ = pos_out_[..., 2]
             print('%d. loss= %f nloss=%f z_loss=%f [%f, %f] [%f, %f], z_normal_loss: %f,'
                   ' spatial_var_loss: %f, normal_away_loss: %f'
-                  ' nz_range: [%f, %f], spatial_loss: %f' %
+                  ' nz_range: [%f, %f], spatial_loss: %f, imd_loss: %f' %
                   (iter, loss_, unit_normal_loss_, z_loss_, np.min(z_), np.max(z_), np.min(z__),
                    np.max(z__), z_norm_loss_, spatial_var_loss_, normal_away_from_cam_loss_,
-                   normals_[..., 2].min(), normals_[..., 2].max(), spatial_loss_))
+                   normals_[..., 2].min(), normals_[..., 2].max(), spatial_loss_, image_depth_consistency_loss_))
 
         if iter % xyz_save_interval == 0 or iter == max_iter - 1:
             save_xyz(out_dir + '/res_{:05d}.xyz'.format(iter), get_data(res_pos), get_data(res_normal))
