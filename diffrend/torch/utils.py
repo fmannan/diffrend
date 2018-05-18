@@ -21,6 +21,18 @@ tch_var = lambda x, fn_type, req_grad: Variable(fn_type(x),
 tch_var_f = lambda x: tch_var(x, FloatTensor, False)
 tch_var_l = lambda x: tch_var(x, LongTensor, False)
 
+def depth_rgb_gradient_consistency(image, depth):
+    """
+    Args:
+        image: RGB image
+        depth: Depth image
+
+    Returns: consistency loss. The gradients should be the same for diffusely lit scene
+
+    """
+    im_grad = grad_spatial2d(torch.mean(image, dim=-1)[..., np.newaxis])
+    depth_grad = grad_spatial2d(depth[..., np.newaxis])
+    return torch.mean(torch.abs(torch.abs(im_grad) - torch.abs(depth_grad)))
 
 def np_var(x, req_grad=False):
     """Convert a numpy into a pytorch variable."""
