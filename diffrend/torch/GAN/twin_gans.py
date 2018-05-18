@@ -563,7 +563,7 @@ class GAN(object):
         rendered_res_world = []
         scenes = []
         inpath = self.opt.out_dir+'/'
-        z_min = self.scene['camera']['focal_length'] + 2
+        z_min = self.scene['camera']['focal_length'] + 1.5
         z_max = z_min+5
         # Set splats into rendering scene
         if 'sphere' in self.scene['objects']:
