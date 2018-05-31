@@ -24,6 +24,10 @@ class ObjectsFolderMultiObjectDataset(Dataset):
         self.transform = transform
         self.n_samples = 0
         self.samples = []
+        self.loaded = False
+        self.bg_obj = None
+        self.fg_obj = None
+        # Get object paths
 
         # Get object paths
         self._get_objects_paths()
@@ -39,17 +43,17 @@ class ObjectsFolderMultiObjectDataset(Dataset):
         """Get item."""
         # Get object path
         obj_path = os.path.join(self.opt.root_dir, self.samples[idx])
-        #print (obj_path)
 
-        # Load obj model
-        #obj_model = load_model(obj_path)
-        #obj2 = load_model('../../../data/sphere_halfbox_v2.obj')
-        obj_model = load_model(obj_path)
-        obj2 = load_model(self.opt.bg_model)
+        if not self.loaded:
+            self.fg_obj = load_model(obj_path)
+            self.bg_obj = load_model(self.opt.bg_model)
+            self.loaded = True
+        obj_model = self.fg_obj
+        obj2 = self.bg_obj
         v1 = (obj_model['v'] - obj_model['v'].mean()) / (obj_model['v'].max() - obj_model['v'].min())
         v2 = obj2['v']  # / (obj2['v'].max() - obj2['v'].min())
-        scale = (obj2['v'].max() - obj2['v'].min()) * 0.4
-        offset = np.array([5.0, 5.0, 5.0]) + 2 * np.random.rand(3)
+        scale = (obj2['v'].max() - obj2['v'].min()) * 0.25
+        offset = np.array([5.0, 5.0, 5.0]) #+ 2 * np.random.rand(3)
 
         if self.opt.random_rotation:
             random_axis = np_normalize(np.random.rand(3))
@@ -62,17 +66,6 @@ class ObjectsFolderMultiObjectDataset(Dataset):
         v = np.concatenate((v1, v2))
         f = np.concatenate((obj_model['f'], obj2['f'] + v1.shape[0]))
 
-        
-        #print(offset)
-        # v = np.concatenate((scale * v1 + offset, v2))
-        # f = np.concatenate((obj_model['f'], obj2['f'] + v1.shape[0]))
-        # flag=np.random.rand(1)
-        # if flag<0.8:
-        #     v = np.concatenate((scale * v1 + offset, v2))
-        #     f = np.concatenate((obj_model['f'], obj2['f'] + v1.shape[0]))
-        # else:
-        #     v = v2
-        #     f = obj2['f']
         obj_model = {'v': v, 'f': f}
 
         if self.opt.use_mesh:
