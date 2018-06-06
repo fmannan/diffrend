@@ -30,9 +30,9 @@ class NEstNetBase(nn.Module):
         return x
 
 
-class NEstNet_v0(NEstNetBase):
+class NEstNetV0(NEstNetBase):
     def __init__(self, sph=True):
-        super(NEstNet_v0, self).__init__(sph=sph)
+        super(NEstNetV0, self).__init__(sph=sph)
         self.net = nn.Sequential(
             nn.Conv2d(self.in_ch, 64, 3, padding=1, bias=False),
             nn.Conv2d(64, 128, 3, padding=1, bias=False),
@@ -41,9 +41,46 @@ class NEstNet_v0(NEstNetBase):
         )
 
 
-class NEstNet_Affine(NEstNetBase):
+class NEstNetV1(NEstNetBase):
+    def __init__(self, sph=True):
+        super(NEstNetV1, self).__init__(sph=sph)
+        self.net = nn.Sequential(
+            nn.Conv2d(self.in_ch, 64, 3, padding=1, bias=False),
+            nn.PReLU(),
+            nn.Conv2d(64, 128, 3, padding=1, bias=False),
+            nn.PReLU(),
+            nn.Conv2d(128, 64, 3, padding=1, bias=False),
+            nn.PReLU(),
+            nn.Conv2d(64, self.out_ch, 3, padding=1, bias=False),
+        )
+
+
+class NEstNetV1_2(NEstNetBase):
+    def __init__(self, sph=True):
+        super(NEstNetV1_2, self).__init__(sph=sph)
+        self.net = nn.Sequential(
+            # Downsample
+            nn.Conv2d(self.in_ch, 64, 3, padding=0, bias=False),
+            nn.PReLU(),
+            nn.Conv2d(64, 128, 3, padding=0, bias=False),
+            nn.PReLU(),
+            nn.Conv2d(128, 256, 3, padding=0, bias=False),
+            nn.PReLU(),
+            # Upsample
+            nn.ConvTranspose2d(256, 128, 3),
+            nn.PReLU(),
+            nn.ConvTranspose2d(128, 64, 3),
+            nn.PReLU(),
+            nn.ConvTranspose2d(64, 64, 3),
+            nn.PReLU(),
+            # Final
+            nn.Conv2d(64, self.out_ch, 3, padding=1, bias=False),
+        )
+
+
+class NEstNetAffine(NEstNetBase):
     def __init__(self, kernel_size, sph=True):
-        super(NEstNet_Affine, self).__init__(sph=sph)
+        super(NEstNetAffine, self).__init__(sph=sph)
         self.net = nn.Sequential(
             nn.Conv2d(self.in_ch, self.out_ch, kernel_size=kernel_size, padding=(kernel_size - 1) // 2, bias=False),
         )
@@ -52,9 +89,9 @@ class NEstNet_Affine(NEstNetBase):
 def test_NEstNet():
     import numpy as np
     pos = tch_var_f(list(np.random.rand(1, 3, 5, 5)))
-    y = NEstNet_v0(sph=False).cuda()(pos)
+    y = NEstNetV0(sph=False).cuda()(pos)
     print(y.shape, y.norm(dim=1))
-    y = NEstNet_Affine(kernel_size=3).cuda()(pos)
+    y = NEstNetAffine(kernel_size=3).cuda()(pos)
     print(y.shape, y.norm(dim=1))
 
 
