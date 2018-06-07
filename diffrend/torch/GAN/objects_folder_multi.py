@@ -54,17 +54,20 @@ class ObjectsFolderMultiObjectDataset(Dataset):
         v2 = obj2['v']  # / (obj2['v'].max() - obj2['v'].min())
         scale = (obj2['v'].max() - obj2['v'].min()) * 0.25
         offset = np.array([5.0, 5.0, 5.0]) #+ 2 * np.random.rand(3)
-
-        if self.opt.random_rotation:
-            random_axis = np_normalize(np.random.rand(3))
-            random_angle = np.random.rand(1) * np.pi * 2
-            M = axis_angle_matrix(axis=random_axis, angle=random_angle)
-            M[:3, 3] = offset
-            v1 = np.matmul(scale * v1, M.transpose(1, 0)[:3, :3]) + M[:3, 3]
+        if self.opt.only_background:
+            v=v2
+            f=obj2['f']
         else:
-            v1 = scale * v1 + offset
-        v = np.concatenate((v1, v2))
-        f = np.concatenate((obj_model['f'], obj2['f'] + v1.shape[0]))
+            if self.opt.random_rotation:
+                random_axis = np_normalize(np.random.rand(3))
+                random_angle = np.random.rand(1) * np.pi * 2
+                M = axis_angle_matrix(axis=random_axis, angle=random_angle)
+                M[:3, 3] = offset
+                v1 = np.matmul(scale * v1, M.transpose(1, 0)[:3, :3]) + M[:3, 3]
+            else:
+                v1 = scale * v1 + offset
+            v = np.concatenate((v1, v2))
+            f = np.concatenate((obj_model['f'], obj2['f'] + v1.shape[0]))
 
         obj_model = {'v': v, 'f': f}
 
