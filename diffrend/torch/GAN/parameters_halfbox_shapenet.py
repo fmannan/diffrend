@@ -38,7 +38,8 @@ class Parameters():
             #default_root = '/data/lisa/data/ShapeNetCore.v2'
             #default_root = '/home/dvazquez/datasets/shapenet/ShapeNetCore.v2'
             default_root = '/home/sai/attenuation/diffrend/data/sphere'
-            default_out = './output_convet'
+            #default_out = './output_convet'
+            default_out = '/home/sai/output_quadratic_samecolor_halbox_plane'
         else:
             raise ValueError('Add the route for the dataset of your system')
 
@@ -54,7 +55,10 @@ class Parameters():
         self.parser.add_argument('--toy_example', action='store_true', default=False, help='Use toy example')
         self.parser.add_argument('--use_old_sign', action='store_true', default=True, help='Use toy example')
         self.parser.add_argument('--use_quartic', action='store_true', default=False, help='Use toy example')
+        self.parser.add_argument('--rescaled', action='store_true', default=False, help='Use toy example')
+        self.parser.add_argument('--full_sphere_sampling', action='store_true', default=False, help='Use toy example')
         self.parser.add_argument('--random_rotation', action='store_true', default=False, help='Use toy example')
+        self.parser.add_argument('--only_background', action='store_true', default=True, help='Use toy example')
         self.parser.add_argument('--rotate_foreground', action='store_true', default=False, help='Use toy example')
         self.parser.add_argument('--use_penality', action='store_true', default=True, help='Use toy example')
         self.parser.add_argument('--use_mesh', action='store_true', default=True, help='Render dataset with meshes')
@@ -87,7 +91,8 @@ class Parameters():
         self.parser.add_argument('--netG', default='', help="path to netG (to continue training)")
         self.parser.add_argument('--netG2', default='', help="path to netG2 (normal generator to continue training)")
         self.parser.add_argument('--fix_splat_pos', action='store_true', default=True, help='X and Y coordinates are fix')
-        self.parser.add_argument('--use_zloss', action='store_true', default=False, help='use Z loss')
+        self.parser.add_argument('--zloss', type=float, default=0.0, help='use Z loss')
+        self.parser.add_argument('--unit_normalloss', type=float, default=0.0, help='use unit_normal loss')
         self.parser.add_argument('--norm_sph_coord', action='store_true', default=True, help='Use spherical coordinates for the normal')
         self.parser.add_argument('--max_gnorm', type=float, default=400., help='max grad norm to which it will be clipped (if exceeded)')
         self.parser.add_argument('--disc_type', type=str, default='dcgan', help='One of: cnn, dcgan')
@@ -111,7 +116,7 @@ class Parameters():
         self.parser.add_argument('--alt_opt_zn_interval', type=int, default=None,
                                  help='Alternating optimization interval. '
                                       '[None: joint optimization, 20: every 20 iterations, etc.]')
-        self.parser.add_argument('--alt_opt_zn_start', type=int, default=10000,
+        self.parser.add_argument('--alt_opt_zn_start', type=int, default=100000,
                                  help='Alternating optimization start interation. [-1: starts immediately,'
                                       '100: starts alternating after the first 100 iterations.')
         self.parser.add_argument('--normal_consistency_loss_weight', type=float, default=1e-3,
@@ -121,6 +126,8 @@ class Parameters():
         self.parser.add_argument('--z_norm_activate_iter', type=float, default=1000,
                                  help='Normal consistency loss weight.')
         self.parser.add_argument('--spatial_var_loss_weight', type=float, default=1e-2,
+                                 help='Spatial variance loss weight.')
+        self.parser.add_argument('--grad_img_depth_loss', type=float, default=2.0,
                                  help='Spatial variance loss weight.')
         self.parser.add_argument('--spatial_loss_weight', type=float, default=0.5,
                                  help='Spatial smoothness loss weight.')
@@ -147,14 +154,15 @@ class Parameters():
         self.parser.add_argument('--height', type=int, default=128)
         self.parser.add_argument('--cam_dist', type=float, default=3.0, help='Camera distance from the center of the object')
         self.parser.add_argument('--nv', type=int, default=10, help='Number of views to generate')
-        self.parser.add_argument('--angle', type=int,  default=45,help='cam angle')
-        self.parser.add_argument('--fovy', type=float, default=30, help='Field of view in the vertical direction. Default: 15.0')
+        self.parser.add_argument('--angle', type=int,  default=30,help='cam angle')
+        self.parser.add_argument('--fovy', type=float, default=26, help='Field of view in the vertical direction. Default: 15.0')
         self.parser.add_argument('--focal_length', type=float, default=0.1, help='focal length')
-        self.parser.add_argument('--theta', nargs=2, type=float, default=None, help='Angle in degrees from the z-axis.')
-        self.parser.add_argument('--phi', nargs=2, type=float, default=None, help='Angle in degrees from the x-axis.')
-        self.parser.add_argument('--axis', nargs=3, default=[2, 2, 2],type=float, help='Axis for random camera position.')
+        self.parser.add_argument('--theta', nargs=2, type=float, default=[20,70], help='Angle in degrees from the z-axis.')
+        self.parser.add_argument('--phi', nargs=2, type=float, default=[0,0], help='Angle in degrees from the x-axis.')
+        self.parser.add_argument('--axis', nargs=3, default=[1,1,1],type=float, help='Axis for random camera position.')
         self.parser.add_argument('--cam_pos', nargs=3, type=float, help='Camera position.')
-        self.parser.add_argument('--at', nargs=3, default=[ 0, 0, 0], type=float, help='Camera lookat position.')
+        self.parser.add_argument('--at', nargs=3, default=[0.05,0.1,0], type=float, help='Camera lookat position.')
+        #self.parser.add_argument('--at', nargs=3, default=[ 0, 1, 0], type=float, help='Camera lookat position.')
         self.parser.add_argument('--sphere-halfbox', action='store_true', help='Renders demo sphere-halfbox')
         self.parser.add_argument('--norm_depth_image_only', action='store_true', default=False, help='Render on the normalized'
                                                                                             ' depth image.')

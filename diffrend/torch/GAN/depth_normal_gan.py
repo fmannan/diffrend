@@ -122,8 +122,16 @@ class GAN(object):
         self.fake_label = 0
         self.dataset_load = dataset_load
         self.opt.out_dir = exp_dir
-        self.output_loss_file=open("losses.txt", "wt")
+        file_name = os.path.join(self.opt.out_dir, 'losses.txt')
+        self.output_loss_file=open(file_name, "wt")
+        if self.opt.full_sphere_sampling:
+            self.opt.phi = None
+            self.opt.theta = None
+            self.opt.cam_dist = self.opt.cam_dist + 0.2
 
+        else:
+            self.opt.angle = None
+            self.opt.axis=None
         # Create dataset loader
         self.create_dataset_loader()
 
@@ -300,10 +308,17 @@ class GAN(object):
 
         # Define the camera poses
         if not self.opt.same_view:
-            self.cam_pos = uniform_sample_sphere(
-                radius=self.opt.cam_dist, num_samples=self.opt.batchSize,
-                axis=self.opt.axis, angle=np.deg2rad(self.opt.angle),
-                theta_range=self.opt.theta, phi_range=self.opt.phi)
+            if self.opt.full_sphere_sampling:
+                self.cam_pos = uniform_sample_sphere(
+                    radius=self.opt.cam_dist, num_samples=self.opt.batchSize,
+                    axis=self.opt.axis, angle=np.deg2rad(self.opt.angle),
+                    theta_range=self.opt.theta, phi_range=self.opt.phi)
+            else:
+                self.cam_pos = uniform_sample_sphere(
+                    radius=self.opt.cam_dist, num_samples=self.opt.batchSize,
+                    axis=self.opt.axis, angle=self.opt.angle,
+                    theta_range=np.deg2rad(self.opt.theta), phi_range=np.deg2rad(self.opt.phi))
+
 
 
         # Create a splats rendering scene
@@ -458,10 +473,17 @@ class GAN(object):
 
         # Generate camera positions on a sphere
         if batch_cond is None:
-            cam_pos = uniform_sample_sphere(
-                radius=self.opt.cam_dist, num_samples=self.opt.batchSize,
-                axis=self.opt.axis, angle=np.deg2rad(self.opt.angle),
-                theta_range=self.opt.theta, phi_range=self.opt.phi)
+            if self.opt.full_sphere_sampling:
+                cam_pos = uniform_sample_sphere(
+                    radius=self.opt.cam_dist, num_samples=self.opt.batchSize,
+                    axis=self.opt.axis, angle=np.deg2rad(self.opt.angle),
+                    theta_range=self.opt.theta, phi_range=self.opt.phi)
+            else:
+                cam_pos = uniform_sample_sphere(
+                    radius=self.opt.cam_dist, num_samples=self.opt.batchSize,
+                    axis=self.opt.axis, angle=self.opt.angle,
+                    theta_range=np.deg2rad(self.opt.theta), phi_range=np.deg2rad(self.opt.phi))
+
 
         rendered_data = []
         rendered_data_depth = []
@@ -499,7 +521,12 @@ class GAN(object):
         for idx in range(batch_size):
             # Get splats positions and normals
             eps = 1e-3
-            pos = -F.relu(-batch[idx][:, 0]) - z_min
+            if self.opt.rescaled:
+                z = F.relu(-batch[idx][:, 0]) + z_min
+                z = (z - z.min()) / (z.max() - z.min() + eps) * (z_max - z_min) + z_min
+                pos = -z
+            else:
+                pos = -F.relu(-batch[idx][:, 0]) - z_min
             normals = batch[idx][:, 1:]
 
             self.scene['objects']['disk']['pos'] = pos
