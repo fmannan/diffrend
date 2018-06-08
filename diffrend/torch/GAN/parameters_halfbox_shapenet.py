@@ -21,7 +21,7 @@ class Parameters():
         """Initialize."""
         # Define training set depending on the user name
         username = getpass.getuser()
-        if username == 'dvazquez':
+        if username == 'dvazquez' or username == 'root':
             # default_root = '/home/dvazquez/datasets/shapenet/ShapeNetCore.v2'
             # default_root = '/mnt/home/dvazquez/datasets/shapenet/ShapeNetCore.v2'
             default_root = '/home/dvazquez/Repositories/diffrend/data/sphere/'
@@ -69,18 +69,6 @@ class Parameters():
         self.parser.add_argument('--bg_model', type=str, default='../../../data/halfbox.obj', help='Background model path')
         self.parser.add_argument('--gz_gi_loss', type=float, default=0.0,help='grad z and grad img consistency.')
         self.parser.add_argument('--pixel_samples', type=int, default=1, help="Samples per pixel.")
-        # corresponding folders: 02691156, 03759954
-
-        # other low-footprint objects:
-        # 02773838 - bag, 83
-        # 02801938 - basket, 113
-        # 02880940 - bowl, 186
-        # 02942699 - camera, 113
-        # 03261776 - headphone, 73
-        # 03513137 - helmet, 162
-        # 03797390 - mug, 214
-        # 04004475 - printer, 166
-        # bowl,mug
 
         # Network parameters
         self.parser.add_argument('--gen_type', type=str, default='dcgan', help='One of: mlp, cnn, dcgan, resnet') # try resnet :)
@@ -95,7 +83,7 @@ class Parameters():
         self.parser.add_argument('--unit_normalloss', type=float, default=0.0, help='use unit_normal loss')
         self.parser.add_argument('--norm_sph_coord', action='store_true', default=True, help='Use spherical coordinates for the normal')
         self.parser.add_argument('--max_gnorm', type=float, default=400., help='max grad norm to which it will be clipped (if exceeded)')
-        self.parser.add_argument('--disc_type', type=str, default='dcgan', help='One of: cnn, dcgan')
+        self.parser.add_argument('--disc_type', type=str, default='cnn', help='One of: cnn, dcgan')
         self.parser.add_argument('--disc_norm', type=str, default='None', help='One of: None, batchnorm, instancenorm')
         self.parser.add_argument('--ndf', type=int, default=85, help='number of features in the discriminator network')
         self.parser.add_argument('--disc_nextra_layers', type=int, default=0, help='number of extra layers in the discriminator network')

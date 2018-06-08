@@ -52,8 +52,8 @@ def create_networks(opt, verbose=True, **params):
             netG2 = None
         else:
             netG2 = DCGAN_G2(splats_img_size, nz, splats_n_dims, ngf, ngpu,
-                           n_extra_layers=gen_nextra_layers, use_tanh=False,
-                           norm=gen_norm)
+                             n_extra_layers=gen_nextra_layers, use_tanh=False,
+                             norm=gen_norm)
     elif opt.gen_type == 'resnet':
         netG = _netG_resnet(nz, splats_n_dims, n_splats)
     else:
@@ -77,13 +77,15 @@ def create_networks(opt, verbose=True, **params):
 
     # Create the discriminator network
     if opt.disc_type == 'cnn':
-
-        if render_img_size==128:
-            netD = _netD(ngpu, 3, ndf, render_img_size, use_sigmoid=use_sigmoid)
+        if render_img_size == 128:
+            netD = _netD(ngpu, 3, ndf, render_img_size,
+                         use_sigmoid=use_sigmoid)
         else:
-            netD = _netD_256(ngpu, 3, ndf, render_img_size, use_sigmoid=use_sigmoid)
+            netD = _netD_256(ngpu, 3, ndf, render_img_size,
+                             use_sigmoid=use_sigmoid)
         # else:
-        #     netD = _netD_64(ngpu, 3, ndf, render_img_size, use_sigmoid=use_sigmoid)
+        #     netD = _netD_64(ngpu, 3, ndf, render_img_size,
+        #                     use_sigmoid=use_sigmoid)
     elif opt.disc_type == 'dcgan':
         netD = DCGAN_D(render_img_size, nz, render_img_nc, ndf, ngpu,
                        n_extra_layers=disc_nextra_layers,
@@ -97,19 +99,21 @@ def create_networks(opt, verbose=True, **params):
     else:
         netD.apply(weights_init)
 
-    #############new network
+    # new network
     if opt.disc_type == 'cnn':
-
-        if render_img_size==128:
-            netD2 = _netD(ngpu, 3, ndf, render_img_size, use_sigmoid=use_sigmoid)
+        if render_img_size == 128:
+            netD2 = _netD(ngpu, 3, ndf, render_img_size,
+                          use_sigmoid=use_sigmoid)
         else:
-            netD2 = _netD_256(ngpu, 3, ndf, render_img_size, use_sigmoid=use_sigmoid)
+            netD2 = _netD_256(ngpu, 3, ndf, render_img_size,
+                              use_sigmoid=use_sigmoid)
         # else:
-        #     netD2 = _netD_64(ngpu, 3, ndf, render_img_size, use_sigmoid=use_sigmoid)
+        #     netD2 = _netD_64(ngpu, 3, ndf, render_img_size,
+        #                      use_sigmoid=use_sigmoid)
     elif opt.disc_type == 'dcgan':
         netD2 = DCGAN_D(render_img_size, nz, render_img_nc, ndf, ngpu,
-                       n_extra_layers=disc_nextra_layers,
-                       use_sigmoid=use_sigmoid, norm=disc_norm)
+                        n_extra_layers=disc_nextra_layers,
+                        use_sigmoid=use_sigmoid, norm=disc_norm)
     else:
         raise ValueError("Unknown discriminator")
 
@@ -125,7 +129,7 @@ def create_networks(opt, verbose=True, **params):
         print(netD)
         print(netD2)
 
-    return netG,netG2, netD, netD2
+    return netG, netG2, netD, netD2
 
 
 def weights_init(m):
@@ -412,48 +416,48 @@ class DCGAN_G(nn.Module):
         main = nn.Sequential()
         main_2 = nn.Sequential()
         # input is Z, going into a convolution
-        main.add_module('initial.{0}-{1}.convt'.format(nz, cngf),
+        main.add_module('initial_{0}-{1}_convt'.format(nz, cngf),
                         nn.ConvTranspose2d(nz+3, cngf, 4, 1, 0, bias=False))
         if norm is not None:
-            main.add_module('initial.{0}.batchnorm'.format(cngf),
+            main.add_module('initial_{0}_batchnorm'.format(cngf),
                             norm(cngf))
-        main.add_module('initial.{0}.relu'.format(cngf),
+        main.add_module('initial_{0}_relu'.format(cngf),
                         nn.ReLU(True))
 
         csize = 4
-        i=0
+        i = 0
         while csize < isize // 2:
-            if i==0:
-                main_2.add_module('pyramid.{0}-{1}.convt'.format(cngf, cngf // 2),
+            if i == 0:
+                main_2.add_module('pyramid_{0}-{1}_convt'.format(cngf, cngf // 2),
                             nn.ConvTranspose2d(cngf+3, cngf // 2, 4, 2, 1,
                                                bias=False))
             else:
-                main_2.add_module('pyramid.{0}-{1}.convt'.format(cngf, cngf // 2),
+                main_2.add_module('pyramid_{0}-{1}_convt'.format(cngf, cngf // 2),
                             nn.ConvTranspose2d(cngf, cngf // 2, 4, 2, 1,
                                                bias=False))
 
             if norm is not None:
-                main_2.add_module('pyramid.{0}.batchnorm'.format(cngf // 2),
-                                norm(cngf // 2))
-            main_2.add_module('pyramid.{0}.relu'.format(cngf // 2), nn.ReLU(True))
+                main_2.add_module('pyramid_{0}_batchnorm'.format(cngf // 2),
+                                  norm(cngf // 2))
+            main_2.add_module('pyramid_{0}_relu'.format(cngf // 2), nn.ReLU(True))
             cngf = cngf // 2
             csize = csize * 2
             i+=1
 
         # Extra layers
         for t in range(n_extra_layers):
-            main_2.add_module('extra-layers-{0}.{1}.conv'.format(t, cngf),
+            main_2.add_module('extra-layers_{0}-{1}_conv'.format(t, cngf),
                             nn.Conv2d(cngf, cngf, 3, 1, 1, bias=False))
             if norm is not None:
-                main_2.add_module('extra-layers-{0}.{1}.batchnorm'.format(
+                main_2.add_module('extra-layers_{0}-{1}_batchnorm'.format(
                     t, cngf), norm(cngf))
-            main_2.add_module('extra-layers-{0}.{1}.relu'.format(t, cngf),
+            main_2.add_module('extra-layers_{0}-{1}_relu'.format(t, cngf),
                             nn.ReLU(True))
 
-        main_2.add_module('final.{0}-{1}.convt'.format(cngf, nc),
+        main_2.add_module('final_{0}-{1}_convt'.format(cngf, nc),
                         nn.ConvTranspose2d(cngf, 1, 4, 2, 1, bias=False))
         if use_tanh:
-            main_2.add_module('final.{0}.tanh'.format(nc), nn.Tanh())
+            main_2.add_module('final_{0}_tanh'.format(nc), nn.Tanh())
         main_2.add_module('reshape', ReshapeSplats())
         self.main = main
         self.main_2 = main_2
@@ -659,11 +663,13 @@ class _netD(nn.Module):
 
         )
 
-    def forward(self, x,z):
-        #import ipdb; ipdb.set_trace()
-        z=z.view(z.size(0),z.size(1),1,1)
-        propogated = Variable(torch.ones((x.size(0), z.size(1), x.size(2), x.size(3))), requires_grad=False).cuda()* z
-        x=torch.cat([x,propogated],1)
+    def forward(self, x, z):
+        # import ipdb; ipdb.set_trace()
+        z = z.view(z.size(0), z.size(1), 1, 1)
+        propogated = Variable(torch.ones((x.size(0), z.size(1),
+                                          x.size(2), x.size(3))),
+                              requires_grad=False).cuda() * z
+        x = torch.cat([x, propogated], 1)
         x = self.main(x)
         x = x.view(-1, 1).squeeze(1)
 
@@ -828,37 +834,37 @@ class DCGAN_D(nn.Module):
 
         main = nn.Sequential()
         # input is nc x isize x isize
-        main.add_module('initial.conv.{0}-{1}'.format(nc, ndf),
+        main.add_module('initial_conv_{0}-{1}'.format(nc, ndf),
                         nn.Conv2d(nc, ndf, 4, 2, 1, bias=False))
-        main.add_module('initial.relu.{0}'.format(ndf),
+        main.add_module('initial_relu_{0}'.format(ndf),
                         nn.LeakyReLU(0.2, inplace=True))
         csize, cndf = isize / 2, ndf
 
         # Extra layers
         for t in range(n_extra_layers):
-            main.add_module('extra-layers-{0}.{1}.conv'.format(t, cndf),
+            main.add_module('extra-layers_{0}-{1}_conv'.format(t, cndf),
                             nn.Conv2d(cndf, cndf, 3, 1, 1, bias=False))
             if norm is not None:
-                main.add_module('extra-layers-{0}.{1}.batchnorm'.format(
+                main.add_module('extra-layers_{0}-{1}_batchnorm'.format(
                     t, cndf), nn.BatchNorm2d(cndf))
-            main.add_module('extra-layers-{0}.{1}.relu'.format(t, cndf),
+            main.add_module('extra-layers_{0}-{1}_relu'.format(t, cndf),
                             nn.LeakyReLU(0.2, inplace=True))
 
         while csize > 4:
             in_feat = cndf
             out_feat = cndf * 2
-            main.add_module('pyramid.{0}-{1}.conv'.format(in_feat, out_feat),
+            main.add_module('pyramid_{0}-{1}_conv'.format(in_feat, out_feat),
                             nn.Conv2d(in_feat, out_feat, 4, 2, 1, bias=False))
             if norm is not None:
-                main.add_module('pyramid.{0}.batchnorm'.format(out_feat),
+                main.add_module('pyramid_{0}_batchnorm'.format(out_feat),
                                 nn.BatchNorm2d(out_feat))
-            main.add_module('pyramid.{0}.relu'.format(out_feat),
+            main.add_module('pyramid_{0}_relu'.format(out_feat),
                             nn.LeakyReLU(0.2, inplace=True))
             cndf = cndf * 2
             csize = csize / 2
 
         # state size. K x 4 x 4
-        main.add_module('final.{0}-{1}.conv'.format(cndf, 1),
+        main.add_module('final_{0}-{1}_conv'.format(cndf, 1),
                         nn.Conv2d(cndf, 1, 4, 1, 0, bias=False))
         self.main = main
 
