@@ -642,7 +642,7 @@ class GAN(object):
         rendered_data = torch.stack(rendered_data)
         rendered_data_depth = torch.stack(rendered_data_depth)
 
-        if self.iterationa_no % self.opt.print_interval == 0:
+        if self.iterationa_no % self.opt.print_interval == 0 and self.in_critic == 0:
             z__ = pos_out_[..., 2]
             self.writer.add_scalar("loss",
                                    loss_/self.opt.batchSize,
@@ -730,6 +730,7 @@ class GAN(object):
                 for j in range(self.opt.critic_iters):
                     # Train with real
                     #################
+                    self.in_critic=1
                     self.netD.zero_grad()
                     self.get_real_samples()
                     # input_D = torch.cat([self.inputv, self.inputv_depth], 1)
@@ -794,7 +795,7 @@ class GAN(object):
                 # for p in self.netD.parameters():
                 #     p.requires_grad = False
                 self.netG.zero_grad()
-
+                self.in_critic=0
                 self.generate_noise_vector()
                 fake_z = self.netG(self.noisev, self.inputv_cond)
                 fake_n = self.generate_normals(fake_z, self.inputv_cond,
@@ -851,10 +852,10 @@ class GAN(object):
                                            Wassertein_D,
                                            self.iterationa_no)
                     self.writer.add_scalar("Disc_grad_norm",
-                                           gnorm_D.data[0],
+                                           gnorm_D,
                                            self.iterationa_no)
                     self.writer.add_scalar("Gen_grad_norm",
-                                           gnorm_G.data[0],
+                                           gnorm_G,
                                            self.iterationa_no)
 
                     print('\n[%d/%d] Loss_D: %.4f Loss_G: %.4f Loss_D_real: %.4f'
@@ -863,7 +864,7 @@ class GAN(object):
                           iteration, self.opt.n_iter, errD.data[0],
                           errG.data[0], errD_real.data[0], errD_fake.data[0],
                           Wassertein_D, loss.data[0],
-                          self.optG_z_lr_scheduler.get_lr()[0], self.optG2_normal_lr_scheduler.get_lr()[0], gnorm_D.data[0], gnorm_G.data[0]))
+                          self.optG_z_lr_scheduler.get_lr()[0], self.optG2_normal_lr_scheduler.get_lr()[0], gnorm_D, gnorm_G))
                     l2_file.write('%s\n' % (str(l2_loss.data[0])))
                     l2_file.flush()
                     print("written to file", str(l2_loss.data[0]))
