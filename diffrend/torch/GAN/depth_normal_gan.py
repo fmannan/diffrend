@@ -31,7 +31,7 @@ from diffrend.torch.NEstNet import NEstNet_v0
 from diffrend.utils.sample_generator import uniform_sample_sphere
 from diffrend.torch.ops import sph2cart_unit
 from diffrend.utils.utils import contrast_stretch_percentile, save_xyz
-
+from tensorboardX import SummaryWriter
 import matplotlib
 matplotlib.use('Agg')
 from matplotlib import pyplot as plt
@@ -132,6 +132,7 @@ class GAN(object):
         else:
             self.opt.angle = None
             self.opt.axis=None
+        self.writer = SummaryWriter(self.opt.out_dir)
         # Create dataset loader
         self.create_dataset_loader()
 
@@ -664,15 +665,27 @@ class GAN(object):
         if self.iterationa_no % self.opt.print_interval == 0:
 
             z__ = pos_out_[..., 2]
+            self.writer.add_scalar("loss", loss_/self.opt.batchSize, self.iterationa_no)
+            self.writer.add_scalar("nloss", unit_normal_loss_/self.opt.batchSize, self.iterationa_no)
+            self.writer.add_scalar("minz", np.min(z__), self.iterationa_no)
+            self.writer.add_scalar("maxz", np.max(z__), self.iterationa_no)
+            self.writer.add_scalar("min_normal", normals_[..., 2].min(), self.iterationa_no)
+            self.writer.add_scalar("max_normal", normals_[..., 2].max(), self.iterationa_no)
+            self.writer.add_scalar("z_loss", z_loss_/self.opt.batchSize, self.iterationa_no)
+            self.writer.add_scalar("z_normal_loss", z_norm_loss_/self.opt.batchSize, self.iterationa_no)
+            self.writer.add_scalar("spatial_var_loss", spatial_var_loss_/self.opt.batchSize, self.iterationa_no)
+            self.writer.add_scalar("normal_away_loss", normal_away_from_cam_loss_/self.opt.batchSize, self.iterationa_no)
+            self.writer.add_scalar("spatial_loss", spatial_loss_/self.opt.batchSize, self.iterationa_no)
+            self.writer.add_scalar("im_depth_cons_loss", image_depth_consistency_loss_/self.opt.batchSize, self.iterationa_no)
             print('%d. loss= %f nloss=%f z_loss=%f  [%f, %f], z_normal_loss: %f,'
                   ' spatial_var_loss: %f, normal_away_loss: %f'
-                  ' nz_range: [%f, %f], spatial_loss: %f, imd_loss: %f' %
+                  ' nz_range: [%f, %f], spatial_loss: %f, im_depth_cons_loss: %f' %
                   (self.iterationa_no, loss_/self.opt.batchSize, unit_normal_loss_/self.opt.batchSize, z_loss_/self.opt.batchSize,  np.min(z__),
                    np.max(z__), z_norm_loss_/self.opt.batchSize, spatial_var_loss_/self.opt.batchSize, normal_away_from_cam_loss_/self.opt.batchSize,
                    normals_[..., 2].min(), normals_[..., 2].max(), spatial_loss_/self.opt.batchSize, image_depth_consistency_loss_/self.opt.batchSize))
             self.output_loss_file.write('%d. loss= %f nloss=%f z_loss=%f  [%f, %f], z_normal_loss: %f,'
                   ' spatial_var_loss: %f, normal_away_loss: %f'
-                  ' nz_range: [%f, %f], spatial_loss: %f, imd_loss: %f' %
+                  ' nz_range: [%f, %f], spatial_loss: %f, im_depth_cons_loss: %f' %
                   (self.iterationa_no, loss_/self.opt.batchSize, unit_normal_loss_/self.opt.batchSize, z_loss_/self.opt.batchSize,  np.min(z__),
                    np.max(z__), z_norm_loss_/self.opt.batchSize, spatial_var_loss_/self.opt.batchSize, normal_away_from_cam_loss_/self.opt.batchSize,
                    normals_[..., 2].min(), normals_[..., 2].max(), spatial_loss_/self.opt.batchSize, image_depth_consistency_loss_/self.opt.batchSize))
@@ -815,6 +828,10 @@ class GAN(object):
                     l2_loss = mse_criterion(fd, self.inputv_depth)
                     Wassertein_D = (errD_real.data[0] - errD_fake.data[0])
                     #Wassertein_D_depth = (errD_real_depth.data[0] - errD_fake_depth.data[0])
+                    self.writer.add_scalar("Loss_G", errG.data[0], self.iterationa_no)
+                    self.writer.add_scalar("Loss_D", errD.data[0], self.iterationa_no)
+                    self.writer.add_scalar("Wassertein D", Wassertein_D, self.iterationa_no)
+
                     print('\n[%d/%d] Loss_D: %.4f Loss_G: %.4f Loss_D_real: %.4f'
                           ' Loss_D_fake: %.4f Wassertein D: %.4f '
                           ' L2_loss: %.4f z_lr: %.8f, n_lr: %.8f' % (
@@ -840,7 +857,7 @@ class GAN(object):
                     torchvision.utils.save_image(fake_rendered.data, os.path.join(self.opt.out_dir,  'output_%d.png' % (iteration)), nrow=2, normalize=True, scale_each=True)
 
                 # Save input images
-                if iteration % (self.opt.save_image_interval*2) == 0:
+                if iteration % (self.opt.save_image_interval) == 0:
                     cs = tch_var_f(contrast_stretch_percentile(get_data(fd),  200, [fd.data.min(), fd.data.max()]))
                     torchvision.utils.save_image(self.inputv.data, os.path.join(self.opt.out_dir,  'input_%d.png' % (iteration)), nrow=2, normalize=True, scale_each=True)
 
