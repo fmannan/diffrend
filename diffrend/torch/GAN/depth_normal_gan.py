@@ -777,7 +777,7 @@ class GAN(object):
                         gradient_penalty.backward()
                         errD += gradient_penalty
 
-                    gnorm_D = torch.nn.utils.clip_grad_norm_(
+                    gnorm_D = torch.nn.utils.clip_grad_norm(
                         self.netD.parameters(), self.opt.max_gnorm)  # TODO
 
                     # Update weight
@@ -816,7 +816,7 @@ class GAN(object):
                     errG.backward(self.mone)
                 else:
                     raise ValueError('Unknown GAN criterium')
-                gnorm_G = torch.nn.utils.clip_grad_norm_(
+                gnorm_G = torch.nn.utils.clip_grad_norm(
                     self.netG.parameters(), self.opt.max_gnorm)  # TODO
                 if (self.opt.alt_opt_zn_interval is not None and
                     iteration >= self.opt.alt_opt_zn_start):
@@ -847,17 +847,23 @@ class GAN(object):
                     self.writer.add_scalar("Loss_D",
                                            errD.data[0],
                                            self.iterationa_no)
-                    self.writer.add_scalar("Wassertein D",
+                    self.writer.add_scalar("Wassertein_D",
                                            Wassertein_D,
+                                           self.iterationa_no)
+                    self.writer.add_scalar("Disc_grad_norm",
+                                           gnorm_D.data[0],
+                                           self.iterationa_no)
+                    self.writer.add_scalar("Gen_grad_norm",
+                                           gnorm_G.data[0],
                                            self.iterationa_no)
 
                     print('\n[%d/%d] Loss_D: %.4f Loss_G: %.4f Loss_D_real: %.4f'
-                          ' Loss_D_fake: %.4f Wassertein D: %.4f '
-                          ' L2_loss: %.4f z_lr: %.8f, n_lr: %.8f' % (
+                          ' Loss_D_fake: %.4f Wassertein_D: %.4f '
+                          ' L2_loss: %.4f z_lr: %.8f, n_lr: %.8f, Disc_grad_norm: %.8f, Gen_grad_norm: %.8f' % (
                           iteration, self.opt.n_iter, errD.data[0],
                           errG.data[0], errD_real.data[0], errD_fake.data[0],
                           Wassertein_D, loss.data[0],
-                          self.optG_z_lr_scheduler.get_lr()[0], self.optG2_normal_lr_scheduler.get_lr()[0]))
+                          self.optG_z_lr_scheduler.get_lr()[0], self.optG2_normal_lr_scheduler.get_lr()[0], gnorm_D.data[0], gnorm_G.data[0]))
                     l2_file.write('%s\n' % (str(l2_loss.data[0])))
                     l2_file.flush()
                     print("written to file", str(l2_loss.data[0]))
