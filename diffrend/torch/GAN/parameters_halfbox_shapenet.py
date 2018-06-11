@@ -21,7 +21,7 @@ class Parameters():
         """Initialize."""
         # Define training set depending on the user name
         username = getpass.getuser()
-        if username == 'dvazquez' or username == 'root':
+        if username == 'dvazquez':
             # default_root = '/home/dvazquez/datasets/shapenet/ShapeNetCore.v2'
             # default_root = '/mnt/home/dvazquez/datasets/shapenet/ShapeNetCore.v2'
             default_root = '/home/dvazquez/Repositories/diffrend/data/sphere/'
@@ -38,8 +38,8 @@ class Parameters():
             #default_root = '/data/lisa/data/ShapeNetCore.v2'
             #default_root = '/home/dvazquez/datasets/shapenet/ShapeNetCore.v2'
             default_root = '/home/sai/attenuation/diffrend/data/sphere'
-            #default_out = './output_convet'
-            default_out = '/home/sai/output_quadratic_samecolor_halbox_plane'
+            default_out = './output'
+            #default_out = '/home/sai/output_quadratic_samecolor_halbox_plane'
         else:
             raise ValueError('Add the route for the dataset of your system')
 
@@ -56,7 +56,7 @@ class Parameters():
         self.parser.add_argument('--use_old_sign', action='store_true', default=True, help='Use toy example')
         self.parser.add_argument('--use_quartic', action='store_true', default=False, help='Use toy example')
         self.parser.add_argument('--rescaled', action='store_true', default=False, help='Use toy example')
-        self.parser.add_argument('--full_sphere_sampling', action='store_true', default=False, help='Use toy example')
+        self.parser.add_argument('--full_sphere_sampling', action='store_true', default=True, help='Use toy example')
         self.parser.add_argument('--random_rotation', action='store_true', default=False, help='Use toy example')
         self.parser.add_argument('--only_background', action='store_true', default=True, help='Use toy example')
         self.parser.add_argument('--rotate_foreground', action='store_true', default=False, help='Use toy example')
@@ -73,7 +73,7 @@ class Parameters():
         # Network parameters
         self.parser.add_argument('--gen_type', type=str, default='dcgan', help='One of: mlp, cnn, dcgan, resnet') # try resnet :)
         self.parser.add_argument('--gen_norm', type=str, default='batchnorm', help='One of: None, batchnorm, instancenorm')
-        self.parser.add_argument('--ngf', type=int, default=85, help='number of features in the generator network')
+        self.parser.add_argument('--ngf', type=int, default=75, help='number of features in the generator network')
         self.parser.add_argument('--gen_nextra_layers', type=int, default=0, help='number of extra layers in the generator network')
         self.parser.add_argument('--gen_bias_type', type=str, default=None, help='One of: None, plane')
         self.parser.add_argument('--netG', default='', help="path to netG (to continue training)")
@@ -82,12 +82,12 @@ class Parameters():
         self.parser.add_argument('--zloss', type=float, default=0.0, help='use Z loss')
         self.parser.add_argument('--unit_normalloss', type=float, default=0.0, help='use unit_normal loss')
         self.parser.add_argument('--norm_sph_coord', action='store_true', default=True, help='Use spherical coordinates for the normal')
-        self.parser.add_argument('--max_gnorm', type=float, default=400., help='max grad norm to which it will be clipped (if exceeded)')
+        self.parser.add_argument('--max_gnorm', type=float, default=500., help='max grad norm to which it will be clipped (if exceeded)')
         self.parser.add_argument('--disc_type', type=str, default='cnn', help='One of: cnn, dcgan')
         self.parser.add_argument('--disc_norm', type=str, default='None', help='One of: None, batchnorm, instancenorm')
-        self.parser.add_argument('--ndf', type=int, default=85, help='number of features in the discriminator network')
+        self.parser.add_argument('--ndf', type=int, default=75, help='number of features in the discriminator network')
         self.parser.add_argument('--disc_nextra_layers', type=int, default=0, help='number of extra layers in the discriminator network')
-        self.parser.add_argument('--nz', type=int, default=128, help='size of the latent z vector')
+        self.parser.add_argument('--nz', type=int, default=164, help='size of the latent z vector')
         self.parser.add_argument('--netD', default='', help="path to netD (to continue training)")
 
         # Optimization parameters

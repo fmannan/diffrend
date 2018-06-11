@@ -133,8 +133,9 @@ class GAN(object):
             self.opt.axis = None
 
         # TensorboardX
-        self.writer = SummaryWriter(self.opt.out_dir)
-
+        self.writer = SummaryWriter(self.opt.vis_monitoring)
+        print(self.opt.vis_monitoring)
+        print(self.opt.out_dir)
         # Create dataset loader
         self.create_dataset_loader()
 
@@ -317,7 +318,7 @@ class GAN(object):
 
         # Render scenes
         data, data_depth, data_normal, data_cond = [], [], [], []
-        inpath = self.opt.out_dir + '/'
+        inpath = self.opt.vis_images + '/'
         for idx in range(self.opt.batchSize):
             # Save the splats into the rendering scene
             if self.opt.use_mesh:
@@ -443,7 +444,7 @@ class GAN(object):
         return torch.stack(normals)
 
     def tensorboard_pos_hook(self, grad):
-        #import ipdb; ipdb.set_trace()
+        
         self.writer.add_image("position_gradient_im",
                                 torch.sqrt(torch.sum(grad ** 2, dim=-1)),
 
@@ -468,7 +469,7 @@ class GAN(object):
         #print('grad', grad)
 
     def tensorboard_normal_hook(self, grad):
-        #import ipdb; ipdb.set_trace()
+
         self.writer.add_image("normal_gradient_im",
                                 torch.sqrt(torch.sum(grad ** 2, dim=-1)),
 
@@ -530,7 +531,8 @@ class GAN(object):
         rendered_data_depth = []
         rendered_data_cond = []
         scenes = []
-        inpath = self.opt.out_dir + '/'
+        inpath = self.opt.vis_images + '/'
+        inpath_xyz = self.opt.vis_xyz + '/'
         z_min = self.scene['camera']['focal_length']
         z_max = z_min + 3
 
@@ -674,22 +676,22 @@ class GAN(object):
                 pos = get_data(res['pos'])
 
                 out_file2 = ("pos"+".npy")
-                np.save(inpath+out_file2, pos)
+                np.save(inpath_xyz+out_file2, pos)
 
                 out_file2 = ("im"+".npy")
-                np.save(inpath+out_file2, im2)
+                np.save(inpath_xyz+out_file2, im2)
 
                 out_file2 = ("depth"+".npy")
-                np.save(inpath+out_file2, depth2)
+                np.save(inpath_xyz+out_file2, depth2)
 
                 # Save xyz file
-                save_xyz((inpath + str(self.iterationa_no) +
+                save_xyz((inpath_xyz + str(self.iterationa_no) +
                           'withnormal_{:05d}.xyz'.format(idx)),
                          pos=get_data(res['pos']),
                          normal=get_data(res['normal']))
 
                 # Save xyz file in world coordinates
-                save_xyz((inpath + str(self.iterationa_no) +
+                save_xyz((inpath_xyz + str(self.iterationa_no) +
                           'withnormal_world_{:05d}.xyz'.format(idx)),
                          pos=get_data(world_tform['pos']),
                          normal=get_data(world_tform['normal']))
@@ -747,9 +749,11 @@ class GAN(object):
             self.writer.add_scalar("im_depth_cons_loss",
                                    image_depth_consistency_loss_/self.opt.batchSize,
                                    self.iterationa_no)
+
             res['pos'].register_hook(self.tensorboard_pos_hook)
             res['normal'].register_hook(self.tensorboard_normal_hook)
             z.register_hook(self.tensorboard_z_hook)
+
 
             log_to_print = ('it: %d. loss: %f nloss: %f z_loss:%f [%f, %f], '
                             'z_normal_loss: %f, spatial_var_loss: %f, '
@@ -943,7 +947,7 @@ class GAN(object):
                         get_data(fd), 200, [fd.data.min(), fd.data.max()]))
                     torchvision.utils.save_image(
                         fake_rendered.data,
-                        os.path.join(self.opt.out_dir,
+                        os.path.join(self.opt.vis_images,
                                      'output_%d.png' % (iteration)),
                         nrow=2, normalize=True, scale_each=True)
 
@@ -953,7 +957,7 @@ class GAN(object):
                         get_data(fd), 200, [fd.data.min(), fd.data.max()]))
                     torchvision.utils.save_image(
                         self.inputv.data, os.path.join(
-                            self.opt.out_dir, 'input_%d.png' % (iteration)),
+                            self.opt.vis_images, 'input_%d.png' % (iteration)),
                         nrow=2, normalize=True, scale_each=True)
 
                 # Do checkpointing
@@ -993,6 +997,13 @@ def main():
     # Create experiment output folder
     exp_dir = os.path.join(opt.out_dir, opt.name)
     mkdirs(exp_dir)
+    sub_dirs=['vis_images','vis_xyz','vis_monitoring']
+    for sub_dir in sub_dirs:
+        dir_path = os.path.join(exp_dir, sub_dir)
+        if not os.path.exists(dir_path):
+            os.makedirs(dir_path)
+        setattr(opt, sub_dir, dir_path)
+
 
     # Copy scripts to experiment folder
     copy_scripts_to_folder(exp_dir)
