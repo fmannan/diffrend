@@ -377,9 +377,12 @@ SCENE_SPHERE_HALFBOX_0 = {
     },
     'lights': {
         'pos': tch_var_f([
-            [10., 10., 10., 1.0],
-            [0.5, 1.5, 7.5, 1.0],
-            [2, 5., 8., 1.0],
+            # [10., 10., 10., 1.0],
+            # [0.5, 1.5, 7.5, 1.0],
+            # [2, 5., 8., 1.0],
+            [2, 2, 2, 1.0],
+            [1, 4, 5, 1.0],
+            [5, 2, 1, 1.0],
         ]),
         'color_idx': tch_var_l([2, 1, 3]),
         # Light attenuation factors have the form (kc, kl, kq) and eq: 1/(kc + kl * d + kq * d^2)

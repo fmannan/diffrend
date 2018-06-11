@@ -411,6 +411,7 @@ class GAN(object):
             real_samples_cond = real_samples_cond.cuda()
 
         # Set input/output variables
+
         self.input.resize_as_(real_samples.data).copy_(real_samples.data)
         self.input_depth.resize_as_(real_samples_depth.data).copy_(real_samples_depth.data)
         self.input_normal.resize_as_(real_samples_normal.data).copy_(real_samples_normal.data)
@@ -440,6 +441,70 @@ class GAN(object):
             n = n.squeeze().permute(1, 2, 0).view(-1, 3).contiguous()
             normals.append(n)
         return torch.stack(normals)
+
+    def tensorboard_pos_hook(self, grad):
+        #import ipdb; ipdb.set_trace()
+        self.writer.add_image("position_gradient_im",
+                                torch.sqrt(torch.sum(grad ** 2, dim=-1)),
+
+                               self.iterationa_no)
+        self.writer.add_scalar("position_mean_channel1",
+                               get_data(torch.mean(grad[:,:,0])),
+                               self.iterationa_no)
+        self.writer.add_scalar("position_gradient_mean_channel2",
+                               get_data(torch.mean(grad[:,:,1])),
+                               self.iterationa_no)
+        self.writer.add_scalar("position_gradient_mean_channel3",
+                               get_data(torch.mean(grad[:,:,2])),
+                               self.iterationa_no)
+        self.writer.add_scalar("position_gradient_mean",
+                               get_data(torch.mean(grad)),
+                               self.iterationa_no)
+        self.writer.add_histogram("position_gradient_hist_channel1", torch.mean(grad[:,:,0]).clone().cpu().data.numpy(),self.iterationa_no)
+        self.writer.add_histogram("position_gradient_hist_channel2", torch.mean(grad[:,:,1]).clone().cpu().data.numpy(),self.iterationa_no)
+        self.writer.add_histogram("position_gradient_hist_channel3", torch.mean(grad[:,:,2]).clone().cpu().data.numpy(),self.iterationa_no)
+        self.writer.add_histogram("position_gradient_hist_norm", torch.norm(grad,dim=2).clone().cpu().data.numpy(),self.iterationa_no)
+        print('tensorboard_pos_hook')
+        #print('grad', grad)
+
+    def tensorboard_normal_hook(self, grad):
+        #import ipdb; ipdb.set_trace()
+        self.writer.add_image("normal_gradient_im",
+                                torch.sqrt(torch.sum(grad ** 2, dim=-1)),
+
+                               self.iterationa_no)
+        self.writer.add_scalar("normal_gradient_mean_channel1",
+                               get_data(torch.mean(grad[:,:,0])),
+                               self.iterationa_no)
+        self.writer.add_scalar("normal_gradient_mean_channel2",
+                               get_data(torch.mean(grad[:,:,1])),
+                               self.iterationa_no)
+        self.writer.add_scalar("normal_gradient_mean_channel3",
+                               get_data(torch.mean(grad[:,:,2])),
+                               self.iterationa_no)
+        self.writer.add_scalar("normal_gradient_mean",
+                               get_data(torch.mean(grad)),
+                               self.iterationa_no)
+        self.writer.add_histogram("normal_gradient_hist_channel1", torch.mean(grad[:,:,0]).clone().cpu().data.numpy(),self.iterationa_no)
+        self.writer.add_histogram("normal_gradient_hist_channel2", torch.mean(grad[:,:,1]).clone().cpu().data.numpy(),self.iterationa_no)
+        self.writer.add_histogram("normal_gradient_hist_channel3", torch.mean(grad[:,:,2]).clone().cpu().data.numpy(),self.iterationa_no)
+        self.writer.add_histogram("normal_gradient_hist_norm", torch.norm(grad,dim=2).clone().cpu().data.numpy(),self.iterationa_no)
+        print('tensorboard_normal_hook')
+        #print('grad', grad)
+
+    def tensorboard_z_hook(self, grad):
+
+        self.writer.add_scalar("z_gradient_mean",
+                               get_data(torch.mean(grad)),
+                               self.iterationa_no)
+        self.writer.add_histogram("z_gradient_hist_channel", torch.mean(grad).clone().cpu().data.numpy(),self.iterationa_no)
+
+        self.writer.add_image("z_gradient_im",
+                               grad,
+                               self.iterationa_no)
+
+        print('tensorboard_z_hook')
+        print('grad', grad)
 
     def render_batch(self, batch, batch_cond=None):
         """Render a batch of splats."""
@@ -500,6 +565,7 @@ class GAN(object):
                      (z_max - z_min) + z_min)
                 pos = -z
             else:
+                z = F.relu(-batch[idx][:, 0]) + z_min
                 pos = -F.relu(-batch[idx][:, 0]) - z_min
             normals = batch[idx][:, 1:]
 
@@ -539,7 +605,7 @@ class GAN(object):
             #    (10 * F.relu(z_min - torch.abs(res_pos[..., 2]))) ** 2 +
             #    (10 * F.relu(torch.abs(res_pos[..., 2]) - z_max)) ** 2)
 
-            spatial_loss = spatial_3x3(res_pos_2D)
+
             res_normal = res['normal']
             # depth_grad_loss = spatial_3x3(res['depth'][..., np.newaxis])
             # grad_img = grad_spatial2d(torch.mean(res['image'], dim=-1)[..., np.newaxis])
@@ -554,6 +620,7 @@ class GAN(object):
                                 (2 * F.relu(torch.abs(z_pos) - z_max)) ** 2)
             z_norm_loss = normal_consistency_cost(
                 res_pos, res['normal'], norm=1)
+            spatial_loss = spatial_3x3(res_pos_2D)
             spatial_var = torch.mean(res_pos[..., 0].var() +
                                      res_pos[..., 1].var() +
                                      res_pos[..., 2].var())
@@ -680,6 +747,9 @@ class GAN(object):
             self.writer.add_scalar("im_depth_cons_loss",
                                    image_depth_consistency_loss_/self.opt.batchSize,
                                    self.iterationa_no)
+            res['pos'].register_hook(self.tensorboard_pos_hook)
+            res['normal'].register_hook(self.tensorboard_normal_hook)
+            z.register_hook(self.tensorboard_z_hook)
 
             log_to_print = ('it: %d. loss: %f nloss: %f z_loss:%f [%f, %f], '
                             'z_normal_loss: %f, spatial_var_loss: %f, '
@@ -811,8 +881,6 @@ class GAN(object):
                     errG = self.criterion(outG_fake, labelv)
                     errG.backward()
                 elif self.opt.criterion == 'WGAN':
-                    print (outG_fake.mean())
-                    print (loss)
                     errG = outG_fake.mean() + loss
                     errG.backward(self.mone)
                 else:

@@ -210,22 +210,22 @@ class _netG_mlp(nn.Module):
             # input is Z, going into a convolution
             nn.Linear(nz, ngf * 4),
             # nn.BatchNorm1d(ngf*4),
-            nn.LeakyReLU(0.2, True),
+            nn.LeakyReLU(0.2),
 
             nn.Linear(ngf * 4, ngf * 16),
             nn.BatchNorm1d(ngf * 16),
-            nn.LeakyReLU(0.2, True),
+            nn.LeakyReLU(0.2),
 
             nn.Linear(ngf * 16, ngf * 16),
             nn.BatchNorm1d(ngf * 16),
-            nn.LeakyReLU(0.2, True),
+            nn.LeakyReLU(0.2),
 
             nn.Linear(ngf * 16, ngf * 32),
             # nn.BatchNorm1d(ngf*16),
-            nn.LeakyReLU(0.2, True),
+            nn.LeakyReLU(0.2),
 
             nn.Linear(ngf * 32, ngf * 64),
-            nn.LeakyReLU(0.2, True),
+            nn.LeakyReLU(0.2),
 
             nn.Linear(ngf * 64, nc * nsplats)
             # nn.BatchNorm1d(ndf*4),
@@ -269,15 +269,15 @@ class _netG(nn.Module):
             # input is Z, going into a convolution
             nn.ConvTranspose2d(nz, ngf * 8, 4, 1, 0, bias=False),
             nn.BatchNorm2d(ngf * 8),
-            nn.LeakyReLU(0.2, True),
+            nn.LeakyReLU(0.2),
             # state size. (ngf*8) x 4 x 4
             nn.ConvTranspose2d(ngf * 8, ngf * 4, 4, 2, 1, bias=False),
             nn.BatchNorm2d(ngf * 4),
-            nn.LeakyReLU(0.2, True),
+            nn.LeakyReLU(0.2),
             # state size. (ngf*4) x 8 x 8
             nn.ConvTranspose2d(ngf * 4, ngf * 4, 4, 2, 1, bias=False),
             nn.BatchNorm2d(ngf * 4),
-            nn.LeakyReLU(0.2, True),
+            nn.LeakyReLU(0.2),
             # state size. (ngf*2) x 16 x 16
             nn.ConvTranspose2d(ngf * 4, nc, 4, 2, 1, bias=False),
             # state size. (ngf) x 32 x 32
@@ -341,7 +341,7 @@ class DCGAN_G2(nn.Module):
             main.add_module('initial.{0}.batchnorm'.format(cngf),
                             norm(cngf))
         main.add_module('initial.{0}.relu'.format(cngf),
-                        nn.ReLU(True))
+                        nn.ReLU())
 
         csize = 4
         i=0
@@ -358,7 +358,7 @@ class DCGAN_G2(nn.Module):
             if norm is not None:
                 main_2.add_module('pyramid.{0}.batchnorm'.format(cngf // 2),
                                 norm(cngf // 2))
-            main_2.add_module('pyramid.{0}.relu'.format(cngf // 2), nn.ReLU(True))
+            main_2.add_module('pyramid.{0}.relu'.format(cngf // 2), nn.ReLU())
             cngf = cngf // 2
             csize = csize * 2
             i+=1
@@ -371,7 +371,7 @@ class DCGAN_G2(nn.Module):
                 main_2.add_module('extra-layers-{0}.{1}.batchnorm'.format(
                     t, cngf), norm(cngf))
             main_2.add_module('extra-layers-{0}.{1}.relu'.format(t, cngf),
-                            nn.ReLU(True))
+                            nn.ReLU())
 
         main_2.add_module('final.{0}-{1}.convt'.format(cngf, nc),
                         nn.ConvTranspose2d(cngf, 2, 4, 2, 1, bias=False))
@@ -422,7 +422,7 @@ class DCGAN_G(nn.Module):
             main.add_module('initial_{0}_batchnorm'.format(cngf),
                             norm(cngf))
         main.add_module('initial_{0}_relu'.format(cngf),
-                        nn.ReLU(True))
+                        nn.ReLU())
 
         csize = 4
         i = 0
@@ -439,7 +439,7 @@ class DCGAN_G(nn.Module):
             if norm is not None:
                 main_2.add_module('pyramid_{0}_batchnorm'.format(cngf // 2),
                                   norm(cngf // 2))
-            main_2.add_module('pyramid_{0}_relu'.format(cngf // 2), nn.ReLU(True))
+            main_2.add_module('pyramid_{0}_relu'.format(cngf // 2), nn.ReLU())
             cngf = cngf // 2
             csize = csize * 2
             i+=1
@@ -452,7 +452,7 @@ class DCGAN_G(nn.Module):
                 main_2.add_module('extra-layers_{0}-{1}_batchnorm'.format(
                     t, cngf), norm(cngf))
             main_2.add_module('extra-layers_{0}-{1}_relu'.format(t, cngf),
-                            nn.ReLU(True))
+                            nn.ReLU())
 
         main_2.add_module('final_{0}-{1}_convt'.format(cngf, nc),
                         nn.ConvTranspose2d(cngf, 1, 4, 2, 1, bias=False))
@@ -490,7 +490,7 @@ class ResBasicBlock(nn.Module):
         super(ResBasicBlock, self).__init__()
         self.conv1 = conv3x3(inplanes, planes, stride)
         self.bn1 = nn.BatchNorm2d(planes)
-        self.relu = nn.ReLU(inplace=True)
+        self.relu = nn.ReLU()
         self.conv2 = conv3x3(planes, planes)
         self.bn2 = nn.BatchNorm2d(planes)
         self.stride = stride
@@ -528,7 +528,7 @@ class ResNet(nn.Module):
         self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3,
                                bias=False)
         self.bn1 = nn.BatchNorm2d(64)
-        self.relu = nn.ReLU(inplace=True)
+        self.relu = nn.ReLU()
         self.layer1 = self._make_layer(block, 64, layers[0])
         self.layer2 = self._make_layer(block, 128, layers[1])
         self.layer3 = self._make_layer(block, 256, layers[2])
@@ -837,7 +837,7 @@ class DCGAN_D(nn.Module):
         main.add_module('initial_conv_{0}-{1}'.format(nc, ndf),
                         nn.Conv2d(nc, ndf, 4, 2, 1, bias=False))
         main.add_module('initial_relu_{0}'.format(ndf),
-                        nn.LeakyReLU(0.2, inplace=True))
+                        nn.LeakyReLU(0.2))
         csize, cndf = isize / 2, ndf
 
         # Extra layers
@@ -848,7 +848,7 @@ class DCGAN_D(nn.Module):
                 main.add_module('extra-layers_{0}-{1}_batchnorm'.format(
                     t, cndf), nn.BatchNorm2d(cndf))
             main.add_module('extra-layers_{0}-{1}_relu'.format(t, cndf),
-                            nn.LeakyReLU(0.2, inplace=True))
+                            nn.LeakyReLU(0.2))
 
         while csize > 4:
             in_feat = cndf
@@ -859,7 +859,7 @@ class DCGAN_D(nn.Module):
                 main.add_module('pyramid_{0}_batchnorm'.format(out_feat),
                                 nn.BatchNorm2d(out_feat))
             main.add_module('pyramid_{0}_relu'.format(out_feat),
-                            nn.LeakyReLU(0.2, inplace=True))
+                            nn.LeakyReLU(0.2))
             cndf = cndf * 2
             csize = csize / 2
 
