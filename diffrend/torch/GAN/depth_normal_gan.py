@@ -460,10 +460,10 @@ class GAN(object):
         self.writer.add_scalar("position_gradient_mean",
                                get_data(torch.mean(grad)),
                                self.iterationa_no)
-        self.writer.add_histogram("position_gradient_hist_channel1", torch.mean(grad[:,:,0]).clone().cpu().data.numpy(),self.iterationa_no)
-        self.writer.add_histogram("position_gradient_hist_channel2", torch.mean(grad[:,:,1]).clone().cpu().data.numpy(),self.iterationa_no)
-        self.writer.add_histogram("position_gradient_hist_channel3", torch.mean(grad[:,:,2]).clone().cpu().data.numpy(),self.iterationa_no)
-        self.writer.add_histogram("position_gradient_hist_norm", torch.norm(grad,dim=2).clone().cpu().data.numpy(),self.iterationa_no)
+        self.writer.add_histogram("position_gradient_hist_channel1", grad[:,:,0].clone().cpu().data.numpy(),self.iterationa_no)
+        self.writer.add_histogram("position_gradient_hist_channel2", grad[:,:,1].clone().cpu().data.numpy(),self.iterationa_no)
+        self.writer.add_histogram("position_gradient_hist_channel3", grad[:,:,2].clone().cpu().data.numpy(),self.iterationa_no)
+        self.writer.add_histogram("position_gradient_hist_norm", torch.sqrt(torch.sum(grad ** 2, dim=-1)).clone().cpu().data.numpy(),self.iterationa_no)
         print('tensorboard_pos_hook')
         #print('grad', grad)
 
@@ -485,10 +485,10 @@ class GAN(object):
         self.writer.add_scalar("normal_gradient_mean",
                                get_data(torch.mean(grad)),
                                self.iterationa_no)
-        self.writer.add_histogram("normal_gradient_hist_channel1", torch.mean(grad[:,:,0]).clone().cpu().data.numpy(),self.iterationa_no)
-        self.writer.add_histogram("normal_gradient_hist_channel2", torch.mean(grad[:,:,1]).clone().cpu().data.numpy(),self.iterationa_no)
-        self.writer.add_histogram("normal_gradient_hist_channel3", torch.mean(grad[:,:,2]).clone().cpu().data.numpy(),self.iterationa_no)
-        self.writer.add_histogram("normal_gradient_hist_norm", torch.norm(grad,dim=2).clone().cpu().data.numpy(),self.iterationa_no)
+        self.writer.add_histogram("normal_gradient_hist_channel1", grad[:,:,0].clone().cpu().data.numpy(),self.iterationa_no)
+        self.writer.add_histogram("normal_gradient_hist_channel2", grad[:,:,1].clone().cpu().data.numpy(),self.iterationa_no)
+        self.writer.add_histogram("normal_gradient_hist_channel3", grad[:,:,2].clone().cpu().data.numpy(),self.iterationa_no)
+        self.writer.add_histogram("normal_gradient_hist_norm", torch.sqrt(torch.sum(grad ** 2, dim=-1)).clone().cpu().data.numpy(),self.iterationa_no)
         print('tensorboard_normal_hook')
         #print('grad', grad)
 
@@ -497,7 +497,7 @@ class GAN(object):
         self.writer.add_scalar("z_gradient_mean",
                                get_data(torch.mean(grad)),
                                self.iterationa_no)
-        self.writer.add_histogram("z_gradient_hist_channel", torch.mean(grad).clone().cpu().data.numpy(),self.iterationa_no)
+        self.writer.add_histogram("z_gradient_hist_channel", grad.clone().cpu().data.numpy(),self.iterationa_no)
 
         self.writer.add_image("z_gradient_im",
                                grad,
