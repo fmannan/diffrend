@@ -444,7 +444,7 @@ class GAN(object):
         return torch.stack(normals)
 
     def tensorboard_pos_hook(self, grad):
-        
+
         self.writer.add_image("position_gradient_im",
                                 torch.sqrt(torch.sum(grad ** 2, dim=-1)),
 
@@ -465,7 +465,6 @@ class GAN(object):
         self.writer.add_histogram("position_gradient_hist_channel2", grad[:,:,1].clone().cpu().data.numpy(),self.iterationa_no)
         self.writer.add_histogram("position_gradient_hist_channel3", grad[:,:,2].clone().cpu().data.numpy(),self.iterationa_no)
         self.writer.add_histogram("position_gradient_hist_norm", torch.sqrt(torch.sum(grad ** 2, dim=-1)).clone().cpu().data.numpy(),self.iterationa_no)
-        print('tensorboard_pos_hook')
         #print('grad', grad)
 
     def tensorboard_normal_hook(self, grad):
@@ -490,7 +489,6 @@ class GAN(object):
         self.writer.add_histogram("normal_gradient_hist_channel2", grad[:,:,1].clone().cpu().data.numpy(),self.iterationa_no)
         self.writer.add_histogram("normal_gradient_hist_channel3", grad[:,:,2].clone().cpu().data.numpy(),self.iterationa_no)
         self.writer.add_histogram("normal_gradient_hist_norm", torch.sqrt(torch.sum(grad ** 2, dim=-1)).clone().cpu().data.numpy(),self.iterationa_no)
-        print('tensorboard_normal_hook')
         #print('grad', grad)
 
     def tensorboard_z_hook(self, grad):
@@ -504,8 +502,6 @@ class GAN(object):
                                grad,
                                self.iterationa_no)
 
-        print('tensorboard_z_hook')
-        print('grad', grad)
 
     def render_batch(self, batch, batch_cond=None):
         """Render a batch of splats."""
@@ -752,7 +748,6 @@ class GAN(object):
 
             res['pos'].register_hook(self.tensorboard_pos_hook)
             res['normal'].register_hook(self.tensorboard_normal_hook)
-            z.register_hook(self.tensorboard_z_hook)
 
 
             log_to_print = ('it: %d. loss: %f nloss: %f z_loss:%f [%f, %f], '
@@ -774,6 +769,15 @@ class GAN(object):
             self.output_loss_file.write(log_to_print)
             self.output_loss_file.flush()
         return rendered_data, rendered_data_depth, loss/self.opt.batchSize
+    def tensorboard_hook(self, grad):
+        self.writer.add_scalar("z_gradient_mean",
+                               get_data(torch.mean(grad[0])),
+                               self.iterationa_no)
+        self.writer.add_histogram("z_gradient_hist_channel", grad[0].clone().cpu().data.numpy(),self.iterationa_no)
+        
+        self.writer.add_image("z_gradient_im",
+                               grad[0].view(128,128),
+                               self.iterationa_no)
 
     def train(self, ):
         """Train network."""
@@ -872,6 +876,8 @@ class GAN(object):
                 self.in_critic=0
                 self.generate_noise_vector()
                 fake_z = self.netG(self.noisev, self.inputv_cond)
+                if iteration % self.opt.print_interval == 0:
+                    fake_z.register_hook(self.tensorboard_hook)
                 fake_n = self.generate_normals(fake_z, self.inputv_cond,
                                                self.scene['camera'])
                 fake = torch.cat([fake_z, fake_n], 2)
