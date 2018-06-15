@@ -38,8 +38,8 @@ class Parameters():
             #default_root = '/data/lisa/data/ShapeNetCore.v2'
             #default_root = '/home/dvazquez/datasets/shapenet/ShapeNetCore.v2'
             default_root = '/home/sai/attenuation/diffrend/data/sphere'
-            default_out = './output'
-            #default_out = '/home/sai/output_quadratic_samecolor_halbox_plane'
+            #default_out = './output'
+            default_out = '/home/sai/output_newcolor_12june'
         else:
             raise ValueError('Add the route for the dataset of your system')
 
@@ -58,7 +58,7 @@ class Parameters():
         self.parser.add_argument('--rescaled', action='store_true', default=False, help='Use toy example')
         self.parser.add_argument('--full_sphere_sampling', action='store_true', default=True, help='Use toy example')
         self.parser.add_argument('--random_rotation', action='store_true', default=False, help='Use toy example')
-        self.parser.add_argument('--only_background', action='store_true', default=True, help='Use toy example')
+        self.parser.add_argument('--only_background', action='store_true', default=False, help='Use toy example')
         self.parser.add_argument('--rotate_foreground', action='store_true', default=False, help='Use toy example')
         self.parser.add_argument('--use_penality', action='store_true', default=True, help='Use toy example')
         self.parser.add_argument('--use_mesh', action='store_true', default=True, help='Render dataset with meshes')
@@ -149,7 +149,7 @@ class Parameters():
         self.parser.add_argument('--phi', nargs=2, type=float, default=[0,0], help='Angle in degrees from the x-axis.')
         self.parser.add_argument('--axis', nargs=3, default=[1,1,1],type=float, help='Axis for random camera position.')
         self.parser.add_argument('--cam_pos', nargs=3, type=float, help='Camera position.')
-        self.parser.add_argument('--at', nargs=3, default=[0.05,0.1,0], type=float, help='Camera lookat position.')
+        self.parser.add_argument('--at', nargs=3, default=[0.05,0.1,0.1], type=float, help='Camera lookat position.')
         #self.parser.add_argument('--at', nargs=3, default=[ 0, 1, 0], type=float, help='Camera lookat position.')
         self.parser.add_argument('--sphere-halfbox', action='store_true', help='Renders demo sphere-halfbox')
         self.parser.add_argument('--norm_depth_image_only', action='store_true', default=False, help='Render on the normalized'
@@ -166,8 +166,8 @@ class Parameters():
         self.parser.add_argument('--est_normals', action='store_true', help='Estimate normals from splat positions.')
         self.parser.add_argument('--same_view', action='store_true', help='data with view fixed') # before we add conditioning on cam pose, this is necessary
         self.parser.add_argument('--print_interval', type=int, default=5, help='Print loss interval.')
-        self.parser.add_argument('--save_image_interval', type=int, default=50, help='Save image interval.')
-        self.parser.add_argument('--save_interval', type=int, default=2000, help='Save state interval.')
+        self.parser.add_argument('--save_image_interval', type=int, default=100, help='Save image interval.')
+        self.parser.add_argument('--save_interval', type=int, default=4000, help='Save state interval.')
 
     def parse(self):
         """Parse."""

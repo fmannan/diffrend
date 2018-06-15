@@ -341,7 +341,7 @@ class DCGAN_G2(nn.Module):
             main.add_module('initial.{0}.batchnorm'.format(cngf),
                             norm(cngf))
         main.add_module('initial.{0}.relu'.format(cngf),
-                        nn.ReLU())
+                        nn.LeakyReLU())
 
         csize = 4
         i=0
@@ -358,7 +358,7 @@ class DCGAN_G2(nn.Module):
             if norm is not None:
                 main_2.add_module('pyramid.{0}.batchnorm'.format(cngf // 2),
                                 norm(cngf // 2))
-            main_2.add_module('pyramid.{0}.relu'.format(cngf // 2), nn.ReLU())
+            main_2.add_module('pyramid.{0}.relu'.format(cngf // 2), nn.LeakyReLU())
             cngf = cngf // 2
             csize = csize * 2
             i+=1
@@ -366,15 +366,15 @@ class DCGAN_G2(nn.Module):
         # Extra layers
         for t in range(n_extra_layers):
             main_2.add_module('extra-layers-{0}.{1}.conv'.format(t, cngf),
-                            nn.Conv2d(cngf, cngf, 3, 1, 1, bias=False))
+                            nn.Conv2d(cngf, cngf, 3, 1, 1, bias=True))
             if norm is not None:
                 main_2.add_module('extra-layers-{0}.{1}.batchnorm'.format(
                     t, cngf), norm(cngf))
             main_2.add_module('extra-layers-{0}.{1}.relu'.format(t, cngf),
-                            nn.ReLU())
+                            nn.LeakyReLU())
 
         main_2.add_module('final.{0}-{1}.convt'.format(cngf, nc),
-                        nn.ConvTranspose2d(cngf, 2, 4, 2, 1, bias=False))
+                        nn.ConvTranspose2d(cngf, 2, 4, 2, 1, bias=True))
         if use_tanh:
             main_2.add_module('final.{0}.tanh'.format(nc), nn.Tanh())
         main_2.add_module('reshape', ReshapeSplats())
@@ -461,6 +461,7 @@ class DCGAN_G(nn.Module):
         main_2.add_module('reshape', ReshapeSplats())
         self.main = main
         self.main_2 = main_2
+
 
     def forward(self, input, cond):
         """Forward method."""

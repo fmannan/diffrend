@@ -23,7 +23,7 @@ tch_var_l = lambda x: tch_var(x, LongTensor, False)
 
 
 def np_var(x, req_grad=False):
-    """Convert a numpy into a pytorch variable."""
+    """Convert a numpy variable to a pytorch variable."""
     if CUDA:
         return Variable(torch.from_numpy(x), requires_grad=req_grad).cuda()
     else:
@@ -122,12 +122,12 @@ def normalize_maxmin(x):
     return (x - min_val) / (torch.max(x) - min_val)
 
 
-def normalize(u, eps=0.0):
+def normalize(u, eps=1e-10):
     denom = norm_p(u, 2, eps=eps)
     if u.dim() > 1:
         denom = denom[..., np.newaxis]
     # TODO: nonzero_divide for rows with norm = 0
-    return u / denom
+    return u / (denom + eps)
     # if u.dim() == 2:
     #     return torch.renorm(u, 2, 0, 1)
     # elif u.dim() == 3:
@@ -718,13 +718,27 @@ def find_average_normal(pos, kernel_size):
 
 
 def estimate_surface_normals_plane_fit(pos, kernel_size):
-    """
+    """Performs constrained plane estimation with the requirements that
+    the splat position has to be on the plane and the normal has to be on
+    the positive hemisphere facing the camera (we also enforced the second
+    constraint when we generated normals). The setup is that the camera is
+    looking towards the -z axis (negative z) and the normals (nx, ny, nz)
+    need to have nz > 0.
+    So, for position (x0, y0, z0) and some neighbor (x, y, z),
+
+    nx (x - x0) + ny (y - y0) + nz (z - z0) = 0
+
+    Setting nz to be some positive constant c gives,
+    nx (x - x0) + ny (y - y0) = -c (z - z0)
+
+    The code solves for (nx, ny) and renormalizes to have unit length.
+
     Args:
-        pos:
-        kernel_size:
+        pos: [num_position, 3]
+        kernel_size: scalar indicating the neighborhood size (not used)
 
     Returns:
-        normals: [
+        normals: [num_positions, 3]
 
     """
     nbhr_diff = normalize(grad_spatial2d(pos), 1e-10)
@@ -763,10 +777,13 @@ def get_normalmap_image(normals, b_normalize=False):
     return np.uint8(normals * 127 + 127)
 
 
+### Tests
+
+
 def test_no_cost():
     pos = tch_var_f(np.zeros((5, 5, 3)))
-    cost = spatial_3x3(pos)
-    print(cost)
+    cost = get_data(spatial_3x3(pos))
+    np.testing.assert_equal(cost, 0.0)
 
 
 def test_plane_estimation_xy_plane():
@@ -786,14 +803,14 @@ def test_plane_estimation_xy_plane():
     np.testing.assert_equal(nc_cost, 0.0)
 
 
-def test_plane_estimation_roty_plane():
+def test_plane_estimation_roty_plane(angle):
     from diffrend.numpy.ops import axis_angle_matrix
     x, y = np.meshgrid(np.linspace(-1, 1, 5), np.linspace(1, -1, 5))
     z = np.zeros_like(x)
 
     pos = tch_var_f(np.stack((x, y, z), axis=2))
 
-    M = tch_var_f(axis_angle_matrix(axis=[0, 1, 0], angle=np.pi / 4))
+    M = tch_var_f(axis_angle_matrix(axis=[0, 1, 0], angle=angle))
     pos = pos.view(-1, 3).matmul(M[:, :3].transpose(1, 0))[:, :3].contiguous().view(pos.shape)
     normals = estimate_surface_normals_plane_fit(pos, None)
     normals_ = get_data(normals)
@@ -802,7 +819,7 @@ def test_plane_estimation_roty_plane():
     print('nc_cost', nc_cost)
     np.testing.assert_almost_equal(nc_cost, 0.0)
 
-    M = tch_var_f(axis_angle_matrix(axis=[0, 1, 0], angle=-np.pi / 4))
+    M = tch_var_f(axis_angle_matrix(axis=[0, 1, 0], angle=-angle))
     pos = pos.view(-1, 3).matmul(M[:, :3].transpose(1, 0))[:, :3].contiguous().view(pos.shape)
     normals = estimate_surface_normals_plane_fit(pos, None)
     normals_ = get_data(normals)
@@ -814,14 +831,14 @@ def test_plane_estimation_roty_plane():
     np.testing.assert_almost_equal(nc_cost, 0.0)
 
 
-def test_plane_estimation_rotx_plane():
+def test_plane_estimation_rotx_plane(angle):
     from diffrend.numpy.ops import axis_angle_matrix
     # rotation about x
     x, y = np.meshgrid(np.linspace(-1, 1, 5), np.linspace(1, -1, 5))
     z = np.zeros_like(x)
 
     pos = tch_var_f(np.stack((x, y, z), axis=2))
-    M = tch_var_f(axis_angle_matrix(axis=[1, 0, 0], angle=np.pi / 4))
+    M = tch_var_f(axis_angle_matrix(axis=[1, 0, 0], angle=angle))
     pos = pos.view(-1, 3).matmul(M[:, :3].transpose(1, 0))[:, :3].contiguous().view(pos.shape)
     normals = estimate_surface_normals_plane_fit(pos, None)
     normals_ = get_data(normals)
@@ -833,16 +850,39 @@ def test_plane_estimation_rotx_plane():
     np.testing.assert_almost_equal(nc_cost, 0.0)
 
 
-def test_plane_estimation_on_hemisphere():
+def test_plane_estimation_rot_plane_range(plane_fn, angle_range, steps):
+    for angle in np.linspace(min(angle_range), max(angle_range), steps):
+        plane_fn(angle)
+
+
+def test_plane_estimation_rotx_plane_range(angle_range, steps):
+    test_plane_estimation_rot_plane_range(test_plane_estimation_rotx_plane, angle_range, steps)
+
+
+def test_plane_estimation_roty_plane_range(angle_range, steps):
+    test_plane_estimation_rot_plane_range(test_plane_estimation_roty_plane, angle_range, steps)
+
+
+def test_plane_estimation_on_hemisphere(boundary_eps=0.05):
+    """Create a hemisphere in front of a plane and estimate the normals
+    on the hemisphere.
+
+    Args:
+        boundary_eps: fraction inside from the edge.
+
+    """
     x, y = np.meshgrid(np.linspace(-1, 1, 101), np.linspace(1, -1, 101))
     z = np.sqrt(np.abs(1 - (x ** 2 + y ** 2)))
-    z[np.sqrt(x ** 2 + y ** 2) > 1] = 0
+    out_circle_mask = np.sqrt(x ** 2 + y ** 2) > 1
+
+    z[out_circle_mask] = 0  # make the background a plane
 
     pos = tch_var_f(np.stack((x, y, z), axis=2))
-    normals_gt = normalize(pos)
-
+    normals_gt = get_data(normalize(pos))
     normals = get_data(estimate_surface_normals_plane_fit(pos, None))
-    #print(normals)
+    in_circle_mask = np.sqrt(x ** 2 + y ** 2) < (1 - boundary_eps)
+    np.testing.assert_array_almost_equal(normals_gt * in_circle_mask[..., np.newaxis],
+                                         normals * in_circle_mask[..., np.newaxis])
 
 
 if __name__ == '__main__':
@@ -855,5 +895,11 @@ if __name__ == '__main__':
     print(rand_val)
     print(cost)
     test_plane_estimation_xy_plane()
-    test_plane_estimation_roty_plane()
-    test_plane_estimation_rotx_plane()
+    test_plane_estimation_roty_plane(np.pi/4)
+    test_plane_estimation_rotx_plane(np.pi/4)
+    test_plane_estimation_on_hemisphere(boundary_eps=0.05)
+    test_plane_estimation_on_hemisphere(boundary_eps=0.05)
+    angle_range_max = np.pi / 2.0 - np.pi / 10.0
+    angle_range = [-angle_range_max, angle_range_max]
+    test_plane_estimation_rotx_plane_range(angle_range, 100)
+    test_plane_estimation_roty_plane_range(angle_range, 100)
