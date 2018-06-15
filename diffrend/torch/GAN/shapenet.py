@@ -75,10 +75,10 @@ class ShapeNetDataset(Dataset):
             bg_model = load_model(self.opt.bg_model)
             bg_v = bg_model['v']
             scale = (bg_v.max() - bg_v.min()) * 0.25
-            offset = np.array([3.0, 3.0, 3.0]) + 2 * np.random.rand(3)
+            offset = np.array([9, 9, 10]) #+ 2 * np.random.rand(3)
             v1 = (obj_model['v'] - obj_model['v'].mean()) / (obj_model['v'].max() - obj_model['v'].min())
             v = np.concatenate((scale * v1 + offset, bg_v))
-            f = np.concatenate((obj_model['f'], bg_v['f'] + v1.shape[0]))
+            f = np.concatenate((obj_model['f'], bg_model['f'] + v1.shape[0]))
             obj_model = {'v': v, 'f': f}
 
         if self.opt.use_mesh:
