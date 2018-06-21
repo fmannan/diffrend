@@ -334,11 +334,13 @@ class GAN(object):
                     large_scene['objects'] = {
                         'triangle': {'face': None, 'normal': None,
                                      'material_idx': None}}
-                samples = self.get_samples()
+                while True:
+                    samples = self.get_samples()
+                    if samples['mesh']['face'][0].size(0) <= 4000:
+                        break
+                #samples = self.get_samples()
 
-                large_scene['objects']['triangle']['material_idx'] = tch_var_l(
-                    np.zeros(samples['mesh']['face'][0].shape[0],
-                             dtype=int).tolist())
+                large_scene['objects']['triangle']['material_idx'] = samples['mesh']['material_idx']
                 large_scene['objects']['triangle']['face'] = Variable(
                     samples['mesh']['face'][0].cuda(), requires_grad=False)
                 large_scene['objects']['triangle']['normal'] = Variable(
@@ -550,7 +552,8 @@ class GAN(object):
         lookat = self.opt.at if self.opt.at is not None else [0.0, 0.0, 0.0, 1.0]
         self.scene['camera']['at'] = tch_var_f(lookat)
         self.scene['objects']['disk']['material_idx'] = tch_var_l(
-            np.zeros(self.opt.splats_img_size * self.opt.splats_img_size))
+            np.arange(self.opt.splats_img_size * self.opt.splats_img_size))
+
         loss = 0.0
         loss_ = 0.0
         z_loss_ = 0.0
@@ -571,7 +574,7 @@ class GAN(object):
             else:
                 z = F.relu(-batch[idx][:, 0]) + z_min
                 pos = -F.relu(-batch[idx][:, 0]) - z_min
-            normals = batch[idx][:, 1:]
+            normals = batch[idx][:, 4:]
 
             self.scene['objects']['disk']['pos'] = pos
 
@@ -591,7 +594,7 @@ class GAN(object):
                     self.scene['camera']['eye'] = batch_cond[0]
 
             self.scene['lights']['pos'][0,:3]=tch_var_f(self.light_pos[idx])
-
+            self.scene['materials']['albedo'] = batch[idx][:, 1:4]
             # Render scene
             # res = render_splats_NDC(self.scene)
             res = render_splats_along_ray(self.scene,
@@ -836,7 +839,7 @@ class GAN(object):
                     self.generate_noise_vector()
                     fake_z = self.netG(self.noisev, self.inputv_cond)
                     # The normal generator is dependent on z
-                    fake_n = self.generate_normals(fake_z, self.inputv_cond,
+                    fake_n = self.generate_normals(fake_z[:,:,0], self.inputv_cond,
                                                    self.scene['camera'])
                     fake = torch.cat([fake_z, fake_n], 2)
                     fake_rendered, fd, loss = self.render_batch(
@@ -886,7 +889,7 @@ class GAN(object):
                 fake_z = self.netG(self.noisev, self.inputv_cond)
                 if iteration % self.opt.print_interval*4 == 0:
                     fake_z.register_hook(self.tensorboard_hook)
-                fake_n = self.generate_normals(fake_z, self.inputv_cond,
+                fake_n = self.generate_normals(fake_z[:,:,0], self.inputv_cond,
                                                self.scene['camera'])
                 fake = torch.cat([fake_z, fake_n], 2)
                 fake_rendered, fd, loss = self.render_batch(
