@@ -401,8 +401,8 @@ SCENE_SPHERE_HALFBOX_0 = {
     ]),
     'materials': {
         'albedo': tch_var_f([
-            [0.5, 0.5, 0.5],
-            [0.1, 0.1, 0.1],
+            [0.5, 0.15, 0.1],
+            [0.1, 0.1, 0.6],
             [0.2, 0.2, 0.2],
             [0.9, 0.9, 0.9],
             [0.9, 0.1, 0.1],
@@ -475,7 +475,7 @@ SCENE_SPHERE_HALFBOX_1 = {
             [5, 0.5, 1, 1.0],
             [1, 10., 1., 1.0],
         ]),
-        'color_idx': tch_var_l([2, 2, 2]),
+        'color_idx': tch_var_l([2, 1, 3]),
         # Light attenuation factors have the form (kc, kl, kq) and eq: 1/(kc + kl * d + kq * d^2)
         'attenuation': tch_var_f([
             [0., 0., 0.01],
