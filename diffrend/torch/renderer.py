@@ -568,6 +568,7 @@ def render_splats_along_ray(scene, **params):
     # Samples per pixel (supersampling)
     samples = get_param_value('samples', params, 1)
     if samples > 1:
+        assert material_idx is not None  # Not supported yet.
         """There are three variables that need to be upsampled:
         1. positions, 2. normals, and 3. shadow maps (light visibility)
         The idea here is to generate an x-y grid in the original resolution, then shift that
@@ -676,8 +677,12 @@ def render_splats_along_ray(scene, **params):
     frag_normals = normals_CC[:, :3]
     frag_pos = pos_CC[:, :3]
 
-    frag_albedo = torch.index_select(material_albedo, 0, material_idx)
-    frag_coeffs = torch.index_select(material_coeffs, 0, material_idx)
+    if material_idx is not None:
+        frag_albedo = torch.index_select(material_albedo, 0, material_idx)
+        frag_coeffs = torch.index_select(material_coeffs, 0, material_idx)
+    else:
+        frag_albedo = material_albedo
+        frag_coeffs = material_coeffs
 
     im_color = fragment_shader(frag_normals=frag_normals,
                                light_dir=light_pos_CC[:, np.newaxis, :3] - frag_pos[:, :3],
