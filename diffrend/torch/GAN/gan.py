@@ -553,8 +553,9 @@ class GAN(object):
                                               'material_idx': None}}
         lookat = self.opt.at if self.opt.at is not None else [0.0, 0.0, 0.0, 1.0]
         self.scene['camera']['at'] = tch_var_f(lookat)
-        self.scene['objects']['disk']['material_idx'] = tch_var_l(
-            np.arange(self.opt.splats_img_size * self.opt.splats_img_size))
+        # None implies that the caller sets the albedo for every splat
+        self.scene['objects']['disk']['material_idx'] = None
+        #tch_var_l(np.arange(self.opt.splats_img_size * self.opt.splats_img_size))
 
         loss = 0.0
         loss_ = 0.0
@@ -580,7 +581,7 @@ class GAN(object):
             self.scene['objects']['disk']['pos'] = pos
 
             # Normal estimation network and est_normals don't go together
-            self.scene['objects']['disk']['normal'] = batch[idx][:, 4:] if self.opt.est_normals is False else None
+            self.scene['objects']['disk']['normal'] = batch[idx][:, 4:]
 
             # Set camera position
             if batch_cond is None:
@@ -594,8 +595,10 @@ class GAN(object):
                 else:
                     self.scene['camera']['eye'] = batch_cond[0]
 
-            self.scene['lights']['pos'][0,:3]=tch_var_f(self.light_pos[idx])
+            self.scene['lights']['pos'][0, :3] = tch_var_f(self.light_pos[idx])
             self.scene['materials']['albedo'] = batch[idx][:, 1:4]
+            self.scene['materials']['coeffs'] = tch_var_f([[1.0, 0.0, 0.0]] *
+                                                          (self.opt.splats_img_size * self.opt.splats_img_size))
             # Render scene
             # res = render_splats_NDC(self.scene)
             res = render_splats_along_ray(self.scene,
@@ -788,7 +791,7 @@ class GAN(object):
         self.writer.add_histogram("z_gradient_hist_channel", grad[0].clone().cpu().data.numpy(),self.iterationa_no)
 
         self.writer.add_image("z_gradient_im",
-                               grad[0].view(128,128),
+                               grad[0][:, 0].contiguous().view(self.opt.splats_img_size, self.opt.splats_img_size),
                                self.iterationa_no)
 
     def train(self, ):
