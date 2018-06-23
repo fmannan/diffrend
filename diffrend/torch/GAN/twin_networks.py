@@ -455,7 +455,7 @@ class DCGAN_G(nn.Module):
                             nn.LeakyReLU())
 
         main_2.add_module('final_{0}-{1}_convt'.format(cngf, nc),
-                        nn.ConvTranspose2d(cngf, 1, 4, 2, 1, bias=True))
+                        nn.ConvTranspose2d(cngf, 4, 4, 2, 1, bias=True))
         if use_tanh:
             main_2.add_module('final_{0}_tanh'.format(nc), nn.Tanh())
         main_2.add_module('reshape', ReshapeSplats())
