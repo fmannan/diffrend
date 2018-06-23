@@ -3,7 +3,8 @@ from diffrend.torch.renderer import render, render_splats_NDC, render_splats_alo
 from diffrend.torch.utils import (tch_var_f, tch_var_l, CUDA, get_data, get_normalmap_image,
                                   world_to_cam, cam_to_world, normalize, unit_norm2_L2loss,
                                   normalize_maxmin, normal_consistency_cost, away_from_camera_penalty,
-                                  spatial_3x3, depth_rgb_gradient_consistency, grad_spatial2d)
+                                  spatial_3x3, depth_rgb_gradient_consistency, grad_spatial2d,
+                                  estimate_surface_normals_plane_fit)
 from diffrend.torch.ops import sph2cart_unit
 from diffrend.utils.utils import save_xyz
 import torch.nn as nn
@@ -11,7 +12,7 @@ from torch import optim
 import torch.nn.functional as F
 from torch.optim.lr_scheduler import StepLR
 import numpy as np
-from diffrend.torch.NEstNet import NEstNet_v0, NEstNet_Affine
+from diffrend.torch.NEstNet import NEstNetV0, NEstNetAffine
 import matplotlib
 #matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -289,6 +290,13 @@ def optimize_splats_along_ray_shadow_with_normalest_test(out_dir, width, height,
     cc_tform = world_to_cam(target_res['pos'].view((-1, 3)), target_res['normal'].view((-1, 3)), scene['camera'])
     wc_cc_tform = cam_to_world(cc_tform['pos'], cc_tform['normal'], scene['camera'])
 
+    # Check normal estimation in camera space
+    pos_cc = cc_tform['pos'][:, :3].contiguous().view(target_im.shape)
+    normal_cc = cc_tform['normal'][:, :3].contiguous().view(target_im.shape)
+    plane_fit_est = estimate_surface_normals_plane_fit(pos_cc, None)
+    normal_cc_normalmap = get_normalmap_image(get_data(normal_cc))
+    plane_fit_est_normalmap = get_normalmap_image(get_data(plane_fit_est))
+
     pos_diff = torch.abs(wc_cc_tform['pos'][:, :3] - target_res['pos'].view((-1, 3)))
     mean_pos_diff = torch.mean(pos_diff)
     normal_diff = torch.abs(wc_cc_tform['normal'][:, :3] - target_res['normal'].view(-1, 3))
@@ -353,6 +361,26 @@ def optimize_splats_along_ray_shadow_with_normalest_test(out_dir, width, height,
     plt.title('WC_CC Normals')
     plt.savefig(out_dir + '/wc_cc_normal.png')
 
+    plt.figure()
+    plt.imshow(normal_cc_normalmap, interpolation='none')
+    plt.title('Normal CC GT')
+    plt.savefig(out_dir + '/normal_cc.png')
+
+    plt.figure()
+    plt.imshow(plane_fit_est_normalmap, interpolation='none')
+    plt.title('Plane fit CC')
+    plt.savefig(out_dir + '/est_normal_cc.png')
+
+    plt.figure()
+    plt.subplot(121)
+    plt.imshow(normal_cc_normalmap, interpolation='none')
+    plt.title('Normal CC GT')
+    plt.subplot(122)
+    plt.imshow(plane_fit_est_normalmap, interpolation='none')
+    plt.title('Plane fit CC')
+    plt.savefig(out_dir + '/normal_and_estnormal_cc_comparison.png')
+
+
     input_scene = copy.deepcopy(scene)
     del input_scene['objects']['sphere']
     del input_scene['objects']['triangle']
@@ -415,7 +443,7 @@ def optimize_splats_along_ray_shadow_with_normalest_test(out_dir, width, height,
     loss_per_iter = []
     if b_generate_normals:
         est_normals = False
-        normal_est_network = NEstNet_Affine(kernel_size=3, sph=False)
+        normal_est_network = NEstNetAffine(kernel_size=3, sph=False)
         print(normal_est_network)
         normal_est_network.cuda()
     for iter in range(max_iter):
