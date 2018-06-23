@@ -27,7 +27,7 @@ from diffrend.torch.utils import (tch_var_f, tch_var_l, get_data,
                                   grad_spatial2d)
 from diffrend.torch.renderer import (render, render_splats_along_ray,
                                      z_to_pcl_CC)
-from diffrend.torch.NEstNet import NEstNet_v0
+from diffrend.torch.NEstNet import NEstNetV1_2
 from diffrend.utils.sample_generator import uniform_sample_sphere
 from diffrend.utils.utils import contrast_stretch_percentile, save_xyz
 from tensorboardX import SummaryWriter
@@ -178,7 +178,7 @@ class GAN(object):
         # camera space and outputs the normals
         assert self.netG2 is None
         self.sph_normals = True
-        self.netG2 = NEstNet_v0(sph=self.sph_normals)
+        self.netG2 = NEstNetV1_2(sph=self.sph_normals)
         print(self.netG2)
         if not self.opt.no_cuda:
             self.netD = self.netD.cuda()
@@ -437,7 +437,7 @@ class GAN(object):
         normals = []
         for z, eye in zip(z_batch, cam_pos):
             camera['eye'] = eye
-            pcl = z_to_pcl_CC(z.squeeze(), camera)
+            pcl = z_to_pcl_CC(z[:, 0].squeeze(), camera)
             n = self.netG2(pcl.view(H, W, 3).permute(2, 0, 1)[np.newaxis, ...])
             n = n.squeeze().permute(1, 2, 0).view(-1, 3).contiguous()
             normals.append(n)

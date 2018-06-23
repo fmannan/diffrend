@@ -334,13 +334,15 @@ class GAN(object):
                     large_scene['objects'] = {
                         'triangle': {'face': None, 'normal': None,
                                      'material_idx': None}}
-                while True:
-                    samples = self.get_samples()
-                    if samples['mesh']['face'][0].size(0) <= 4000:
-                        break
-                #samples = self.get_samples()
+                # THIS IS NOT NEEDED. USE a smaller tile_size if OOM.
+                # while True:
+                #     samples = self.get_samples()
+                #     if samples['mesh']['face'][0].size(0) <= 4000:
+                #         break
+                samples = self.get_samples()
 
-                large_scene['objects']['triangle']['material_idx'] = samples['mesh']['material_idx']
+                large_scene['objects']['triangle']['material_idx'] = Variable(samples['mesh']['material_idx'].view(-1).cuda(),
+                                                                              requires_grad=False)
                 large_scene['objects']['triangle']['face'] = Variable(
                     samples['mesh']['face'][0].cuda(), requires_grad=False)
                 large_scene['objects']['triangle']['normal'] = Variable(
@@ -574,12 +576,11 @@ class GAN(object):
             else:
                 z = F.relu(-batch[idx][:, 0]) + z_min
                 pos = -F.relu(-batch[idx][:, 0]) - z_min
-            normals = batch[idx][:, 4:]
 
             self.scene['objects']['disk']['pos'] = pos
 
             # Normal estimation network and est_normals don't go together
-            self.scene['objects']['disk']['normal'] = normals if self.opt.est_normals is False else None
+            self.scene['objects']['disk']['normal'] = batch[idx][:, 4:] if self.opt.est_normals is False else None
 
             # Set camera position
             if batch_cond is None:
