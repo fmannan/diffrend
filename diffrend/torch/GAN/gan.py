@@ -581,7 +581,7 @@ class GAN(object):
             self.scene['objects']['disk']['pos'] = pos
 
             # Normal estimation network and est_normals don't go together
-            self.scene['objects']['disk']['normal'] = batch[idx][:, 4:]
+            self.scene['objects']['disk']['normal'] = batch[idx][:, 4:] if self.opt.est_normals is False else None
 
             # Set camera position
             if batch_cond is None:
