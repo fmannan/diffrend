@@ -27,7 +27,6 @@ from diffrend.torch.utils import (tch_var_f, tch_var_l, get_data,
                                   grad_spatial2d)
 from diffrend.torch.renderer import (render, render_splats_along_ray,
                                      z_to_pcl_CC)
-from diffrend.torch.NEstNet import NEstNetV1_2
 from diffrend.utils.sample_generator import uniform_sample_sphere
 from diffrend.utils.utils import contrast_stretch_percentile, save_xyz
 from tensorboardX import SummaryWriter
@@ -178,12 +177,10 @@ class GAN(object):
         # camera space and outputs the normals
         assert self.netG2 is None
         self.sph_normals = True
-        self.netG2 = NEstNetV1_2(sph=self.sph_normals)
         print(self.netG2)
         if not self.opt.no_cuda:
             self.netD = self.netD.cuda()
             self.netG = self.netG.cuda()
-            self.netG2 = self.netG2.cuda()
 
     def create_scene(self, ):
         """Create a semi-empty scene with camera parameters."""
@@ -245,16 +242,11 @@ class GAN(object):
             self.optimizerG = optim.Adam(self.netG.parameters(),
                                          lr=self.opt.lr,
                                          betas=(self.opt.beta1, 0.999))
-            self.optimizerG2 = optim.Adam(self.netG2.parameters(),
-                                          lr=self.opt.lr,
-                                          betas=(self.opt.beta1, 0.999))
         elif self.opt.optimizer == 'rmsprop':
             self.optimizerD = optim.RMSprop(self.netD.parameters(),
                                             lr=self.opt.lr)
             self.optimizerG = optim.RMSprop(self.netG.parameters(),
                                             lr=self.opt.lr)
-            self.optimizerG2 = optim.RMSprop(self.netG2.parameters(),
-                                             lr=self.opt.lr)
         else:
             raise ValueError('Unknown optimizer: ' + self.opt.optimizer)
 
@@ -271,12 +263,8 @@ class GAN(object):
         self.optG_z_lr_scheduler = LR_fn(
             self.optimizerG, step_size=self.opt.z_lr_sched_step,
             gamma=self.opt.z_lr_sched_gamma)
-        self.optG2_normal_lr_scheduler = LR_fn(
-            self.optimizerG2, step_size=self.opt.normal_lr_sched_step,
-            gamma=self.opt.normal_lr_sched_gamma)
-        self.LR_SCHED_MAP = [self.optG_z_lr_scheduler,
-                             self.optG2_normal_lr_scheduler]
-        self.OPT_MAP = [self.optimizerG, self.optimizerG2]
+        self.LR_SCHED_MAP = [self.optG_z_lr_scheduler]
+        self.OPT_MAP = [self.optimizerG]
 
     def get_samples(self):
         """Get samples."""
@@ -441,18 +429,6 @@ class GAN(object):
             self.batch_size, int(self.opt.nz), 1, 1).normal_(0, 1)
         self.noisev = Variable(self.noise)  # TODO: Add volatile=True???
 
-    def generate_normals(self, z_batch, cam_pos, camera):
-        """Generate normals from depth."""
-        W, H = camera['viewport'][2:]
-        normals = []
-        for z, eye in zip(z_batch, cam_pos):
-            camera['eye'] = eye
-            pcl = z_to_pcl_CC(z.squeeze(), camera)
-            n = self.netG2(pcl.view(H, W, 3).permute(2, 0, 1)[np.newaxis, ...])
-            n = n.squeeze().permute(1, 2, 0).view(-1, 3).contiguous()
-            normals.append(n)
-        return torch.stack(normals)
-
     def tensorboard_pos_hook(self, grad):
 
         self.writer.add_image("position_gradient_im",
@@ -581,7 +557,7 @@ class GAN(object):
             self.scene['objects']['disk']['pos'] = pos
 
             # Normal estimation network and est_normals don't go together
-            self.scene['objects']['disk']['normal'] = batch[idx][:, 4:] if self.opt.est_normals is False else None
+            self.scene['objects']['disk']['normal'] = None
 
             # Set camera position
             if batch_cond is None:
@@ -596,7 +572,7 @@ class GAN(object):
                     self.scene['camera']['eye'] = batch_cond[0]
 
             self.scene['lights']['pos'][0, :3] = tch_var_f(self.light_pos[idx])
-            self.scene['materials']['albedo'] = batch[idx][:, 1:4]
+            self.scene['materials']['albedo'] = batch[idx][:, 1:]
             self.scene['materials']['coeffs'] = tch_var_f([[1.0, 0.0, 0.0]] *
                                                           (self.opt.splats_img_size * self.opt.splats_img_size))
             # Render scene
@@ -802,9 +778,6 @@ class GAN(object):
             print(' > Generator', self.opt.gen_model_path)
             self.netG.load_state_dict(
                 torch.load(open(self.opt.gen_model_path, 'rb')))
-            print(' > Generator2', self.opt.gen_model_path2)
-            self.netG2.load_state_dict(
-                torch.load(open(self.opt.gen_model_path2, 'rb')))
             print(' > Discriminator', self.opt.dis_model_path)
             self.netD.load_state_dict(
                 torch.load(open(self.opt.dis_model_path, 'rb')))
@@ -843,11 +816,8 @@ class GAN(object):
                     self.generate_noise_vector()
                     fake_z = self.netG(self.noisev, self.inputv_cond)
                     # The normal generator is dependent on z
-                    fake_n = self.generate_normals(fake_z[:,:,0], self.inputv_cond,
-                                                   self.scene['camera'])
-                    fake = torch.cat([fake_z, fake_n], 2)
                     fake_rendered, fd, loss = self.render_batch(
-                        fake, self.inputv_cond)
+                        fake_z, self.inputv_cond)
                     # Do not bp through gen
                     outD_fake = self.netD(fake_rendered.detach(),
                                           self.inputv_cond.detach())
@@ -893,11 +863,8 @@ class GAN(object):
                 fake_z = self.netG(self.noisev, self.inputv_cond)
                 if iteration % self.opt.print_interval*4 == 0:
                     fake_z.register_hook(self.tensorboard_hook)
-                fake_n = self.generate_normals(fake_z[:,:,0], self.inputv_cond,
-                                               self.scene['camera'])
-                fake = torch.cat([fake_z, fake_n], 2)
                 fake_rendered, fd, loss = self.render_batch(
-                    fake, self.inputv_cond)
+                    fake_z, self.inputv_cond)
                 outG_fake = self.netD(fake_rendered, self.inputv_cond)
 
                 if self.opt.criterion == 'GAN':
@@ -956,11 +923,11 @@ class GAN(object):
 
                     print('\n[%d/%d] Loss_D: %.4f Loss_G: %.4f Loss_D_real: %.4f'
                           ' Loss_D_fake: %.4f Wassertein_D: %.4f '
-                          ' L2_loss: %.4f z_lr: %.8f, n_lr: %.8f, Disc_grad_norm: %.8f, Gen_grad_norm: %.8f' % (
+                          ' L2_loss: %.4f z_lr: %.8f, Disc_grad_norm: %.8f, Gen_grad_norm: %.8f' % (
                           iteration, self.opt.n_iter, errD.data[0],
                           errG.data[0], errD_real.data[0], errD_fake.data[0],
                           Wassertein_D, loss.data[0],
-                          self.optG_z_lr_scheduler.get_lr()[0], self.optG2_normal_lr_scheduler.get_lr()[0], gnorm_D, gnorm_G))
+                          self.optG_z_lr_scheduler.get_lr()[0],  gnorm_D, gnorm_G))
                     l2_file.write('%s\n' % (str(l2_loss.data[0])))
                     l2_file.flush()
                     print("written to file", str(l2_loss.data[0]))
@@ -992,8 +959,6 @@ class GAN(object):
         """Save networks to hard disk."""
         torch.save(self.netG.state_dict(),
                    '%s/netG_epoch_%d.pth' % (self.opt.out_dir, epoch))
-        torch.save(self.netG2.state_dict(),
-                   '%s/netG2_epoch_%d.pth' % (self.opt.out_dir, epoch))
         torch.save(self.netD.state_dict(),
                    '%s/netD_epoch_%d.pth' % (self.opt.out_dir, epoch))
         torch.save(self.netD2.state_dict(),
