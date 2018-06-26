@@ -187,6 +187,8 @@ class GAN(object):
         self.scene = create_scene(
             self.opt.splats_img_size, self.opt.splats_img_size, self.opt.fovy,
             self.opt.focal_length, self.opt.n_splats)
+        self.scene['materials']['coeffs'] = tch_var_f([[1.0, 0.0, 0.0]] *
+                                                      (self.opt.splats_img_size * self.opt.splats_img_size))
 
     def create_tensors(self, ):
         """Create the tensors."""
@@ -573,8 +575,9 @@ class GAN(object):
 
             self.scene['lights']['pos'][0, :3] = tch_var_f(self.light_pos[idx])
             self.scene['materials']['albedo'] = batch[idx][:, 1:]
-            self.scene['materials']['coeffs'] = tch_var_f([[1.0, 0.0, 0.0]] *
-                                                          (self.opt.splats_img_size * self.opt.splats_img_size))
+            # Init in create_scene()
+            # self.scene['materials']['coeffs'] = tch_var_f([[1.0, 0.0, 0.0]] *
+            #                                               (self.opt.splats_img_size * self.opt.splats_img_size))
             # Render scene
             # res = render_splats_NDC(self.scene)
             res = render_splats_along_ray(self.scene,
