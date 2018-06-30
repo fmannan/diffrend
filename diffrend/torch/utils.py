@@ -302,7 +302,7 @@ def lookat(eye, at, up):
     """
     return lookat_inv(eye, at, up).inverse()
 
-
+const_row_e4 = tch_var_f([0, 0, 0, 1.])[np.newaxis, :]
 def lookat_inv(eye, at, up):
     """Returns the inverse lookat matrix
     :param eye: camera location
@@ -312,8 +312,7 @@ def lookat_inv(eye, at, up):
     """
     rot_matrix = lookat_rot_inv(eye, at, up)
     rot_translate = torch.cat((rot_matrix, eye[:3][:, np.newaxis]), dim=1)
-    return torch.cat((rot_translate, tch_var_f([0, 0, 0, 1.])[np.newaxis, :]), dim=0)
-
+    return torch.cat((rot_translate, const_row_e4), dim=0)
 
 
 def lookat_rot_inv(eye, at, up):
@@ -397,6 +396,7 @@ def ray_object_intersections(eye, ray_dir, scene_objects, **kwargs):
     normals = None
     material_idx = None
     for obj_type in scene_objects:
+        # TODO: skip surfaces facing away
         result = intersection_fn[obj_type](eye, ray_dir, scene_objects[obj_type], **kwargs)
         curr_intersects = result['intersect']
         curr_ray_dist = result['ray_distance']
