@@ -107,3 +107,19 @@ def sph2cart_unit(u):
     y = sinth * torch.sin(phi)
     z = torch.cos(theta)
     return torch.stack((x, y, z), dim=-1)
+
+
+def hausdorff(u, v):
+    """
+    Args:
+        u: [N, D] torch variable
+        v: [M, D] torch variable
+
+    Returns:
+        Symmetric Hausdorff, Directed(u, v), Directed(v, u)
+    """
+    D = u[:, np.newaxis, :] - v[np.newaxis, ...]
+    D = torch.sqrt(torch.sum(D ** 2, dim=-1))
+    uv_dist = torch.max(torch.min(D, dim=0)[0])
+    vu_dist = torch.max(torch.min(D, dim=1)[0])
+    return torch.max(uv_dist, vu_dist), uv_dist, vu_dist

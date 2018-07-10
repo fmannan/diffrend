@@ -253,6 +253,21 @@ def backface_culling(obj, camera, copy=True):
     return new_obj
 
 
+def hausdorff(u, v):
+    """
+    Args:
+        u: [N, D]
+        v: [M, D]
+
+    Returns:
+        Symmetric Hausdorff, Directed(u, v), Directed(v, u)
+    """
+    D = u[:, np.newaxis, :] - v[np.newaxis, ...]
+    D = np.sqrt(np.sum(D ** 2, axis=-1))
+    uv_dist = np.max(np.min(D, axis=0))
+    vu_dist = np.max(np.min(D, axis=1))
+    return np.max(uv_dist, vu_dist), uv_dist, vu_dist
+
 def test_backface_culling():
     obj = {'v': np.array([[-1, -1, 0], [1, -1, 0], [0, 1, 0]]),
            'f': np.array([[0, 1, 2],
