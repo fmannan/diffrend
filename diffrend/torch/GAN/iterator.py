@@ -9,7 +9,7 @@ class Iterator(object):
 
     def __init__(self, root_path="/mnt/home/dvazquez/Sai/real_data/house_data/", img_path = 'images',
                  cam_path='cam',light_path='light',
-                 batch_size=6, nb_sub=None, extract_center=False, load_caption=False):
+                 batch_size=6, nb_sub=None):
 
 
         self.root_path = root_path
@@ -19,17 +19,12 @@ class Iterator(object):
         self.batch_size = batch_size
         self.batch_idx = 0
         self.imgs = glob.glob(self.img_path + "/*.png")
-        self.extract_center = extract_center
-        self.load_caption = load_caption
+
 
         if nb_sub is not None:
             self.imgs = self.imgs[:nb_sub]
 
-        if load_caption:
-            with open(self.caps_path) as fd:
-                print "Loading the captions..."
-                self.caption_dict = pkl.load(fd)
-                print "Done"
+
 
 
     def _get_img(self, i):
@@ -44,7 +39,7 @@ class Iterator(object):
         cam= np.load(cam_path)
         light=np.load(light_path)
 
-        return input.astype('float32')/255., cam, light
+        return img_array.astype('float32')/255., cam, light
 
     def __len__(self):
         return len(self.imgs)
@@ -57,7 +52,7 @@ class Iterator(object):
 
             res = [self[ii] for ii in xrange(*key.indices(len(self)))]
             xs, ys, caps = zip(*[x for x in res if x is not None])
-            return np.array(xs), np.array(ys), caps
+            return np.array(xs), np.array(ys), np.array(caps)
 
         elif isinstance(key, int):
             if key < 0:  # Handle negative indices
