@@ -7,7 +7,7 @@ import pickle as pkl
 class Iterator(object):
 
 
-    def __init__(self, root_path="/mnt/home/dvazquez/Sai/real_data/house_data/", img_path = 'images',
+    def __init__(self, root_path="/home/sai", img_path = 'house_data',
                  cam_path='cam',light_path='light',
                  batch_size=6, nb_sub=None):
 
@@ -33,13 +33,13 @@ class Iterator(object):
         img = Image.open(img_path)
         img_array = np.array(img)
 
-        cam_path = os.path.basename(img_path)[:-4]+".npy"
-        light_path = os.path.basename(img_path)[:-4]+"_light.npy"
+        cam_path = img_path[:-4]+".npy"
+        light_path = img_path[:-4]+"_light.npy"
 
         cam= np.load(cam_path)
         light=np.load(light_path)
 
-        return img_array.astype('float32')/255., cam, light
+        return img_array.astype('float32'), cam.astype('float32'), light.astype('float32')
 
     def __len__(self):
         return len(self.imgs)
@@ -50,7 +50,7 @@ class Iterator(object):
         if isinstance(key, slice):
             # Get the start, stop, and step from the slice
 
-            res = [self[ii] for ii in xrange(*key.indices(len(self)))]
+            res = [self[ii] for ii in range(*key.indices(len(self)))]
             xs, ys, caps = zip(*[x for x in res if x is not None])
             return np.array(xs), np.array(ys), np.array(caps)
 
@@ -58,10 +58,10 @@ class Iterator(object):
             if key < 0:  # Handle negative indices
                 key += len(self)
             if key < 0 or key >= len(self):
-                raise IndexError, "The index (%d) is out of range." % key
+                print("The index (%d) is out of range.")
             return self._get_img(key)  # Get the data from elsewhere
         else:
-            raise TypeError, "Invalid argument type."
+            print("Invalid argument type.")
 
 
     def __iter__(self):
