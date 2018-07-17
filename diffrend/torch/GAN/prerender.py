@@ -386,7 +386,7 @@ class GAN(object):
             # Render scene
             res = render(large_scene,
                          norm_depth_image_only=self.opt.norm_depth_image_only,
-                         double_sided=True, use_quartic=self.opt.use_quartic, tile_size=1024)
+                         double_sided=True, use_quartic=self.opt.use_quartic)
 
             # Get rendered output
             if self.opt.render_img_nc == 1:
@@ -413,10 +413,14 @@ class GAN(object):
             np.save(out_file_name, self.cam_pos[idx])
             out_file_name2 = inpath2 + str(self.iterationa_no) +"_"+str(self.critic_iter)+'input_light{:05d}.npy'.format(idx)
             np.save(out_file_name2, self.light_pos1[idx])
-            imsave((inpath2 + str(self.iterationa_no) +"_"+str(self.critic_iter)+
-                    'input_{:05d}.png'.format(idx)),
-                   im_)
-            if self.iterationa_no % self.opt.save_image_interval == 0:
+            out_file_name3 = inpath2 + str(self.iterationa_no) +"_"+str(self.critic_iter)+'input_im{:05d}.npy'.format(idx)
+            np.save(out_file_name3, get_data(res['image']))
+            out_file_name4 = inpath2 + str(self.iterationa_no) +"_"+str(self.critic_iter)+'input_depth{:05d}.npy'.format(idx)
+            np.save(out_file_name4, get_data(res['depth']))
+            out_file_name5 = inpath2 + str(self.iterationa_no) +"_"+str(self.critic_iter)+'input_normal{:05d}.npy'.format(idx)
+            np.save(out_file_name5, get_data(res['normal']))
+
+            if self.iterationa_no % (self.opt.save_image_interval*5) == 0:
                 imsave((inpath + str(self.iterationa_no) +
                         'real_normalmap_{:05d}.png'.format(idx)),
                        target_normalmap_img_)
@@ -532,7 +536,7 @@ class GAN(object):
                                self.iterationa_no)
 
 
-    
+
     def tensorboard_hook(self, grad):
         self.writer.add_scalar("z_gradient_mean",
                                get_data(torch.mean(grad[0])),

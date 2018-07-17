@@ -292,7 +292,7 @@ class GAN(object):
             samples = self.data_iter.next()
         return samples
 
-    
+
     def generate_noise_vector(self, ):
         """Generate a noise vector."""
         self.noise.resize_(
@@ -783,7 +783,7 @@ class GAN(object):
                         nrow=2, normalize=True, scale_each=True)
 
                 # Save input images
-                if iteration % (self.opt.save_image_interval*5) == 0 and cnt >0:
+                if iteration % (self.opt.save_image_interval*5) == 0:
                     cs = tch_var_f(contrast_stretch_percentile(
                         get_data(fd), 200, [fd.data.min(), fd.data.max()]))
                     torchvision.utils.save_image(
@@ -792,7 +792,7 @@ class GAN(object):
                         nrow=2, normalize=True, scale_each=True)
 
                 # Do checkpointing
-                if iteration % (self.opt.save_interval*5) == 0:
+                if iteration % (self.opt.save_interval*2) == 0:
                     self.save_networks(iteration)
 
     def save_networks(self, epoch):

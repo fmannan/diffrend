@@ -7,7 +7,7 @@ import pickle as pkl
 class Iterator(object):
 
 
-    def __init__(self, root_path="/home/sai", img_path = 'house_data',
+    def __init__(self, root_path="/home/sai", img_path = 'bedroom',
                  cam_path='cam',light_path='light',
                  batch_size=6, nb_sub=None):
 
@@ -18,7 +18,7 @@ class Iterator(object):
         self.lightpos_path = os.path.join(root_path, light_path)
         self.batch_size = batch_size
         self.batch_idx = 0
-        self.imgs = glob.glob(self.img_path + "/*.png")
+        self.imgs = glob.glob(self.img_path + "/*light*")
 
 
         if nb_sub is not None:
@@ -29,17 +29,18 @@ class Iterator(object):
 
     def _get_img(self, i):
 
-        img_path = self.imgs[i]
-        img = Image.open(img_path)
-        img_array = np.array(img)
+        light_path = self.imgs[i]
+        # img = Image.open(img_path)
+        # img_array = np.array(img)
 
-        cam_path = img_path[:-4]+".npy"
-        light_path = img_path[:-4]+"_light.npy"
+        cam_path = light_path[:-10]+"_cam.npy"
+        im_path = light_path[:-10]+".npy"
 
         cam= np.load(cam_path)
         light=np.load(light_path)
+        img_array=np.load(im_path)
 
-        return img_array.astype('float32'), cam.astype('float32'), light.astype('float32')
+        return img_array, cam, light
 
     def __len__(self):
         return len(self.imgs)
