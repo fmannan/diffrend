@@ -34,6 +34,15 @@ def np_var(x, req_grad=False):
 
 
 def get_data(x):
+    if type(x) is np.ndarray or \
+       type(x) is str:
+        return x
+    elif type(x) is dict:
+        return {key: get_data(x[key]) for key in x}
+    elif type(x) is list:
+        return [get_data(e) for e in x]
+    elif type(x) is not torch.autograd.Variable:
+        return x
     return x.cpu().data.numpy() if x.is_cuda else x.data.numpy()
 
 
