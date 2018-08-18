@@ -44,22 +44,27 @@ class ObjectsFolderMultiObjectDataset(Dataset):
         # Get object path
         obj_path = os.path.join(self.opt.root_dir, self.samples[idx])
 
-        if not self.loaded:
-            self.fg_obj = load_model(obj_path)
-            self.bg_obj = load_model(self.opt.bg_model)
-            self.loaded = True
-        obj_model = self.fg_obj
-        obj2 = self.bg_obj
+        # if not self.loaded:
+        #     self.fg_obj = load_model(obj_path)
+        #     self.bg_obj = load_model(self.opt.bg_model)
+        #     self.loaded = True
+        obj_model = load_model(obj_path)  #'../../../data/sphere_halfbox_v2.obj'
+        obj2 = load_model(self.opt.bg_model)
+        # obj_model = self.fg_obj
+        # obj2 = self.bg_obj
         v1 = (obj_model['v'] - obj_model['v'].mean()) / (obj_model['v'].max() - obj_model['v'].min())
         v2 = obj2['v']  # / (obj2['v'].max() - obj2['v'].min())
-        scale = (obj2['v'].max() - obj2['v'].min()) * 0.25
-        offset = np.array([5.0, 5.0, 5.0]) #+ 2 * np.random.rand(3)
+        scale = (obj2['v'].max() - obj2['v'].min()) * 0.4
+        offset = np.array([16, 10, 12.0]) #+ 2 * np.abs(np.random.randn(3))
         if self.opt.only_background:
             v=v2
             f=obj2['f']
+        elif self.opt.only_foreground:
+            v=v1
+            f=obj_model['f']
         else:
             if self.opt.random_rotation:
-                random_axis = np_normalize(np.random.rand(3))
+                random_axis = np_normalize(self.opt.axis)
                 random_angle = np.random.rand(1) * np.pi * 2
                 M = axis_angle_matrix(axis=random_axis, angle=random_angle)
                 M[:3, 3] = offset

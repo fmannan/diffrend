@@ -57,6 +57,7 @@ class Dataset_load():
             self.dataset = ObjectsFolderDataset(self.opt, transform=None)
         elif self.opt.dataset == 'objects_folder_multi':
             self.dataset = ObjectsFolderMultiObjectDataset(self.opt, transform=None)
+
         assert self.dataset
 
     def initialize_dataset_loader(self, batchSize=None):
