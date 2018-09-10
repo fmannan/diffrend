@@ -54,8 +54,8 @@ class ObjectsFolderMultiObjectDataset(Dataset):
         # obj2 = self.bg_obj
         v1 = (obj_model['v'] - obj_model['v'].mean()) / (obj_model['v'].max() - obj_model['v'].min())
         v2 = obj2['v']  # / (obj2['v'].max() - obj2['v'].min())
-        scale = (obj2['v'].max() - obj2['v'].min()) * 0.4
-        offset = np.array([16, 10, 12.0]) #+ 2 * np.abs(np.random.randn(3))
+        scale = (obj2['v'].max() - obj2['v'].min()) * 0.3
+        offset = np.array([0, 0, 45.0]) #+ np.random.randn(3)
         if self.opt.only_background:
             v=v2
             f=obj2['f']
@@ -68,6 +68,8 @@ class ObjectsFolderMultiObjectDataset(Dataset):
                 random_angle = np.random.rand(1) * np.pi * 2
                 M = axis_angle_matrix(axis=random_axis, angle=random_angle)
                 M[:3, 3] = offset
+                #v1 = v1 - np.mean(v1, axis=0)
+                v1 = v1 - (np.max(v1, axis=0) - np.min(v1, axis=0)) * 0.5
                 v1 = np.matmul(scale * v1, M.transpose(1, 0)[:3, :3]) + M[:3, 3]
             else:
                 v1 = scale * v1 + offset
@@ -80,7 +82,17 @@ class ObjectsFolderMultiObjectDataset(Dataset):
             # normalize the vertices
             v = obj_model['v']
             axis_range = np.max(v, axis=0) - np.min(v, axis=0)
-            v = (v - np.mean(v, axis=0)) / max(axis_range)  # Normalize to make the largest spread 1
+            bg =  (v2 - np.mean(v2, axis=0)) / max(axis_range)
+            fg =  (v1 - np.mean(v2, axis=0)) / max(axis_range)
+
+            fg = fg - np.min(fg, axis=0) + np.array([0, 0, 0.2], dtype=fg.dtype)
+            v = np.concatenate((bg, fg))
+            print("foreground centroid")
+            print(np.min(fg, axis=0))
+            print(np.mean(fg, axis=0))
+            print(np.max(fg, axis=0))
+
+            #v = (v - np.mean(v2, axis=0)) / max(axis_range)  # Normalize to make the largest spread 1
             obj_model['v'] = v
             mesh = obj_to_triangle_spec(obj_model)
             meshes = {'face': mesh['face'].astype(np.float32),
@@ -91,7 +103,7 @@ class ObjectsFolderMultiObjectDataset(Dataset):
             v, vn = uniform_sample_mesh(obj_model,
                                         num_samples=self.opt.n_splats)
             # Normalize the vertices
-            v = (v - np.mean(v, axis=0)) / (v.max() - v.min())
+            v = (v - np.mean(v2, axis=0)) / (v.max() - v.min())
 
             # Save the splats
             splats = {'pos': v.astype(np.float32),

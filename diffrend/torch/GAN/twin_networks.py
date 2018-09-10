@@ -6,7 +6,7 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 import numpy as np
 import math
-
+import functools
 
 def create_networks(opt, verbose=True, **params):
     """Create the networks."""
@@ -21,6 +21,7 @@ def create_networks(opt, verbose=True, **params):
 
     # Discriminator parameters
     ndf = int(opt.ndf)
+    nef = int(opt.nef)
     disc_norm = _select_norm(opt.disc_norm)
     disc_nextra_layers = int(opt.disc_nextra_layers)
 
@@ -78,10 +79,10 @@ def create_networks(opt, verbose=True, **params):
     # Create the discriminator network
     if opt.disc_type == 'cnn':
         if render_img_size == 128:
-            netD = _netD(ngpu, 3, ndf, render_img_size,
+            netD = _netD(ngpu, 3, ndf, render_img_size,nz,
                          use_sigmoid=use_sigmoid)
         else:
-            netD = _netD_256(ngpu, 3, ndf, render_img_size,
+            netD = _netD_256(ngpu, 3, ndf, render_img_size,nz,
                              use_sigmoid=use_sigmoid)
         # else:
         #     netD = _netD_64(ngpu, 3, ndf, render_img_size,
@@ -93,6 +94,7 @@ def create_networks(opt, verbose=True, **params):
     else:
         raise ValueError("Unknown discriminator")
 
+
     # Init weights/load pretrained model
     if opt.netD != '':
         netD.load_state_dict(torch.load(opt.netD))
@@ -102,10 +104,10 @@ def create_networks(opt, verbose=True, **params):
     # new network
     if opt.disc_type == 'cnn':
         if render_img_size == 128:
-            netD2 = _netD(ngpu, 3, ndf, render_img_size,
+            netD2 = _netD(ngpu, 3, ndf, render_img_size,nz,
                           use_sigmoid=use_sigmoid)
         else:
-            netD2 = _netD_256(ngpu, 3, ndf, render_img_size,
+            netD2 = _netD_256(ngpu, 3, ndf, render_img_size,nz,
                               use_sigmoid=use_sigmoid)
         # else:
         #     netD2 = _netD_64(ngpu, 3, ndf, render_img_size,
@@ -123,13 +125,19 @@ def create_networks(opt, verbose=True, **params):
     else:
         netD2.apply(weights_init)
     # Show networks
+    netE = LatentEncoder( nz, 3, nef)
+    if opt.netE != '':
+        netE.load_state_dict(torch.load(opt.netE))
+    else:
+        netE.apply(weights_init)
     if verbose:
         print(netG)
+        print(netE)
         print(netG2)
         print(netD)
         print(netD2)
 
-    return netG, netG2, netD, netD2
+    return netG, netG2, netD, netD2, netE
 
 
 def weights_init(m):
@@ -399,7 +407,7 @@ class DCGAN_G2(nn.Module):
 class DCGAN_G(nn.Module):
     """DCGAN generator."""
 
-    def __init__(self, isize, nz, nc, ngf, ngpu, n_extra_layers=0,
+    def __init__(self, isize, nz, nc, ngf, ngpu, n_extra_layers=1,
                  use_tanh=False, norm=nn.BatchNorm2d):
         """Constructor."""
 
@@ -629,7 +637,7 @@ class _netG_resnet(nn.Module):
 # Discriminators
 #############################################
 class _netD(nn.Module):
-    def __init__(self, ngpu, nc, ndf, isize, use_sigmoid=0):
+    def __init__(self, ngpu, nc, ndf, isize, nz, use_sigmoid=0):
         super(_netD, self).__init__()
         self.ngpu = ngpu
         self.use_sigmoid = use_sigmoid
@@ -655,16 +663,19 @@ class _netD(nn.Module):
             nn.Conv2d(ndf * 8, ndf * 10, 4, 2, 1, bias=True),
 
             nn.LeakyReLU(),
-            # state size. (ndf*8) x 4 x 4
             nn.Conv2d(ndf * 10, ndf * 12, 4, 1, 0, bias=True),
+            nn.LeakyReLU()
+            )
+            # state size. (ndf*8) x 4 x 4
+        self.main2 = nn.Sequential(nn.Conv2d(ndf * 12+nz, 1, 1, 1, 0, bias=True)
 
-            nn.LeakyReLU(),
-            nn.Conv2d(ndf * 12, 1, 1, 1, 0, bias=True)
+
+
 
 
         )
 
-    def forward(self, x, z):
+    def forward(self, x, z, z2):
         # import ipdb; ipdb.set_trace()
         z = z.view(z.size(0), z.size(1), 1, 1)
         propogated = Variable(torch.ones((x.size(0), z.size(1),
@@ -672,15 +683,101 @@ class _netD(nn.Module):
                               requires_grad=False).cuda() * z
         x = torch.cat([x, propogated], 1)
         x = self.main(x)
-        x = x.view(-1, 1).squeeze(1)
+        x2 = torch.cat([x, z2], 1)
+        x2= self.main2(x2)
+        x2 = x2.view(-1, 1).squeeze(1)
 
         if self.use_sigmoid:
-            return F.sigmoid(x)
+            return F.sigmoid(x2)
         else:
-            return x
+            return x2
 
+
+class LatentEncoder(nn.Module):
+    def __init__(self, nlatent, input_nc, nef):
+        super(LatentEncoder, self).__init__()
+
+        use_bias = False
+        norm_layer = functools.partial(nn.BatchNorm2d, affine=True)
+        kw = 3
+        # sequence = [
+        #     nn.Conv2d(input_nc, nef, kernel_size=kw, stride=2, padding=1, bias=True),
+        #     nn.ReLU(True),
+        #
+        #     nn.Conv2d(nef, 2*nef, kernel_size=kw, stride=2, padding=1, bias=use_bias),
+        #     norm_layer(2*nef),
+        #     nn.ReLU(True),
+        #
+        #     nn.Conv2d(2*nef, 4*nef, kernel_size=kw, stride=2, padding=1, bias=use_bias),
+        #     norm_layer(4*nef),
+        #     nn.ReLU(True),
+        #
+        #     nn.Conv2d(4*nef, 8*nef, kernel_size=kw, stride=2, padding=1, bias=use_bias),
+        #     norm_layer(8*nef),
+        #     nn.ReLU(True),
+        #
+        #     # nn.Conv2d(8*nef, 8*nef, kernel_size=kw, stride=2, padding=1, bias=use_bias),
+        #     # norm_layer(8*nef),
+        #     # nn.ReLU(True),
+        #
+        #     nn.Conv2d(8*nef, 8*nef, kernel_size=4, stride=1, padding=0, bias=use_bias),
+        #     norm_layer(8*nef),
+        #     nn.ReLU(True),
+        #
+        # ]
+        sequence = [
+            nn.Conv2d(input_nc, nef, kernel_size=5, stride=1, padding=2, bias=True),
+            nn.ReLU(True),
+
+            nn.Conv2d(nef, 2*nef, kernel_size=kw, stride=2, padding=1, bias=use_bias),
+            norm_layer(2*nef),
+            nn.ReLU(True),
+
+            nn.Conv2d(2*nef, 4*nef, kernel_size=kw, stride=2, padding=1, bias=use_bias),
+            norm_layer(4*nef),
+            nn.ReLU(True),
+
+            nn.Conv2d(4*nef, 4*nef, kernel_size=kw, stride=2, padding=1, bias=use_bias),
+            norm_layer(4*nef),
+            nn.ReLU(True),
+
+            nn.Conv2d(4*nef, 8*nef, kernel_size=kw, stride=2, padding=1, bias=use_bias),
+            norm_layer(8*nef),
+            nn.ReLU(True),
+        nn.Conv2d(8*nef, 8*nef, kernel_size=kw, stride=2, padding=1, bias=use_bias),
+            norm_layer(8*nef),
+            nn.ReLU(True),
+
+            nn.Conv2d(8*nef, 8*nef, kernel_size=4, stride=1, padding=0, bias=use_bias),
+            norm_layer(8*nef),
+            nn.ReLU(True),
+        ]
+
+        self.conv_modules = nn.Sequential(*sequence)
+
+        # make sure we return mu and logvar for latent code normal distribution
+        self.enc_mu = nn.Conv2d(8*nef, nlatent, kernel_size=1, stride=1, padding=0, bias=True)
+        self.enc_logvar = nn.Conv2d(8*nef, nlatent, kernel_size=1, stride=1, padding=0, bias=True)
+
+        # NOTE (Zihang): here is a difference compared to the TF code. In the TF code, there are two
+        # more layers used to generate the gaussian parameters, namely (1) an instance norm layer, and
+        # (2) a ReLU layer. I personally don't think there is any good reason that we should use the
+        # IN or ReLU here. But maybe it's worthy running a comparison experiment later if there is a
+        # significant difference.
+
+    def forward(self, input):
+        # z = z.view(z.size(0), z.size(1), 1, 1)
+        # propogated = Variable(torch.ones((input.size(0), z.size(1),
+        #                                   input.size(2), input.size(3))),
+        #                       requires_grad=False).cuda() * z
+        # input = torch.cat([input, propogated], 1)
+
+        conv_out = self.conv_modules(input)
+        mu = self.enc_mu(conv_out)
+        logvar = self.enc_logvar(conv_out)
+        return (mu.view(mu.size(0), -1), logvar.view(logvar.size(0), -1))
 class _netD_256(nn.Module):
-    def __init__(self, ngpu, nc, ndf, isize, use_sigmoid=0):
+    def __init__(self, ngpu, nc, ndf, isize, nz,use_sigmoid=0):
         super(_netD_256, self).__init__()
         self.ngpu = ngpu
         self.use_sigmoid = use_sigmoid

@@ -46,6 +46,19 @@ def crossprod_matrix(v):
                      [-y, x, 0]])
 
 
+def hausdorff(u, v):
+    """
+    Args:
+        u: [N, D]
+        v: [M, D]
+    Returns:
+        Symmetric Hausdorff, Directed(u, v), Directed(v, u)
+    """
+    D = u[:, np.newaxis, :] - v[np.newaxis, ...]
+    D = np.sqrt(np.sum(D ** 2, axis=-1))
+    uv_dist = np.max(np.min(D, axis=0))
+    vu_dist = np.max(np.min(D, axis=1))
+    return max(uv_dist, vu_dist), uv_dist, vu_dist
 def lookat(eye, at, up):
     """Returns a lookat matrix
 
@@ -283,5 +296,3 @@ def test_sph2cart_vec():
 
 if __name__ == '__main__':
     test_backface_culling()
-
-
