@@ -52,24 +52,31 @@ class ObjectsFolderMultiObjectDataset(Dataset):
         obj2 = load_model(self.opt.bg_model)
         # obj_model = self.fg_obj
         # obj2 = self.bg_obj
-        v1 = (obj_model['v'] - obj_model['v'].mean()) / (obj_model['v'].max() - obj_model['v'].min())
+        #v1 = (obj_model['v'] - obj_model['v'].mean()) / (obj_model['v'].max() - obj_model['v'].min())
         v2 = obj2['v']  # / (obj2['v'].max() - obj2['v'].min())
         scale = (obj2['v'].max() - obj2['v'].min()) * 0.3
-        offset = np.array([0, 0, 45.0]) #+ np.random.randn(3)
+        offset = np.array([14, 13, 15.0]) #+ 2 * np.abs(np.random.randn(3))
         if self.opt.only_background:
             v=v2
             f=obj2['f']
         elif self.opt.only_foreground:
-            v=v1
+            v=obj_model['v']
+
             f=obj_model['f']
+            if self.opt.random_rotation:
+                random_axis = np_normalize(self.opt.axis)
+                random_angle = np.random.rand(1) * np.pi * 2
+                M = axis_angle_matrix(axis=random_axis, angle=random_angle)
+
+                #v1 = v1 - np.mean(v1, axis=0)
+                v = np.matmul(v, M.transpose(1, 0)[:3, :3])
+            v1=v
         else:
             if self.opt.random_rotation:
                 random_axis = np_normalize(self.opt.axis)
                 random_angle = np.random.rand(1) * np.pi * 2
                 M = axis_angle_matrix(axis=random_axis, angle=random_angle)
                 M[:3, 3] = offset
-                #v1 = v1 - np.mean(v1, axis=0)
-                v1 = v1 - (np.max(v1, axis=0) - np.min(v1, axis=0)) * 0.5
                 v1 = np.matmul(scale * v1, M.transpose(1, 0)[:3, :3]) + M[:3, 3]
             else:
                 v1 = scale * v1 + offset
@@ -80,23 +87,20 @@ class ObjectsFolderMultiObjectDataset(Dataset):
 
         if self.opt.use_mesh:
             # normalize the vertices
+
+
             v = obj_model['v']
+
             axis_range = np.max(v, axis=0) - np.min(v, axis=0)
-            bg =  (v2 - np.mean(v2, axis=0)) / max(axis_range)
-            fg =  (v1 - np.mean(v2, axis=0)) / max(axis_range)
+            object_center= (np.mean(v1, 0) - np.mean(v, 0))/ max(axis_range)
+            v = (v - np.mean(v, axis=0)) / max(axis_range)  # Normalize to make the largest spread 1
+            #v =(v - [2, 2, 2])/4
 
-            fg = fg - np.min(fg, axis=0) + np.array([0, 0, 0.2], dtype=fg.dtype)
-            v = np.concatenate((bg, fg))
-            print("foreground centroid")
-            print(np.min(fg, axis=0))
-            print(np.mean(fg, axis=0))
-            print(np.max(fg, axis=0))
-
-            #v = (v - np.mean(v2, axis=0)) / max(axis_range)  # Normalize to make the largest spread 1
             obj_model['v'] = v
             mesh = obj_to_triangle_spec(obj_model)
             meshes = {'face': mesh['face'].astype(np.float32),
-                      'normal': mesh['normal'].astype(np.float32)}
+                      'normal': mesh['normal'].astype(np.float32),
+                      'object_center': (object_center).astype(np.float32)}
             sample = {'synset': 0, 'mesh': meshes}
         else:
             # Sample points from the 3D mesh
