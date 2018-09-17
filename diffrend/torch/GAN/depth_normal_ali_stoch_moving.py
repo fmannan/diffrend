@@ -270,7 +270,7 @@ class GAN(object):
         if self.opt.same_view:
             # self.cam_pos = uniform_sample_sphere(radius=self.opt.cam_dist,
             #                                      num_samples=1)
-            arrays = [np.asarray([3., 3., 3.]) for _ in
+            arrays = [np.asarray([0.5, 0.5, 0.9]) for _ in
                       range(self.opt.batchSize)]  # TODO: Magic numbers
             self.cam_pos = np.stack(arrays, axis=0)
 
@@ -417,20 +417,9 @@ class GAN(object):
                     axis=None, angle=self.opt.angle,
                     theta_range=np.deg2rad(self.opt.theta),
                     phi_range=np.deg2rad(self.opt.phi))
-        if  self.opt.full_sphere_sampling_light:
-            self.light_pos1 = uniform_sample_sphere(
-                radius=self.opt.cam_dist, num_samples=self.opt.batchSize,
-                axis=None, angle=self.opt.angle,
-                theta_range=np.deg2rad(self.opt.theta),
-                phi_range=np.deg2rad(self.opt.phi))
-            # self.light_pos2 = uniform_sample_sphere(radius=self.opt.cam_dist, num_samples=self.opt.batchSize,
-            #                                      axis=self.opt.axis, angle=np.deg2rad(40),
-            #                                      theta_range=self.opt.theta, phi_range=self.opt.phi)
-        else:
-            print("inbox")
-            light_eps = 0.15
-            self.light_pos1 = np.random.rand(self.opt.batchSize,3)*self.opt.cam_dist + light_eps
-            self.light_pos2 = np.random.rand(self.opt.batchSize,3)*self.opt.cam_dist + light_eps
+        self.light_pos1=[]
+        self.light_pos2=[]
+        self.light_pos3=[]
 
             # TODO: deg2rad in all the angles????
 
@@ -492,8 +481,27 @@ class GAN(object):
             else:
                 large_scene['camera']['eye'] = tch_var_f(self.cam_pos[0])
 
-            large_scene['lights']['pos'][0,:3]=tch_var_f(self.light_pos1[idx])
-            #large_scene['lights']['pos'][1,:3]=tch_var_f(self.light_pos2[idx])
+            #large_scene['lights']['pos'][0,:3]=tch_var_f(self.light_pos1[idx])
+            #self.light_pos1[idx] = self.cam_pos[idx] + [0.05, 0.05, 0.05]
+            light_pos1 = self.cam_pos[idx] + [0.05, 0.05, 0.05]
+            large_scene['lights']['pos'][0,:3]=tch_var_f(light_pos1)
+            light_pos2 = uniform_sample_sphere(
+                 radius=self.opt.cam_dist, num_samples=1,
+                 axis=self.cam_pos[idx], angle=np.deg2rad(35),
+                 theta_range=None,
+                 phi_range=None)
+
+            light_pos3 = uniform_sample_sphere(
+                 radius=self.opt.cam_dist, num_samples=1,
+                 axis=self.cam_pos[idx], angle=np.deg2rad(50),
+                 theta_range=None,
+                 phi_range=None)
+
+            large_scene['lights']['pos'][1,:3]=tch_var_f(light_pos2[0])
+            large_scene['lights']['pos'][2,:3]=tch_var_f(light_pos3[0])
+            self.light_pos1.append(light_pos1)
+            self.light_pos2.append(light_pos2[0])
+            self.light_pos3.append(light_pos3[0])
 
             # Render scene
             res = render(large_scene,
@@ -713,6 +721,8 @@ class GAN(object):
                     self.scene['camera']['eye'] = batch_cond[0]
 
             self.scene['lights']['pos'][0,:3]=tch_var_f(self.light_pos1[idx])
+            self.scene['lights']['pos'][1,:3]=tch_var_f(self.light_pos2[idx])
+            self.scene['lights']['pos'][2,:3]=tch_var_f(self.light_pos3[idx])
             #self.scene['lights']['pos'][1,:3]=tch_var_f(self.light_pos2[idx])
 
             # Render scene
