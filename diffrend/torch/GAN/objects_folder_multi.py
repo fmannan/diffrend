@@ -120,6 +120,8 @@ class ObjectsFolderMultiObjectDataset(Dataset):
         if self.transform:
             sample = self.transform(sample)
 
+        # use obj_path to determine uniqueness
+        sample['obj_path'] = obj_path
         return sample
 
     def _get_objects_paths(self,):

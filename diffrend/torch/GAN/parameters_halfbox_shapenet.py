@@ -48,6 +48,7 @@ class Parameters():
                                  help='dataset name: [shapenet, objects_folder, objects_folder]')#laptop,pistol
         #self.parser.add_argument('--dataset', type=str, default='objects_folder', help='dataset name: [shapenet, objects_folder]')
         self.parser.add_argument('--root_dir', type=str, default=default_root, help='dataset root directory')
+        self.parser.add_argument('--supervised_root_dir', type=str, help='Supervision dataset root directory')
         self.parser.add_argument('--root_dir1', type=str, default=default_root, help='dataset root directory')
         self.parser.add_argument('--root_dir2', type=str, default=default_root, help='dataset root directory')
         self.parser.add_argument('--root_dir3', type=str, default=default_root, help='dataset root directory')
@@ -132,6 +133,15 @@ class Parameters():
         self.parser.add_argument('--beta1', type=float, default=0.0, help='beta1 for adam. default=0.5')
         self.parser.add_argument('--n_iter', type=int, default=76201, help='number of iterations to train')
         self.parser.add_argument('--batchSize', type=int, default=4, help='input batch size')
+        self.parser.add_argument('--IQ_train_start_iter', type=int, default=10000, help='Supervised IQ training starting iteration.')
+        self.parser.add_argument('--IQ_train_interval', type=int, default=5000, help='Supervised IQ training intervals.')
+        self.parser.add_argument('--IQ_train_maxiter', type=int, default=10, help='Supervised IQ training max iter.')
+        self.parser.add_argument('--IQ_train_same_batchsize', type=int, default=4,
+                                 help='Number of views of the same object.')
+        self.parser.add_argument('--IQ_train_neg_batchsize', type=int, default=2,
+                                 help='Number of images of different objects.')
+        self.parser.add_argument('--IQ_train_num_unique_neg', type=int, default=3,
+                                 help='Number of unique negative samples.')
 
         # GAN parameters
         self.parser.add_argument("--criterion", help="GAN Training criterion", choices=['GAN', 'WGAN'], default='WGAN')

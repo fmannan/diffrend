@@ -42,6 +42,26 @@ matplotlib.use('Agg')
  z_noise -> z_distance_generator -> proj_to_scene_in_CC ->
  normal_estimator_network -> render -> discriminator
  real_data -> discriminator
+ 
+NOTES on IQ Task Supervised Training:
+See new args in parameters_halfbox_shapenet of the form `--IQ_train_*`
+After initial warmup (usual training) specified by `IQ_train_start_iter`
+Supervised IQ training is done at every `IQ_train_interval`
+for `IQ_train_maxiter` iterations.
+In each iteration, `IQ_train_same_batchsize` number of different views of the
+same object are rendered. The encoder should produce the same encoding for these.
+Therefore the MSE loss should be minimized.
+Also, a total of `IQ_train_num_unique_neg` * `IQ_train_neg_batchsize` negative
+examples are generated, i.e., the encoding of the negative and the positive examples
+should differ by a large amount (neg_loss)
+The total IQ task loss is: (pos_loss - neg_loss)
+
+TODO: Another option is to use the Hinge loss
+max(pos_example - neg_example + C, 0)
+But in this case, the batchsize and the num of unique neg samples need to be chosen carefully.
+
+HOW TO RUN?
+See run_IQTraining.sh
 """
 
 
@@ -218,11 +238,13 @@ def calc_gradient_penalty4(discriminator, encoder, real_data, fake_data, fake_da
 class GAN(object):
     """GAN class."""
 
-    def __init__(self, opt, dataset_load=None, exp_dir=None):
+    def __init__(self, opt, dataset_load=None, supervised_dataset_load=None,
+                 exp_dir=None):
         """Constructor."""
         # Save variables
         self.opt = opt
         self.dataset_load = dataset_load
+        self.supervised_dataset_load = supervised_dataset_load
         self.opt.out_dir = exp_dir
 
         # Define other variables
@@ -276,9 +298,15 @@ class GAN(object):
 
         # Create dataset loader
         self.dataset_load.initialize_dataset()
-        self.dataset = self.dataset_load.get_dataset()
+        self.dataset = self.dataset_load.get_dataset() # Is this used anywhere?
         self.dataset_load.initialize_dataset_loader(1)  # TODO: Hack
         self.dataset_loader = self.dataset_load.get_dataset_loader()
+
+        self.supervised_dataset_load.initialize_dataset()
+        #self.supervised_dataset = self.supervised_dataset_load.get_dataset()
+        self.supervised_dataset_load.initialize_dataset_loader(1)  # TODO: Hack
+        self.supervised_dataset_loader = self.supervised_dataset_load.get_dataset_loader()
+
 
     def create_networks(self, ):
         """Create networks."""
@@ -380,31 +408,43 @@ class GAN(object):
         self.LR_SCHED_MAP = [self.optG_z_lr_scheduler]
         self.OPT_MAP = [self.optimizerG]
 
-    def get_samples(self):
-        """Get samples."""
+    def get_samples(self, from_supervision_dataset):
+        """Get samples.
+        Switches between getting samples from two different sources.
+        """
+        fn_dataset_loader = self.supervised_dataset_loader if from_supervision_dataset else self.dataset_loader
         try:
             samples = self.data_iter.next()
         except StopIteration:
             del self.data_iter
-            self.data_iter = iter(self.dataset_loader)
+            self.data_iter = iter(fn_dataset_loader)
             samples = self.data_iter.next()
         except AttributeError:
-            self.data_iter = iter(self.dataset_loader)
+            self.data_iter = iter(fn_dataset_loader)
             samples = self.data_iter.next()
         return samples
 
-    def get_real_samples(self):
-        """Get a real sample."""
+    def get_real_samples(self, fixed_sample=None, batch_size=None):
+        """Get a real sample.
+        Why does this function set inputv, etc. rather than returning directly !!?
+        This function basically fetches a batch of 3d models, renders them with different
+        lighting and view settings, and returns the batch of rendered images.
+        For supervised IQ training, fixed_sample is passed to the function, and this function
+        only renders different views of the same sample and "returns" all of them as a batch.
+
+        batch_size: optional. In case if we want to render a different images for the fixed sample.
+        """
+        batch_size = self.opt.batchSize if batch_size is None else batch_size
         # Define the camera poses
         if not self.opt.same_view:
             if self.opt.full_sphere_sampling:
                 self.cam_pos = uniform_sample_sphere(
-                    radius=self.opt.cam_dist, num_samples=self.opt.batchSize,
+                    radius=self.opt.cam_dist, num_samples=batch_size,
                     axis=None, angle=self.opt.angle,
                     theta_range=np.deg2rad(self.opt.theta), phi_range=np.deg2rad(self.opt.phi))
             else:
                 self.cam_pos = uniform_sample_sphere(
-                    radius=self.opt.cam_dist, num_samples=self.opt.batchSize,
+                    radius=self.opt.cam_dist, num_samples=batch_size,
                     axis=None, angle=self.opt.angle,
                     theta_range=np.deg2rad(self.opt.theta),
                     phi_range=np.deg2rad(self.opt.phi))
@@ -412,7 +452,7 @@ class GAN(object):
         self.light_pos2=[]
         self.light_pos3=[]
 
-            # TODO: deg2rad in all the angles????
+        # TODO: deg2rad in all the angles????
 
         # Create a splats rendering scene
         large_scene = create_scene(self.opt.width, self.opt.height,
@@ -424,7 +464,7 @@ class GAN(object):
         # Render scenes
         data, data_depth, data_normal, data_cond = [], [], [], []
         inpath = self.opt.vis_images + '/'
-        for idx in range(self.opt.batchSize):
+        for idx in range(batch_size):
             # Save the splats into the rendering scene
             if self.opt.use_mesh:
                 # if 'sphere' in large_scene['objects']:
@@ -435,7 +475,8 @@ class GAN(object):
                     large_scene['objects'] = {
                         'triangle': {'face': None, 'normal': None,
                                      'material_idx': None}}
-                samples = self.get_samples()
+                # Either use the fixed sample or fetch new samples in every iteration
+                samples = fixed_sample if fixed_sample is not None else self.get_samples(from_supervision_dataset=False)
                 large_scene['camera']['at'] = tch_var_f(samples['mesh']['object_center'][0].tolist())
                 large_scene['objects']['triangle']['material_idx'] = tch_var_l(
                     np.zeros(samples['mesh']['face'][0].shape[0],
@@ -446,25 +487,27 @@ class GAN(object):
                     samples['mesh']['normal'][0].cuda(),
                     requires_grad=False)
             else:
-                if 'sphere' in large_scene['objects']:
-                    del large_scene['objects']['sphere']
-                if 'triangle' in large_scene['objects']:
-                    del large_scene['objects']['triangle']
-                if 'disk' not in large_scene['objects']:
-                    large_scene['objects'] = {
-                        'disk': {'pos': None,
-                                 'normal': None,
-                                 'material_idx': None}}
-                large_scene['objects']['disk']['radius'] = tch_var_f(
-                    np.ones(self.opt.n_splats) * self.opt.splats_radius)
-                large_scene['objects']['disk']['material_idx'] = tch_var_l(
-                    np.zeros(self.opt.n_splats, dtype=int).tolist())
-                large_scene['objects']['disk']['pos'] = Variable(
-                    samples['splats']['pos'][idx].cuda(),
-                    requires_grad=False)
-                large_scene['objects']['disk']['normal'] = Variable(
-                    samples['splats']['normal'][idx].cuda(),
-                    requires_grad=False)
+                # TODO: REMOVE THIS
+                assert False
+                # if 'sphere' in large_scene['objects']:
+                #     del large_scene['objects']['sphere']
+                # if 'triangle' in large_scene['objects']:
+                #     del large_scene['objects']['triangle']
+                # if 'disk' not in large_scene['objects']:
+                #     large_scene['objects'] = {
+                #         'disk': {'pos': None,
+                #                  'normal': None,
+                #                  'material_idx': None}}
+                # large_scene['objects']['disk']['radius'] = tch_var_f(
+                #     np.ones(self.opt.n_splats) * self.opt.splats_radius)
+                # large_scene['objects']['disk']['material_idx'] = tch_var_l(
+                #     np.zeros(self.opt.n_splats, dtype=int).tolist())
+                # large_scene['objects']['disk']['pos'] = Variable(
+                #     samples['splats']['pos'][idx].cuda(),
+                #     requires_grad=False)
+                # large_scene['objects']['disk']['normal'] = Variable(
+                #     samples['splats']['normal'][idx].cuda(),
+                #     requires_grad=False)
 
             # Set camera position
             if not self.opt.same_view:
@@ -554,6 +597,8 @@ class GAN(object):
         self.inputv_normal = Variable(self.input_normal)
         self.inputv_cond = Variable(self.input_cond)
         self.labelv = Variable(self.label)
+
+        return {'images': self.inputv}
 
     def generate_noise_vector(self, ):
         """Generate a noise vector."""
@@ -917,7 +962,60 @@ class GAN(object):
                                grad[0].view(self.opt.splats_img_size,self.opt.splats_img_size),
                                self.iterationa_no)
 
-    def train(self, ):
+    def get_different_sample_from(self, num_samples, obj_path):
+        count = 0
+        while True:
+            sample = self.get_samples(from_supervision_dataset=True)
+            if sample['obj_path'] != obj_path:
+                count += 1
+                yield sample
+            if count >= num_samples:
+                return
+
+    def train_supervised_multiview(self, maxiter,
+                                   batch_size=4, num_unique_neg_samples=3,
+                                   neg_sample_batch_size=4):
+        """For a given shape, generate multiple views and
+        minimize the latent space distance for the same shape
+        while maximizing the latent space distance for different shapes.
+
+        Note: This function gets called from `train` at specific intervals.
+        real samples from predefined set -> render multiview -> same objects minimize loss and diff objs maximize
+        How are different shapes chosen?
+        1. Can be from the predefined shapes
+        2. Any shape?
+        In this case, from the predefined supervision set
+
+        Total number of same samples = batch_size
+        Total number of different samples = num_different_examples * neg_sample_batch_size
+        """
+        pos_loss_sum = 0
+        neg_loss_sum = 0
+        for iter in range(maxiter):
+            sample = self.get_samples(from_supervision_dataset=True)
+
+            # images of the same object but different views
+            res = self.get_real_samples(fixed_sample=sample, batch_size=batch_size)
+            pos_batch = res['images']
+            mu_z, logvar_z = self.netE(pos_batch)
+            z_pos = gauss_reparametrize(mu_z, logvar_z).squeeze()
+
+            # sum-of-squared loss for the same object but different views
+            pos_loss_sum += ((z_pos[:, np.newaxis, :] - z_pos[np.newaxis, :, :]) ** 2).sum(dim=-1).mean()
+
+            for diff_sample in self.get_different_sample_from(num_unique_neg_samples, sample['obj_path']):
+                #print(sample['obj_path'], diff_sample['obj_path'])
+                res = self.get_real_samples(fixed_sample=diff_sample, batch_size=neg_sample_batch_size)
+                mu_z, logvar_z = self.netE(res['images'])
+                z_neg = gauss_reparametrize(mu_z, logvar_z).squeeze()
+                # sum-of-squared loss between the original object with different views and different objects
+                # NOTE: We can also do
+                # pos_loss_sum += ((z_neg[:, np.newaxis, :] - z_neg[np.newaxis, :, :]) ** 2).sum(dim=-1).mean()
+                # but what if many same different samples? Unlikely though.
+                neg_loss_sum += ((z_neg[:, np.newaxis, :] - z_pos[np.newaxis, :, :]) ** 2).sum(dim=-1).mean()
+        return pos_loss_sum - neg_loss_sum, {'pos_loss': pos_loss_sum, 'neg_loss': neg_loss_sum}
+
+    def train(self):
         """Train network."""
         # Load pretrained model if required
         if self.opt.gen_model_path is not None:
@@ -1020,6 +1118,17 @@ class GAN(object):
                 self.netG.zero_grad()
                 self.netE.zero_grad()
                 self.in_critic=0
+                supervision_loss = 0
+                pos_neg_losses = None
+                if iteration > self.opt.IQ_train_start_iter and \
+                        iteration % self.opt.IQ_train_interval == 0:
+                    # Perform N iteration of supervised training
+                    supervision_loss, pos_neg_losses = \
+                        self.train_supervised_multiview(maxiter=self.opt.IQ_train_maxiter,
+                                                        batch_size=self.opt.IQ_train_same_batchsize,
+                                                        num_unique_neg_samples=self.opt.IQ_train_num_unique_neg,
+                                                        neg_sample_batch_size=self.opt.IQ_train_neg_batchsize)
+
                 self.generate_noise_vector()
                 fake_z = self.netG(self.noisev, self.inputv_cond)
                 if iteration % self.opt.print_interval*4 == 0:
@@ -1058,17 +1167,14 @@ class GAN(object):
                 else:
                     raise ValueError('Unknown GAN criterium')
                 reconstruction_z = self.netG(z_real, self.inputv_cond)
-                # reconstruction_n = self.generate_normals(reconstruction_z, self.inputv_cond,
-                #                                self.scene['camera'])
-                #reconstruction = torch.cat([reconstruction_z, reconstruction_n], 2)
                 reconstruction_rendered, reconstructiond, loss = self.render_batch(
                     reconstruction_z, self.inputv_cond)
-
 
                 mu_z_rec, logvar_z_rec = self.netE(fake_rendered)
                 z_fake_rec = gauss_reparametrize(mu_z_rec, logvar_z_rec)
                 mse_criterion = nn.MSELoss().cuda()
-                reconstruction_loss = mse_criterion(reconstruction_rendered, self.inputv) + mse_criterion(z_fake_rec, self.noisev)
+                reconstruction_loss = supervision_loss + \
+                                      mse_criterion(reconstruction_rendered, self.inputv) + mse_criterion(z_fake_rec, self.noisev)
                 reconstruction_loss.backward()
                 gnorm_G = torch.nn.utils.clip_grad_norm(
                     self.netG.parameters(), self.opt.max_gnorm)  # TODO
@@ -1089,9 +1195,8 @@ class GAN(object):
                     self.optimizerG.step()
 
 
-
                 # Log print
-                if iteration % self.opt.print_interval == 0:
+                if iteration % self.opt.print_interval == 0 or pos_neg_losses is not None:
 
                     l2_loss = mse_criterion(fd, self.inputv_depth)
                     Wassertein_D = (errD_real.data[0] - errD_fake.data[0])
@@ -1116,6 +1221,10 @@ class GAN(object):
                     self.writer.add_scalar("Gen_grad_norm",
                                            gnorm_G,
                                            self.iterationa_no)
+                    if pos_neg_losses is not None:
+                        self.writer.add_scalar("supervision loss",
+                                               supervision_loss.data[0],
+                                               self.iterationa_no)
 
                     print('\n[%d/%d] Loss_D: %.4f Loss_G: %.4f Loss_E: %.4f reconstruction_loss: %.4f Loss_D_real: %.4f '
                           ' Loss_D_fake: %.4f Wassertein_D: %.4f '
@@ -1124,6 +1233,9 @@ class GAN(object):
                           errG.data[0], errE.data[0], reconstruction_loss.data[0], errD_real.data[0], errD_fake.data[0],
                           Wassertein_D, loss.data[0],
                           self.optG_z_lr_scheduler.get_lr()[0], gnorm_D, gnorm_G))
+                    if pos_neg_losses is not None:
+                        print("supervision loss: %0.4f, pos loss: %0.4f, neg_loss: %0.4f" % (supervision_loss.data[0],
+                              pos_neg_losses['pos_loss'].data[0], pos_neg_losses['neg_loss'].data[0]))
                     l2_file.write('%s\n' % (str(l2_loss.data[0])))
                     l2_file.flush()
                     print("written to file", str(l2_loss.data[0]))
@@ -1206,7 +1318,10 @@ def main():
     """Start training."""
     # Parse args
     opt = Parameters().parse()
-
+    opt_supervised = copy.deepcopy(opt)
+    # root_dir is used by the dataset loader
+    opt_supervised.root_dir = opt.supervised_root_dir
+    assert opt_supervised.root_dir
     # Create experiment output folder
     exp_dir = os.path.join(opt.out_dir, opt.name)
     mkdirs(exp_dir)
@@ -1233,8 +1348,9 @@ def main():
     # Create dataset loader
     dataset_load = Dataset_load(opt)
 
+    supervised_dataset_load = Dataset_load(opt_supervised)
     # Create GAN
-    gan = GAN(opt, dataset_load, exp_dir)
+    gan = GAN(opt, dataset_load, supervised_dataset_load, exp_dir)
 
     # Train gan
     gan.train()
