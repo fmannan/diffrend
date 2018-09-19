@@ -1015,6 +1015,49 @@ class GAN(object):
                 neg_loss_sum += ((z_neg[:, np.newaxis, :] - z_pos[np.newaxis, :, :]) ** 2).sum(dim=-1).mean()
         return pos_loss_sum - neg_loss_sum, {'pos_loss': pos_loss_sum, 'neg_loss': neg_loss_sum}
 
+    def train_supervised_baseline(self, maxiter):
+        """For a given shape, generate multiple views and
+        minimize the latent space distance for the same shape
+        while maximizing the latent space distance for different shapes.
+
+        Note: This function gets called from `train` at specific intervals.
+        real samples from predefined set -> render multiview -> same objects minimize loss and diff objs maximize
+        How are different shapes chosen?
+        1. Can be from the predefined shapes
+        2. Any shape?
+        In this case, from the predefined supervision set
+
+        Total number of same samples = batch_size
+        Total number of different samples = num_different_examples * neg_sample_batch_size
+        """
+        pos_loss_sum = 0
+        neg_loss_sum = 0
+        for iter in range(maxiter):
+            sample = self.get_samples(from_supervision_dataset=True)
+            # 4 entires, 0:reference and correct, and 1, 2, 3 distractors
+
+            # images of the same object but different views
+            res = self.get_real_samples(fixed_sample=sample[0], batch_size=2)
+            pos_batch = res['images']
+            mu_z, logvar_z = self.netE(pos_batch)
+            z_pos = gauss_reparametrize(mu_z, logvar_z).squeeze()
+
+            # sum-of-squared loss for the same object but different views
+            # z_pos = [2, 100] pos_loss_sum [2, 2]
+            pos_loss_sum += ((z_pos[:, np.newaxis, :] - z_pos[np.newaxis, :, :]) ** 2).sum(dim=-1).mean()
+
+            for idx in range(1, 3):
+                # print(sample['obj_path'], diff_sample['obj_path'])
+                res = self.get_real_samples(fixed_sample=sample[idx], batch_size=1)
+                mu_z, logvar_z = self.netE(res['images'])
+                z_neg = gauss_reparametrize(mu_z, logvar_z).squeeze()
+                # sum-of-squared loss between the original object with different views and different objects
+                # NOTE: We can also do
+                # pos_loss_sum += ((z_neg[:, np.newaxis, :] - z_neg[np.newaxis, :, :]) ** 2).sum(dim=-1).mean()
+                # but what if many same different samples? Unlikely though.
+                neg_loss_sum += ((z_neg[:, np.newaxis, :] - z_pos[np.newaxis, :, :]) ** 2).sum(dim=-1).mean()
+        return pos_loss_sum - neg_loss_sum, {'pos_loss': pos_loss_sum, 'neg_loss': neg_loss_sum}
+
     def train(self):
         """Train network."""
         # Load pretrained model if required
