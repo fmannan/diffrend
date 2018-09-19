@@ -2,6 +2,8 @@
 from __future__ import absolute_import
 
 import copy
+from collections import namedtuple
+
 import numpy as np
 # from scipy.misc import imsave
 from imageio import imsave
@@ -13,10 +15,15 @@ import torch.nn as nn
 import torch.nn.parallel
 import torch.optim as optim
 import torch.utils.data
+
+# install repo from here: https://github.com/fgolemo/inversegraphics-generator
+from inversegraphics_generator.dataset import IqDataset
+from inversegraphics_generator.iqtest_objs import get_data_dir
 from torch.autograd import Variable
 import torch.nn.functional as F
 import torchvision
 from diffrend.torch.GAN.datasets import Dataset_load
+from diffrend.torch.GAN.objects_folder_multi import ObjectsFolderMultiObjectDataset
 from diffrend.torch.GAN.twin_networks import create_networks
 from diffrend.torch.GAN.parameters_halfbox_shapenet import Parameters
 from diffrend.torch.params import SCENE_SPHERE_HALFBOX_0
@@ -247,6 +254,9 @@ class GAN(object):
         self.supervised_dataset_load = supervised_dataset_load
         self.opt.out_dir = exp_dir
 
+        # connect to IQ test dataset
+        self.iq = IqDataset(os.path.join(get_data_dir(), "iqtest-v1.npz"))
+
         # Define other variables
         self.real_label = 1
         self.fake_label = 0
@@ -296,16 +306,16 @@ class GAN(object):
                       range(self.opt.batchSize)]  # TODO: Magic numbers
             self.cam_pos = np.stack(arrays, axis=0)
 
-        # Create dataset loader
-        self.dataset_load.initialize_dataset()
-        self.dataset = self.dataset_load.get_dataset() # Is this used anywhere?
-        self.dataset_load.initialize_dataset_loader(1)  # TODO: Hack
-        self.dataset_loader = self.dataset_load.get_dataset_loader()
-
-        self.supervised_dataset_load.initialize_dataset()
-        #self.supervised_dataset = self.supervised_dataset_load.get_dataset()
-        self.supervised_dataset_load.initialize_dataset_loader(1)  # TODO: Hack
-        self.supervised_dataset_loader = self.supervised_dataset_load.get_dataset_loader()
+        # # Create dataset loader
+        # self.dataset_load.initialize_dataset()
+        # self.dataset = self.dataset_load.get_dataset() # Is this used anywhere?
+        # self.dataset_load.initialize_dataset_loader(1)  # TODO: Hack
+        # self.dataset_loader = self.dataset_load.get_dataset_loader()
+        #
+        # self.supervised_dataset_load.initialize_dataset()
+        # #self.supervised_dataset = self.supervised_dataset_load.get_dataset()
+        # self.supervised_dataset_load.initialize_dataset_loader(1)  # TODO: Hack
+        # self.supervised_dataset_loader = self.supervised_dataset_load.get_dataset_loader()
 
 
     def create_networks(self, ):
@@ -972,6 +982,25 @@ class GAN(object):
             if count >= num_samples:
                 return
 
+    def get_nex_dataset(self):
+        # cleanup olf files
+        self.iq.cleanup()
+
+        # make options object for """"unsupervised"""" dataset
+        opt = {"root_dir": self.iq.get_training_samples_unordered(100)}
+        opt_obj = namedtuple("ThisIsHacky", opt.keys())(*opt.values())
+        self.dataset_load = ObjectsFolderMultiObjectDataset(opt_obj)
+
+        # make options object for """"supervised"""" dataset
+        opt = {"root_dir": self.iq.get_training_questions_answers(100)}
+        opt_obj = namedtuple("ThisIsHacky", opt.keys())(*opt.values())
+
+        # TODO: this needs to be modified to output tuples when being called.
+        # ...I would add a constructor parameter to ObjectsFolderMultiObjectDataset
+        # ...to make switch between single file mode and tuple mode.
+        self.supervised_dataset_load = ObjectsFolderMultiObjectDataset(
+            opt_obj)
+
     def train_supervised_multiview(self, maxiter,
                                    batch_size=4, num_unique_neg_samples=3,
                                    neg_sample_batch_size=4):
@@ -992,6 +1021,9 @@ class GAN(object):
         pos_loss_sum = 0
         neg_loss_sum = 0
         for iter in range(maxiter):
+            if iter % 100:
+                self.get_nex_dataset()
+
             sample = self.get_samples(from_supervision_dataset=True)
 
             # images of the same object but different views
@@ -1032,7 +1064,11 @@ class GAN(object):
         """
         pos_loss_sum = 0
         neg_loss_sum = 0
-        for iter in range(maxiter):
+
+        for iter in range(maxiter): # this is not actually an iterator
+            if iter % 100:
+                self.get_nex_dataset()
+
             sample = self.get_samples(from_supervision_dataset=True)
             # 4 entires, 0:reference and correct, and 1, 2, 3 distractors
 
