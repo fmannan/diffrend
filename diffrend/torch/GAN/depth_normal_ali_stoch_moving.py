@@ -17,8 +17,9 @@ import torch.optim as optim
 import torch.utils.data
 
 # install repo from here: https://github.com/fgolemo/inversegraphics-generator
-from inversegraphics_generator.dataset import IqDataset
-from inversegraphics_generator.iqtest_objs import get_data_dir
+
+from diffrend.inversegraphics_generator.dataset import IqDataset
+from diffrend.inversegraphics_generator.iqtest_objs import get_data_dir
 from torch.autograd import Variable
 import torch.nn.functional as F
 import torchvision
@@ -49,7 +50,7 @@ matplotlib.use('Agg')
  z_noise -> z_distance_generator -> proj_to_scene_in_CC ->
  normal_estimator_network -> render -> discriminator
  real_data -> discriminator
- 
+
 NOTES on IQ Task Supervised Training:
 See new args in parameters_halfbox_shapenet of the form `--IQ_train_*`
 After initial warmup (usual training) specified by `IQ_train_start_iter`
@@ -316,6 +317,27 @@ class GAN(object):
         # #self.supervised_dataset = self.supervised_dataset_load.get_dataset()
         # self.supervised_dataset_load.initialize_dataset_loader(1)  # TODO: Hack
         # self.supervised_dataset_loader = self.supervised_dataset_load.get_dataset_loader()
+    def get_next_dataset(self):
+        # cleanup olf files
+        self.iq.cleanup()
+
+        # make options object for """"unsupervised"""" dataset
+        opt = {"root_dir": self.iq.get_training_samples_unordered(100),
+        "isSupervised": False}
+        opt_obj = namedtuple("ThisIsHacky", opt.keys())(*opt.values())
+        self.dataset_loader = ObjectsFolderMultiObjectDataset(opt_obj)
+        #self.dataset_load.initialize_dataset
+        # make options object for """"supervised"""" dataset
+        opt = {"root_dir": self.iq.get_training_questions_answers(100),
+            "isSupervised": True}
+        opt_obj = namedtuple("ThisIsHacky", opt.keys())(*opt.values())
+
+        # TODO: this needs to be modified to output tuples when being called.
+        # ...I would add a constructor parameter to ObjectsFolderMultiObjectDataset
+        # ...to make switch between single file mode and tuple mode.
+        self.supervised_dataset_loader = ObjectsFolderMultiObjectDataset(
+            opt_obj)
+
 
 
     def create_networks(self, ):
@@ -423,16 +445,18 @@ class GAN(object):
         Switches between getting samples from two different sources.
         """
         fn_dataset_loader = self.supervised_dataset_loader if from_supervision_dataset else self.dataset_loader
-        try:
-            samples = self.data_iter.next()
-        except StopIteration:
-            del self.data_iter
-            self.data_iter = iter(fn_dataset_loader)
-            samples = self.data_iter.next()
-        except AttributeError:
-            self.data_iter = iter(fn_dataset_loader)
-            samples = self.data_iter.next()
-        return samples
+        return fn_dataset_loader.get_sample()
+        # try:
+        #     samples = self.data_iter.next()
+        # except StopIteration:
+        #     del self.data_iter
+        #     self.data_iter = iter(fn_dataset_loader)
+        #     samples = self.data_iter.next()
+        # except AttributeError:
+        #     self.data_iter = iter(fn_dataset_loader)
+        #     print(dir(self.data_iter))
+        #     samples = self.data_iter.next()
+        # return samples
 
     def get_real_samples(self, fixed_sample=None, batch_size=None):
         """Get a real sample.
@@ -982,70 +1006,6 @@ class GAN(object):
             if count >= num_samples:
                 return
 
-    def get_nex_dataset(self):
-        # cleanup olf files
-        self.iq.cleanup()
-
-        # make options object for """"unsupervised"""" dataset
-        opt = {"root_dir": self.iq.get_training_samples_unordered(100)}
-        opt_obj = namedtuple("ThisIsHacky", opt.keys())(*opt.values())
-        self.dataset_load = ObjectsFolderMultiObjectDataset(opt_obj)
-
-        # make options object for """"supervised"""" dataset
-        opt = {"root_dir": self.iq.get_training_questions_answers(100)}
-        opt_obj = namedtuple("ThisIsHacky", opt.keys())(*opt.values())
-
-        # TODO: this needs to be modified to output tuples when being called.
-        # ...I would add a constructor parameter to ObjectsFolderMultiObjectDataset
-        # ...to make switch between single file mode and tuple mode.
-        self.supervised_dataset_load = ObjectsFolderMultiObjectDataset(
-            opt_obj)
-
-    def train_supervised_multiview(self, maxiter,
-                                   batch_size=4, num_unique_neg_samples=3,
-                                   neg_sample_batch_size=4):
-        """For a given shape, generate multiple views and
-        minimize the latent space distance for the same shape
-        while maximizing the latent space distance for different shapes.
-
-        Note: This function gets called from `train` at specific intervals.
-        real samples from predefined set -> render multiview -> same objects minimize loss and diff objs maximize
-        How are different shapes chosen?
-        1. Can be from the predefined shapes
-        2. Any shape?
-        In this case, from the predefined supervision set
-
-        Total number of same samples = batch_size
-        Total number of different samples = num_different_examples * neg_sample_batch_size
-        """
-        pos_loss_sum = 0
-        neg_loss_sum = 0
-        for iter in range(maxiter):
-            if iter % 100:
-                self.get_nex_dataset()
-
-            sample = self.get_samples(from_supervision_dataset=True)
-
-            # images of the same object but different views
-            res = self.get_real_samples(fixed_sample=sample, batch_size=batch_size)
-            pos_batch = res['images']
-            mu_z, logvar_z = self.netE(pos_batch)
-            z_pos = gauss_reparametrize(mu_z, logvar_z).squeeze()
-
-            # sum-of-squared loss for the same object but different views
-            pos_loss_sum += ((z_pos[:, np.newaxis, :] - z_pos[np.newaxis, :, :]) ** 2).sum(dim=-1).mean()
-
-            for diff_sample in self.get_different_sample_from(num_unique_neg_samples, sample['obj_path']):
-                #print(sample['obj_path'], diff_sample['obj_path'])
-                res = self.get_real_samples(fixed_sample=diff_sample, batch_size=neg_sample_batch_size)
-                mu_z, logvar_z = self.netE(res['images'])
-                z_neg = gauss_reparametrize(mu_z, logvar_z).squeeze()
-                # sum-of-squared loss between the original object with different views and different objects
-                # NOTE: We can also do
-                # pos_loss_sum += ((z_neg[:, np.newaxis, :] - z_neg[np.newaxis, :, :]) ** 2).sum(dim=-1).mean()
-                # but what if many same different samples? Unlikely though.
-                neg_loss_sum += ((z_neg[:, np.newaxis, :] - z_pos[np.newaxis, :, :]) ** 2).sum(dim=-1).mean()
-        return pos_loss_sum - neg_loss_sum, {'pos_loss': pos_loss_sum, 'neg_loss': neg_loss_sum}
 
     def train_supervised_baseline(self, maxiter):
         """For a given shape, generate multiple views and
@@ -1066,8 +1026,6 @@ class GAN(object):
         neg_loss_sum = 0
 
         for iter in range(maxiter): # this is not actually an iterator
-            if iter % 100:
-                self.get_nex_dataset()
 
             sample = self.get_samples(from_supervision_dataset=True)
             # 4 entires, 0:reference and correct, and 1, 2, 3 distractors
@@ -1121,6 +1079,8 @@ class GAN(object):
             curr_generator_idx = 0
             for iteration in range(self.opt.n_iter):
                 self.iterationa_no = iteration
+                if iteration % 100 == 0:
+                    self.get_next_dataset()
 
                 # Train Discriminator critic_iters times
                 for j in range(self.opt.critic_iters):
@@ -1203,7 +1163,7 @@ class GAN(object):
                         iteration % self.opt.IQ_train_interval == 0:
                     # Perform N iteration of supervised training
                     supervision_loss, pos_neg_losses = \
-                        self.train_supervised_multiview(maxiter=self.opt.IQ_train_maxiter,
+                        self.train_supervised_baseline(maxiter=self.opt.IQ_train_maxiter,
                                                         batch_size=self.opt.IQ_train_same_batchsize,
                                                         num_unique_neg_samples=self.opt.IQ_train_num_unique_neg,
                                                         neg_sample_batch_size=self.opt.IQ_train_neg_batchsize)

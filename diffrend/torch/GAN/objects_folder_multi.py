@@ -20,6 +20,7 @@ class ObjectsFolderMultiObjectDataset(Dataset):
             transform (callable, optional): Optional transform to be applied
             on a sample.
         """
+
         self.opt = opt
         self.transform = transform
         self.n_samples = 0
@@ -38,12 +39,7 @@ class ObjectsFolderMultiObjectDataset(Dataset):
     def __len__(self):
         """Get dataset length."""
         return len(self.samples)
-
-    def __getitem__(self, idx):
-        """Get item."""
-        # Get object path
-        obj_path = os.path.join(self.opt.root_dir, self.samples[idx])
-
+    def load_sample(self, obj_path):
         # if not self.loaded:
         #     self.fg_obj = load_model(obj_path)
         #     self.bg_obj = load_model(self.opt.bg_model)
@@ -123,6 +119,24 @@ class ObjectsFolderMultiObjectDataset(Dataset):
         # use obj_path to determine uniqueness
         sample['obj_path'] = obj_path
         return sample
+
+    #def __getitem__(self, idx):
+    def get_sample(self):
+        """Get item."""
+        # Get object path
+        samples = []
+
+        print(self.opt.root_dir)
+        
+        if(self.opt.isSupervised):
+            pass
+            #for sample_name in []:
+            #    obj_path = os.path.join(self.opt.root_dir, sample_name)
+            #    samples.append(self.load_sample(obj_path))
+        else:
+            obj_path = os.path.join(self.opt.root_dir, self.samples[idx])
+            samples.append(self.load_sample(obj_path))
+        return samples
 
     def _get_objects_paths(self,):
         print (self.opt.root_dir)
