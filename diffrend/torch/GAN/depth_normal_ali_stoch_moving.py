@@ -18,13 +18,13 @@ import torch.utils.data
 
 # install repo from here: https://github.com/fgolemo/inversegraphics-generator
 
-from diffrend.inversegraphics_generator.dataset import IqDataset
-from diffrend.inversegraphics_generator.iqtest_objs import get_data_dir
+# from diffrend.inversegraphics_generator.dataset import IqDataset
+# from diffrend.inversegraphics_generator.iqtest_objs import get_data_dir
 from torch.autograd import Variable
 import torch.nn.functional as F
 import torchvision
 from diffrend.torch.GAN.datasets import Dataset_load
-from diffrend.torch.GAN.objects_folder_multi import ObjectsFolderMultiObjectDataset
+from diffrend.torch.GAN.iq_objects_loader import IQObjectsDataset
 from diffrend.torch.GAN.twin_networks import create_networks
 from diffrend.torch.GAN.parameters_halfbox_shapenet import Parameters
 from diffrend.torch.params import SCENE_SPHERE_HALFBOX_0
@@ -246,17 +246,12 @@ def calc_gradient_penalty4(discriminator, encoder, real_data, fake_data, fake_da
 class GAN(object):
     """GAN class."""
 
-    def __init__(self, opt, dataset_load=None, supervised_dataset_load=None,
+    def __init__(self, opt,
                  exp_dir=None):
         """Constructor."""
         # Save variables
         self.opt = opt
-        self.dataset_load = dataset_load
-        self.supervised_dataset_load = supervised_dataset_load
         self.opt.out_dir = exp_dir
-
-        # connect to IQ test dataset
-        self.iq = IqDataset(os.path.join(get_data_dir(), "iqtest-v1.npz"))
 
         # Define other variables
         self.real_label = 1
@@ -307,6 +302,7 @@ class GAN(object):
                       range(self.opt.batchSize)]  # TODO: Magic numbers
             self.cam_pos = np.stack(arrays, axis=0)
 
+        self.dataset_loader = IQObjectsDataset(self.opt)
         # # Create dataset loader
         # self.dataset_load.initialize_dataset()
         # self.dataset = self.dataset_load.get_dataset() # Is this used anywhere?
@@ -317,28 +313,28 @@ class GAN(object):
         # #self.supervised_dataset = self.supervised_dataset_load.get_dataset()
         # self.supervised_dataset_load.initialize_dataset_loader(1)  # TODO: Hack
         # self.supervised_dataset_loader = self.supervised_dataset_load.get_dataset_loader()
-    def get_next_dataset(self):
-        # cleanup olf files
-        self.iq.cleanup()
 
-        # make options object for """"unsupervised"""" dataset
-        opt = {"root_dir": self.iq.get_training_samples_unordered(100),
-        "isSupervised": False}
-        opt_obj = namedtuple("ThisIsHacky", opt.keys())(*opt.values())
-        self.dataset_loader = ObjectsFolderMultiObjectDataset(opt_obj)
-        #self.dataset_load.initialize_dataset
-        # make options object for """"supervised"""" dataset
-        opt = {"root_dir": self.iq.get_training_questions_answers(100),
-            "isSupervised": True}
-        opt_obj = namedtuple("ThisIsHacky", opt.keys())(*opt.values())
-
-        # TODO: this needs to be modified to output tuples when being called.
-        # ...I would add a constructor parameter to ObjectsFolderMultiObjectDataset
-        # ...to make switch between single file mode and tuple mode.
-        self.supervised_dataset_loader = ObjectsFolderMultiObjectDataset(
-            opt_obj)
-
-
+    # # TODO: REMOVE THIS !!!
+    # def get_next_dataset(self):
+    #     # cleanup olf files
+    #     self.iq.cleanup()
+    #
+    #     # make options object for """"unsupervised"""" dataset
+    #     opt = {"root_dir": self.iq.get_training_samples_unordered(100),
+    #            "isSupervised": False}
+    #     opt_obj = namedtuple("ThisIsHacky", opt.keys())(*opt.values())
+    #     self.dataset_loader = ObjectsFolderMultiObjectDataset(opt_obj)
+    #     #self.dataset_load.initialize_dataset
+    #     # make options object for """"supervised"""" dataset
+    #     opt = {"root_dir": self.iq.get_training_questions_answers(100),
+    #         "isSupervised": True}
+    #     opt_obj = namedtuple("ThisIsHacky", opt.keys())(*opt.values())
+    #
+    #     # TODO: this needs to be modified to output tuples when being called.
+    #     # ...I would add a constructor parameter to ObjectsFolderMultiObjectDataset
+    #     # ...to make switch between single file mode and tuple mode.
+    #     self.supervised_dataset_loader = ObjectsFolderMultiObjectDataset(
+    #         opt_obj)
 
     def create_networks(self, ):
         """Create networks."""
@@ -440,23 +436,12 @@ class GAN(object):
         self.LR_SCHED_MAP = [self.optG_z_lr_scheduler]
         self.OPT_MAP = [self.optimizerG]
 
-    def get_samples(self, from_supervision_dataset):
+    def get_samples(self):
         """Get samples.
         Switches between getting samples from two different sources.
         """
-        fn_dataset_loader = self.supervised_dataset_loader if from_supervision_dataset else self.dataset_loader
-        return fn_dataset_loader.get_sample()
-        # try:
-        #     samples = self.data_iter.next()
-        # except StopIteration:
-        #     del self.data_iter
-        #     self.data_iter = iter(fn_dataset_loader)
-        #     samples = self.data_iter.next()
-        # except AttributeError:
-        #     self.data_iter = iter(fn_dataset_loader)
-        #     print(dir(self.data_iter))
-        #     samples = self.data_iter.next()
-        # return samples
+        for sample in self.dataset_loader.get_unordered_samples(1):
+            return sample
 
     def get_real_samples(self, fixed_sample=None, batch_size=None):
         """Get a real sample.
@@ -510,7 +495,7 @@ class GAN(object):
                         'triangle': {'face': None, 'normal': None,
                                      'material_idx': None}}
                 # Either use the fixed sample or fetch new samples in every iteration
-                samples = fixed_sample if fixed_sample is not None else self.get_samples(from_supervision_dataset=False)
+                samples = fixed_sample if fixed_sample is not None else self.get_samples()
                 large_scene['camera']['at'] = tch_var_f(samples['mesh']['object_center'][0].tolist())
                 large_scene['objects']['triangle']['material_idx'] = tch_var_l(
                     np.zeros(samples['mesh']['face'][0].shape[0],
@@ -986,6 +971,7 @@ class GAN(object):
             self.output_loss_file.write(log_to_print)
             self.output_loss_file.flush()
         return rendered_data, rendered_data_depth, loss/self.opt.batchSize
+
     def tensorboard_hook(self, grad):
         self.writer.add_scalar("z_gradient_mean",
                                get_data(torch.mean(grad[0])),
@@ -995,17 +981,6 @@ class GAN(object):
         self.writer.add_image("z_gradient_im",
                                grad[0].view(self.opt.splats_img_size,self.opt.splats_img_size),
                                self.iterationa_no)
-
-    def get_different_sample_from(self, num_samples, obj_path):
-        count = 0
-        while True:
-            sample = self.get_samples(from_supervision_dataset=True)
-            if sample['obj_path'] != obj_path:
-                count += 1
-                yield sample
-            if count >= num_samples:
-                return
-
 
     def train_supervised_baseline(self, maxiter):
         """For a given shape, generate multiple views and
@@ -1025,31 +1000,30 @@ class GAN(object):
         pos_loss_sum = 0
         neg_loss_sum = 0
 
-        for iter in range(maxiter): # this is not actually an iterator
-
-            sample = self.get_samples(from_supervision_dataset=True)
-            # 4 entires, 0:reference and correct, and 1, 2, 3 distractors
-
-            # images of the same object but different views
-            res = self.get_real_samples(fixed_sample=sample[0], batch_size=2)
-            pos_batch = res['images']
-            mu_z, logvar_z = self.netE(pos_batch)
-            z_pos = gauss_reparametrize(mu_z, logvar_z).squeeze()
-
-            # sum-of-squared loss for the same object but different views
-            # z_pos = [2, 100] pos_loss_sum [2, 2]
-            pos_loss_sum += ((z_pos[:, np.newaxis, :] - z_pos[np.newaxis, :, :]) ** 2).sum(dim=-1).mean()
-
-            for idx in range(1, 3):
-                # print(sample['obj_path'], diff_sample['obj_path'])
-                res = self.get_real_samples(fixed_sample=sample[idx], batch_size=1)
-                mu_z, logvar_z = self.netE(res['images'])
-                z_neg = gauss_reparametrize(mu_z, logvar_z).squeeze()
-                # sum-of-squared loss between the original object with different views and different objects
-                # NOTE: We can also do
-                # pos_loss_sum += ((z_neg[:, np.newaxis, :] - z_neg[np.newaxis, :, :]) ** 2).sum(dim=-1).mean()
-                # but what if many same different samples? Unlikely though.
-                neg_loss_sum += ((z_neg[:, np.newaxis, :] - z_pos[np.newaxis, :, :]) ** 2).sum(dim=-1).mean()
+        for qa_set in self.dataset_loader.get_qa_samples(maxiter):
+            pass
+            # sample = self.get_samples(from_supervision_dataset=True)
+            # # 4 entires, 0:reference and correct, and 1, 2, 3 distractors
+            #
+            # # images of the same object but different views
+            # res = self.get_real_samples(fixed_sample=sample[0], batch_size=2)
+            # pos_batch = res['images']
+            # mu_z, logvar_z = self.netE(pos_batch)
+            # z_pos = gauss_reparametrize(mu_z, logvar_z).squeeze()
+            #
+            # # sum-of-squared loss for the same object but different views
+            # # z_pos = [2, 100] pos_loss_sum [2, 2]
+            # pos_loss_sum += ((z_pos[:, np.newaxis, :] - z_pos[np.newaxis, :, :]) ** 2).sum(dim=-1).mean()
+            #
+            # # print(sample['obj_path'], diff_sample['obj_path'])
+            # res = self.get_real_samples(fixed_sample=sample[idx], batch_size=1)
+            # mu_z, logvar_z = self.netE(res['images'])
+            # z_neg = gauss_reparametrize(mu_z, logvar_z).squeeze()
+            # # sum-of-squared loss between the original object with different views and different objects
+            # # NOTE: We can also do
+            # # pos_loss_sum += ((z_neg[:, np.newaxis, :] - z_neg[np.newaxis, :, :]) ** 2).sum(dim=-1).mean()
+            # # but what if many same different samples? Unlikely though.
+            # neg_loss_sum += ((z_neg[:, np.newaxis, :] - z_pos[np.newaxis, :, :]) ** 2).sum(dim=-1).mean()
         return pos_loss_sum - neg_loss_sum, {'pos_loss': pos_loss_sum, 'neg_loss': neg_loss_sum}
 
     def train(self):
@@ -1079,8 +1053,8 @@ class GAN(object):
             curr_generator_idx = 0
             for iteration in range(self.opt.n_iter):
                 self.iterationa_no = iteration
-                if iteration % 100 == 0:
-                    self.get_next_dataset()
+                # if iteration % 100 == 0:
+                #     self.get_next_dataset()
 
                 # Train Discriminator critic_iters times
                 for j in range(self.opt.critic_iters):
@@ -1159,14 +1133,14 @@ class GAN(object):
                 self.in_critic=0
                 supervision_loss = 0
                 pos_neg_losses = None
-                if iteration > self.opt.IQ_train_start_iter and \
-                        iteration % self.opt.IQ_train_interval == 0:
-                    # Perform N iteration of supervised training
-                    supervision_loss, pos_neg_losses = \
-                        self.train_supervised_baseline(maxiter=self.opt.IQ_train_maxiter,
-                                                        batch_size=self.opt.IQ_train_same_batchsize,
-                                                        num_unique_neg_samples=self.opt.IQ_train_num_unique_neg,
-                                                        neg_sample_batch_size=self.opt.IQ_train_neg_batchsize)
+                # if iteration > self.opt.IQ_train_start_iter and \
+                #         iteration % self.opt.IQ_train_interval == 0:
+                #     # Perform N iteration of supervised training
+                #     supervision_loss, pos_neg_losses = \
+                #         self.train_supervised_baseline(maxiter=self.opt.IQ_train_maxiter,
+                #                                         batch_size=self.opt.IQ_train_same_batchsize,
+                #                                         num_unique_neg_samples=self.opt.IQ_train_num_unique_neg,
+                #                                         neg_sample_batch_size=self.opt.IQ_train_neg_batchsize)
 
                 self.generate_noise_vector()
                 fake_z = self.netG(self.noisev, self.inputv_cond)
@@ -1357,20 +1331,16 @@ def main():
     """Start training."""
     # Parse args
     opt = Parameters().parse()
-    opt_supervised = copy.deepcopy(opt)
-    # root_dir is used by the dataset loader
-    opt_supervised.root_dir = opt.supervised_root_dir
-    assert opt_supervised.root_dir
+
     # Create experiment output folder
     exp_dir = os.path.join(opt.out_dir, opt.name)
     mkdirs(exp_dir)
-    sub_dirs=['vis_images','vis_xyz','vis_monitoring']
+    sub_dirs = ['vis_images', 'vis_xyz', 'vis_monitoring']
     for sub_dir in sub_dirs:
         dir_path = os.path.join(exp_dir, sub_dir)
         if not os.path.exists(dir_path):
             os.makedirs(dir_path)
         setattr(opt, sub_dir, dir_path)
-
 
     # Copy scripts to experiment folder
     copy_scripts_to_folder(exp_dir)
@@ -1384,12 +1354,8 @@ def main():
             opt_file.write('%s: %s\n' % (str(k), str(v)))
         opt_file.write('-------------- End ----------------\n')
 
-    # Create dataset loader
-    dataset_load = Dataset_load(opt)
-
-    supervised_dataset_load = Dataset_load(opt_supervised)
     # Create GAN
-    gan = GAN(opt, dataset_load, supervised_dataset_load, exp_dir)
+    gan = GAN(opt, exp_dir)
 
     # Train gan
     gan.train()
