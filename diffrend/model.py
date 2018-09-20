@@ -116,12 +116,8 @@ def load_splat(filename, verbose=True):
             'type': 'splat'}
 
 
-def load_obj(filename, verbose=True):
+def load_obj_from_string(obj_file, verbose=False):
     """Read .obj file."""
-    with open(filename, 'r') as f:
-        obj_file = f.read().splitlines()
-    # print(obj_file)
-
     v = []  # list of vertices
     f = []  # list of faces
 
@@ -142,6 +138,13 @@ def load_obj(filename, verbose=True):
         print('Face count: {}'.format(len(f)))
 
     return {'v': np.array(v), 'f': np.array(f)}
+
+
+def load_obj(filename, verbose=False):
+    """Read .obj file."""
+    with open(filename, 'r') as f:
+        obj_file = f.read().splitlines()
+    return load_obj_from_string(obj_file, verbose)
 
 
 def load_off(filename, verbose=True):

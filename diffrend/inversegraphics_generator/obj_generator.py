@@ -1,4 +1,5 @@
 import errno
+import io
 import os
 import random
 import numpy as np
@@ -205,6 +206,31 @@ class ObjGenerator(object):
 
             for f in faces:
                 file_.write("f {} {} {}\n".format(*[int(x + 1) for x in f]))
+
+    def generate_obj(self, grid, vertices, faces):
+        """Generates object string
+        Returns: string representing the object for in-memory operation
+        """
+        file_ = io.StringIO()
+
+        file_.write("# made with _flo_\n\n")
+
+        for y in range(self.grid_size):
+            for x in range(self.grid_size):
+                file_.write("# {}\n".format(" ".join([str(x) for x in grid[x, y]])))
+            file_.write("# " + "==" * self.grid_size + "\n")
+
+        file_.write("\n")
+
+        for v in vertices:
+            file_.write("v {} {} {}\n".format(*[float(x) for x in v]))
+
+        file_.write("\n")
+
+        for f in faces:
+            file_.write("f {} {} {}\n".format(*[int(x + 1) for x in f]))
+
+        return file_.getvalue()
 
     @staticmethod
     def center_grid(grid):

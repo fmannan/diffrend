@@ -18,6 +18,7 @@ or for the QA set:
 for sample in iq.get_training_questions_answers(100):
     .... use the sample
 
+@Florian: self.train[0, 3] is empty !
 """
 class IqDataset(object):
     def __init__(self, path, cleanup_interval=100):
@@ -31,8 +32,10 @@ class IqDataset(object):
         self.train_idx_qa = 0
 
         self.cleanup_interval = cleanup_interval
-        self.tmp_training_paths = []
-        self.tmp_qa_paths = []
+        self.tmp_training_path = None
+        self.tmp_qa_path = None
+        self.tmp_training_folder_size = 0
+        self.tmp_qa_folder_size = 0
 
     def _grid_to_file(self, grid, folder, idx, filepattern="{:06d}.obj"):
         v, f = self.og.grid_to_cubes(grid)
@@ -40,53 +43,88 @@ class IqDataset(object):
         self.og.write_obj(grid, v, f, out_path)
         return out_path
 
+    def _grid_to_obj(self, grid):
+        v, f = self.og.grid_to_cubes(grid)
+        if len(v) == 0 or len(f) == 0:
+            print("ERROR: grid is all 0")
+            #raise RuntimeError("ERROR: grid is all 0")
+        return self.og.generate_obj(grid, v, f)
+
     def get_training_samples_unordered(self, n=1):
-        # make tmp dir
-        folder = tempfile.TemporaryDirectory()
-        self.tmp_training_paths.append(folder)
+        if self.tmp_training_path is None:
+            # make tmp dir
+            self.tmp_training_path = tempfile.TemporaryDirectory()
+            self.tmp_training_folder_size = 0
+        # get N samples and write to disk
+        for idx in range(n):
+            self.tmp_training_folder_size += 1
+            self.train_idx_unord += 1
+            if self.train_idx_unord == len(self.train):
+                self.train_idx_unord = 0
+
+            obj_path = self._grid_to_file(self.train[self.train_idx_unord, 0],
+                                          self.tmp_training_path, self.train_idx_unord)
+            yield {'ref': obj_path}
+
+        # cleanup once reached the cleanup interval
+        # avoids doing this in every iteration to save I/O cost. But can also be made async.
+        if self.tmp_training_folder_size >= self.cleanup_interval:
+            self.tmp_training_path.cleanup()
+            self.tmp_training_folder_size = 0
+
+    def get_training_questions_answers(self, n=1):
+        if self.tmp_qa_path is None:
+            # make tmp dir
+            self.tmp_qa_path = tempfile.TemporaryDirectory()
+            self.tmp_qa_folder_size = 0
+
+        # get N samples and write to disk
+        for idx in range(n):
+            self.tmp_qa_folder_size += 1
+            self.train_idx_qa += 1
+            if self.train_idx_qa == len(self.train):
+                self.train_idx_qa = 0
+
+            ref_path = self._grid_to_file(self.train[self.train_idx_qa, 0], self.tmp_qa_path,
+                                          self.train_idx_qa, "{:06d}-ref.obj")
+            ans1_path = self._grid_to_file(self.train[self.train_idx_qa, 1], self.tmp_qa_path,
+                                           self.train_idx_qa, "{:06d}-ans1.obj")
+            ans2_path = self._grid_to_file(self.train[self.train_idx_qa, 2], self.tmp_qa_path,
+                                           self.train_idx_qa, "{:06d}-ans2.obj")
+            ans3_path = self._grid_to_file(self.train[self.train_idx_qa, 3], self.tmp_qa_path,
+                                           self.train_idx_qa, "{:06d}-ans3.obj")
+            yield {'ref': ref_path, 'ans1': ans1_path, 'ans2': ans2_path, 'ans3': ans3_path}
+
+        # cleanup once reached the cleanup interval
+        # avoids doing this in every iteration to save I/O cost. But can also be made async.
+        if self.tmp_qa_folder_size >= self.cleanup_interval:
+            self.tmp_qa_path.cleanup()
+            self.tmp_qa_folder_size = 0
+
+    def get_training_samples_unordered_inmem(self, n=1):
         # get N samples and write to disk
         for idx in range(n):
             self.train_idx_unord += 1
             if self.train_idx_unord == len(self.train):
                 self.train_idx_unord = 0
 
-            obj_path = self._grid_to_file(self.train[self.train_idx_unord, 0], folder, self.train_idx_unord)
-            yield {'ref': obj_path}
-        # cleanup once reached the cleanup interval
-        # avoids doing this in every iteration to save I/O cost. But can also be made async.
-        if len(self.tmp_training_paths) >= self.cleanup_interval:
-            self._cleanup(self.tmp_training_paths)
+            obj = self._grid_to_obj(self.train[self.train_idx_unord, 0])
 
-    def get_training_questions_answers(self, n=1):
-        # make tmp dir
-        folder = tempfile.TemporaryDirectory()
-        self.tmp_qa_paths.append(folder)
+            yield {'ref': obj}
 
+    def get_training_questions_answers_inmem(self, n=1):
         # get N samples and write to disk
         for idx in range(n):
             self.train_idx_qa += 1
             if self.train_idx_qa == len(self.train):
                 self.train_idx_qa = 0
 
-            ref_path = self._grid_to_file(self.train[self.train_idx_qa, 0], folder,
-                                          self.train_idx_qa, "{:06d}-ref.obj")
-            ans1_path = self._grid_to_file(self.train[self.train_idx_qa, 1], folder,
-                                           self.train_idx_qa, "{:06d}-ans1.obj")
-            ans2_path = self._grid_to_file(self.train[self.train_idx_qa, 2], folder,
-                                           self.train_idx_qa, "{:06d}-ans2.obj")
-            ans3_path = self._grid_to_file(self.train[self.train_idx_qa, 3], folder,
-                                           self.train_idx_qa, "{:06d}-ans3.obj")
-            yield {'ref': ref_path, 'ans1': ans1_path, 'ans2': ans2_path, 'ans3': ans3_path}
+            ref = self._grid_to_obj(self.train[self.train_idx_qa, 0])
+            ans1 = self._grid_to_obj(self.train[self.train_idx_qa, 1])
+            ans2 = self._grid_to_obj(self.train[self.train_idx_qa, 2])
+            ans3 = self._grid_to_obj(self.train[self.train_idx_qa, 3])
 
-        # cleanup once reached the cleanup interval
-        # avoids doing this in every iteration to save I/O cost. But can also be made async.
-        if len(self.tmp_qa_paths) >= self.cleanup_interval:
-            self._cleanup(self.tmp_qa_paths)
-
-    @staticmethod
-    def _cleanup(path_list):
-        for path in path_list:
-            path.cleanup();
+            yield {'ref': ref, 'ans1': ans1, 'ans2': ans2, 'ans3': ans3}
 
 
 if __name__ == '__main__':

@@ -142,6 +142,8 @@ class Parameters():
                                  help='Number of images of different objects.')
         self.parser.add_argument('--IQ_train_num_unique_neg', type=int, default=3,
                                  help='Number of unique negative samples.')
+        self.parser.add_argument('--IQ_training_use_pos_loss', action='store_true',
+                                 help='Uses both positive and negative loss during supervised training.')
 
         # GAN parameters
         self.parser.add_argument("--criterion", help="GAN Training criterion", choices=['GAN', 'WGAN'], default='WGAN')

@@ -1,8 +1,7 @@
 """Shapenet dataset."""
 import os
 import numpy as np
-from torch.utils.data import Dataset
-from diffrend.model import load_model, obj_to_triangle_spec
+from diffrend.model import load_model, load_obj_from_string, obj_to_triangle_spec
 from diffrend.utils.sample_generator import uniform_sample_mesh
 from diffrend.numpy.ops import axis_angle_matrix
 from diffrend.numpy.ops import normalize as np_normalize
@@ -43,6 +42,15 @@ class IQObjectsDataset:
         #     self.bg_obj = load_model(self.opt.bg_model)
         #     self.loaded = True
         obj_model = load_model(obj_path)  #'../../../data/sphere_halfbox_v2.obj'
+        return self.load_fgbg_sample(obj_model)
+
+    def load_sample_from_memory(self, obj_model_str):
+        obj_model = load_obj_from_string(obj_model_str.split('\n'))
+        return self.load_fgbg_sample(obj_model)
+
+    def load_fgbg_sample(self, obj_model):
+        if len(obj_model['v']) == 0 or len(obj_model['f']) == 0:
+            return {}
         obj2 = load_model(self.opt.bg_model)
         # obj_model = self.fg_obj
         # obj2 = self.bg_obj
@@ -112,18 +120,16 @@ class IQObjectsDataset:
         if self.transform:
             sample = self.transform(sample)
 
-        # use obj_path to determine uniqueness
-        sample['obj_path'] = obj_path
         return sample
 
     def get_qa_samples(self, N):
-        for qa_set in self.iq.get_training_questions_answers(N):
+        for qa_set in self.iq.get_training_questions_answers_inmem(N):
             samples = {}
             for key in qa_set:
-                samples[key] = self.load_sample(qa_set[key])
+                samples[key] = self.load_sample_from_memory(qa_set[key])
             yield samples
 
     def get_unordered_samples(self, N):
-        for sample in self.iq.get_training_samples_unordered(N):
-            yield self.load_sample(sample['ref'])
+        for sample in self.iq.get_training_samples_unordered_inmem(N):
+            yield self.load_sample_from_memory(sample['ref'])
 
