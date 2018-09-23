@@ -129,7 +129,13 @@ class IQObjectsDataset:
                 samples[key] = self.load_sample_from_memory(qa_set[key])
             yield samples
 
+    def get_qa_test_samples(self, N):
+        for qa_set in self.iq.get_test_questions_answers_inmem(N):
+            samples = {}
+            for key in qa_set:
+                samples[key] = self.load_sample_from_memory(qa_set[key])
+            yield samples
+
     def get_unordered_samples(self, N):
         for sample in self.iq.get_training_samples_unordered_inmem(N):
             yield self.load_sample_from_memory(sample['ref'])
-
