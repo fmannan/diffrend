@@ -784,11 +784,11 @@ class Stat(nn.Module):
 
 
     def forward(self, x,z):
-        x=x.view(x.size(0),x.size(1),1,1)
-        z=z.view(z.size(0),z.size(1),1,1)
+        # x=x.view(x.size(0),x.size(1),1,1)
+        # z=z.view(z.size(0),z.size(1),1,1)
 
         input=torch.cat([x,z],1)
-        out = self.main(x)
+        out = self.main(input)
         return out.view(-1, 1).squeeze(1)
 class _netD_256(nn.Module):
     def __init__(self, ngpu, nc, ndf, isize, nz,use_sigmoid=0):

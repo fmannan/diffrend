@@ -25,7 +25,7 @@ import torch.nn.functional as F
 import torchvision
 from diffrend.torch.GAN.datasets import Dataset_load
 from diffrend.torch.GAN.iq_objects_loader import IQObjectsDataset
-from diffrend.torch.GAN.twin_networks_unc import create_networks
+from diffrend.torch.GAN.twin_networks import create_networks
 from diffrend.torch.GAN.parameters_halfbox_shapenet import Parameters
 from diffrend.torch.params import SCENE_SPHERE_HALFBOX_0
 from diffrend.torch.utils import (tch_var_f, tch_var_l, get_data,
@@ -75,7 +75,7 @@ See run_IQTraining.sh
 
 def copy_scripts_to_folder(expr_dir):
     """Copy scripts."""
-    shutil.copy("twin_networks_unc.py", expr_dir)
+    shutil.copy("twin_networks.py", expr_dir)
     shutil.copy("../NEstNet.py", expr_dir)
     shutil.copy("../params.py", expr_dir)
     shutil.copy("../renderer.py", expr_dir)
@@ -1233,7 +1233,6 @@ class GAN(object):
             # images of the same object but different views
             res = self.get_real_fixed_samples(fixed_sample=ref_sample, batch_size=ref_batch_size)
             pos_batch.append(res['images'])
-
             for key in qa_set:
                 if key == 'ref' or len(qa_set[key]) == 0:
                     continue
@@ -1241,7 +1240,6 @@ class GAN(object):
                 neg_batch.append(res['images'])
         pos_batch = torch.cat(pos_batch)
         neg_batch = torch.cat(neg_batch)
-
         mu_z, logvar_z = self.netE(pos_batch)
         z_pos = gauss_reparametrize(mu_z, logvar_z).squeeze()
 
@@ -1402,10 +1400,13 @@ class GAN(object):
                 mu_z, logvar_z = self.netE(self.inputv)
 
                 z_real = gauss_reparametrize(mu_z, logvar_z)
-
-                z_other=z_real.contiguous().view(self.opt.batchSize,-1)
+                # print(z_real[:,:90].size())
+                # z_other=z_real.contiguous().view(self.opt.batchSize,-1)
                 z_real_joint = self.netS(z_real[:,:90].detach(),z_real[:,90:].detach())
-                z_marginal=z_real[:,90:][torch.randperm(z_real.size(0))]
+                z_marginal=z_real[:,90:]
+                print(z_marginal.size())
+                z_marginal = z_marginal.index_select(0, tch_var_l(torch.randperm(6)))
+                #z_marginal=z_marginal[torch.randperm(6)]
                 z_real_marginal = self.netS(z_real[:,:90].detach(),z_marginal.detach())
                 lower_bound = (  torch.mean(z_real_joint) - log_sum_exp(z_real_marginal) + torch.log(marginal.size(0))) * -1
                 lower_bound.backward()
@@ -1505,6 +1506,8 @@ class GAN(object):
                         self.writer.add_scalar("test accuracy",
                                                test_accuracy.data[0],
                                                self.iterationa_no)
+                        print('\n[%d/%d] Test_accuracy: %.4f ' % (
+                              iteration, self.opt.n_iter, test_accuracy.data[0]))
                     self.writer.add_scalar("mutula_info",
                                            mi.data[0],
                                            self.iterationa_no)
