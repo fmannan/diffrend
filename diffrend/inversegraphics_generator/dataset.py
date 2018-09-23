@@ -30,6 +30,7 @@ class IqDataset(object):
         self.og = ObjGenerator(MAX_GRID, 1.0)
         self.train_idx_unord = 0
         self.train_idx_qa = 0
+        self.test_idx_qa = 0
 
         self.cleanup_interval = cleanup_interval
         self.tmp_training_path = None

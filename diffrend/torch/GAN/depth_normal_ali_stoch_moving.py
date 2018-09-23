@@ -1408,8 +1408,8 @@ class GAN(object):
                 z_marginal = z_marginal.index_select(0, Variable(torch.randperm(6).cuda()))
                 #z_marginal=z_marginal[torch.randperm(6)]
                 z_real_marginal = self.netS(z_real[:,:90].detach(),z_marginal.detach())
-                lower_bound = (  torch.mean(z_real_joint) - log_sum_exp(z_real_marginal) + torch.log(z_real_marginal.size(0))) * -1
-                lower_bound.backward()
+                lower_bound = (  torch.mean(z_real_joint) - log_sum_exp(z_real_marginal) + np.log(z_real_marginal.size(0))) * -1
+                lower_bound.backward(retain_graph=True)
                 mi = (-1) * lower_bound
 
                 # input_D = torch.cat([self.inputv, self.inputv_depth], 1)
@@ -1515,7 +1515,7 @@ class GAN(object):
                           ' Loss_D_fake: %.4f Wassertein_D: %.4f '
                           ' L2_loss: %.4f z_lr: %.8f, Disc_grad_norm: %.8f, Gen_grad_norm: %.8f' % (
                           iteration, self.opt.n_iter, errD.data[0],
-                          errG.data[0], errE.data[0], reconstruction_loss.data[0], mi_estimate.data[0],errD_real.data[0], errD_fake.data[0],
+                          errG.data[0], errE.data[0], reconstruction_loss.data[0], mi.data[0],errD_real.data[0], errD_fake.data[0],
                           Wassertein_D, loss.data[0],
                           self.optG_z_lr_scheduler.get_lr()[0], gnorm_D, gnorm_G))
                     if pos_neg_losses is not None:
