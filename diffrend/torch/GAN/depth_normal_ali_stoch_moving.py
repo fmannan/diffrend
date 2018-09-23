@@ -1138,6 +1138,91 @@ class GAN(object):
                                grad[0].view(self.opt.splats_img_size,self.opt.splats_img_size),
                                self.iterationa_no)
 
+
+    def get_baseline_qa_losses(self, maxiter, ref_batch_size, fn_data_loader):
+        """For a given shape, generate multiple views and
+        minimize the latent space distance for the same shape
+        while maximizing the latent space distance for different shapes.
+
+        Note: This function gets called from `train` at specific intervals.
+        real samples from predefined set -> render multiview -> same objects minimize loss and diff objs maximize
+        How are different shapes chosen?
+        1. Can be from the predefined shapes
+        2. Any shape?
+        In this case, from the predefined supervision set
+
+        Total number of same samples = batch_size
+        Total number of different samples = num_different_examples * neg_sample_batch_size
+        """
+        assert ref_batch_size == 2
+        pos_loss_sum = 0
+        neg_loss_sum = 0
+        pos_batch = []
+        neg_batch = []
+
+        # Note: self.netE has batch-norm, so need to use large batch-size
+        for qa_set in fn_data_loader(maxiter):
+            # 4 entires, ref:reference and correct, and ans1, ans2, ans3 are distractors
+            ref_sample = qa_set['ref']
+
+            # images of the same object but different views
+            res = self.get_real_fixed_samples(fixed_sample=ref_sample, batch_size=ref_batch_size)
+            pos_batch.append(res['images'])
+
+            for key in qa_set:
+                if key == 'ref' or len(qa_set[key]) == 0:
+                    continue
+                res = self.get_real_fixed_samples(fixed_sample=qa_set[key], batch_size=1)
+                neg_batch.append(res['images'])
+        pos_batch = torch.cat(pos_batch)
+        neg_batch = torch.cat(neg_batch)
+
+        mu_z, logvar_z = self.netE(pos_batch)
+        z_pos = gauss_reparametrize(mu_z, logvar_z).squeeze()
+
+        # Note that storing the losses is not really needed during supervised training.
+        # They are mainly needed for test eval because we want to compare the losses to find the answer
+        pos_loss = []
+        # sum-of-squared loss for the same object but different views
+        # z_pos = [2, 100] pos_loss_sum [2, 2]
+        # ref_batch_size is 2 here, so just compare idx with idx + 1
+        for idx in range(maxiter):
+            # sum-of-squared loss between the original object with different views and different objects
+            mse_for_correct_ans = ((z_pos[idx * ref_batch_size, np.newaxis, :90] -
+                                    z_pos[np.newaxis, idx * ref_batch_size + 1, :90]) ** 2).mean()
+            pos_loss_sum += mse_for_correct_ans
+            pos_loss.append(mse_for_correct_ans)
+
+        mu_z, logvar_z = self.netE(neg_batch)
+        z_neg = gauss_reparametrize(mu_z, logvar_z).squeeze()
+
+        """
+        NOTE: train[N, 3] is EMPTY! Which is why I'm using idx:idx+2, i.e., 2 distractors
+        For 3, it'll be idx:idx+3
+        """
+        correct_count = 0
+        NUM_DISTRACTORS = 2
+        assert z_neg.shape[0] == maxiter * NUM_DISTRACTORS
+        neg_loss = []
+        for idx in range(maxiter):
+            # sum-of-squared loss between the original object with different views and different objects
+            # NOTE: We can also do
+            # pos_loss_sum += ((z_neg[:, np.newaxis, :] - z_neg[np.newaxis, :, :]) ** 2).sum(dim=-1).mean()
+            # but what if many same different samples? Unlikely though.
+            # Here we take the first in the pair for z_pos and all the NUM_DISTRACTORS in the corresponding group
+            mse_for_wrong_ans = ((z_pos[idx * ref_batch_size, np.newaxis, :90] -
+                                  z_neg[np.newaxis, idx * NUM_DISTRACTORS:(idx * NUM_DISTRACTORS)+NUM_DISTRACTORS, :90]) ** 2).mean(-1)
+            neg_loss_sum += mse_for_wrong_ans.mean()  # average for distractors
+            neg_loss.append(mse_for_wrong_ans)
+            correct_count += ((pos_loss[idx] > neg_loss[idx]).sum() == 0).float()
+
+        # Calculate accuracy
+        accuracy_pct = correct_count / maxiter * 100.0
+
+        return {'pos_loss_sum': pos_loss_sum, 'neg_loss_sum': neg_loss_sum,
+                'pos_loss_list': pos_loss, 'neg_loss_list': neg_loss,
+                'accuracy_pct': accuracy_pct, 'loss': pos_loss_sum - neg_loss_sum}
+
     def train_supervised_baseline(self, maxiter):
         """For a given shape, generate multiple views and
         minimize the latent space distance for the same shape
@@ -1153,122 +1238,19 @@ class GAN(object):
         Total number of same samples = batch_size
         Total number of different samples = num_different_examples * neg_sample_batch_size
         """
-        pos_loss_sum = 0
-        neg_loss_sum = 0
-        pos_batch = []
-        neg_batch = []
-        ref_batch_size = 2 if self.opt.IQ_training_use_pos_loss else 1
-        # Note: self.netE has batch-norm, so need to use large batch-size
-        for qa_set in self.dataset_loader.get_qa_samples(maxiter):
-            # 4 entires, ref:reference and correct, and ans1, ans2, ans3 are distractors
-            ref_sample = qa_set['ref']
-
-            # images of the same object but different views
-            res = self.get_real_fixed_samples(fixed_sample=ref_sample, batch_size=ref_batch_size)
-            pos_batch.append(res['images'])
-
-            for key in qa_set:
-                if key == 'ref' or len(qa_set[key]) == 0:
-                    continue
-                res = self.get_real_fixed_samples(fixed_sample=qa_set[key], batch_size=1)
-                neg_batch.append(res['images'])
-        pos_batch = torch.cat(pos_batch)
-        neg_batch = torch.cat(neg_batch)
-
-        mu_z, logvar_z = self.netE(pos_batch)
-        z_pos = gauss_reparametrize(mu_z, logvar_z).squeeze()
-
-        if ref_batch_size > 1:
-            # sum-of-squared loss for the same object but different views
-            # z_pos = [2, 100] pos_loss_sum [2, 2]
-            #pos_loss_sum += ((z_pos[:, np.newaxis, :] - z_pos[np.newaxis, :, :]) ** 2).sum(dim=-1).mean()
-            for idx in range(maxiter // ref_batch_size):
-                # sum-of-squared loss between the original object with different views and different objects
-                pos_loss_sum += ((z_pos[idx * ref_batch_size, np.newaxis, :90]
-                                  - z_pos[np.newaxis, idx * ref_batch_size:idx * ref_batch_size + ref_batch_size, :90]) ** 2).sum(
-                    dim=-1).mean()
-
-        mu_z, logvar_z = self.netE(neg_batch)
-        z_neg = gauss_reparametrize(mu_z, logvar_z).squeeze()
-
-        """
-        NOTE: train[N, 3] is EMPTY! Which is why I'm using idx:idx+2, i.e., 2 distractors
-        For 3, it'll be idx:idx+3
-        """
-        NUM_DISTRACTORS = 2
-        for idx in range(maxiter):
-            # sum-of-squared loss between the original object with different views and different objects
-            # NOTE: We can also do
-            # pos_loss_sum += ((z_neg[:, np.newaxis, :] - z_neg[np.newaxis, :, :]) ** 2).sum(dim=-1).mean()
-            # but what if many same different samples? Unlikely though.
-            neg_loss_sum += ((z_pos[idx, np.newaxis, :90] - z_neg[np.newaxis, idx:idx+NUM_DISTRACTORS, :90]) ** 2).sum(dim=-1).mean()
-
-        return pos_loss_sum - neg_loss_sum, {'pos_loss': pos_loss_sum, 'neg_loss': neg_loss_sum}
+        # NOTE: Dropping IQ_training_use_pos_loss, since it's the default
+        ref_batch_size = 2  # if self.opt.IQ_training_use_pos_loss else 1
+        return self.get_baseline_qa_losses(maxiter, ref_batch_size,
+                                           self.dataset_loader.get_qa_samples)
 
     def test_supervised_baseline(self, maxiter):
-        """For a given shape, generate multiple views and
-        minimize the latent space distance for the same shape
-        while maximizing the latent space distance for different shapes.
-
-        Note: This function gets called from `train` at specific intervals.
-        real samples from predefined set -> render multiview -> same objects minimize loss and diff objs maximize
-        How are different shapes chosen?
-        1. Can be from the predefined shapes
-        2. Any shape?
-        In this case, from the predefined supervision set
-
-        Total number of same samples = batch_size
-        Total number of different samples = num_different_examples * neg_sample_batch_size
+        """NOTE: The only difference between train_supervised_baseline and
+        test_supervised_baseline is where the data is coming from. I.e., for test
+        it's get_qa_test_samples.
         """
-        pos_loss_sum = 0
-        neg_loss_sum = 0
-        pos_batch = []
-        neg_batch = []
-        ref_batch_size = 2 if self.opt.IQ_training_use_pos_loss else 1
-        # Note: self.netE has batch-norm, so need to use large batch-size
-        for qa_set in self.dataset_loader.get_qa_test_samples(maxiter):
-            # 4 entires, ref:reference and correct, and ans1, ans2, ans3 are distractors
-            ref_sample = qa_set['ref']
-
-            # images of the same object but different views
-            res = self.get_real_fixed_samples(fixed_sample=ref_sample, batch_size=ref_batch_size)
-            pos_batch.append(res['images'])
-            for key in qa_set:
-                if key == 'ref' or len(qa_set[key]) == 0:
-                    continue
-                res = self.get_real_fixed_samples(fixed_sample=qa_set[key], batch_size=1)
-                neg_batch.append(res['images'])
-        pos_batch = torch.cat(pos_batch)
-        neg_batch = torch.cat(neg_batch)
-        mu_z, logvar_z = self.netE(pos_batch)
-        z_pos = gauss_reparametrize(mu_z, logvar_z).squeeze()
-
-        if ref_batch_size > 1:
-            # sum-of-squared loss for the same object but different views
-            # z_pos = [2, 100] pos_loss_sum [2, 2]
-            #pos_loss_sum += ((z_pos[:, np.newaxis, :] - z_pos[np.newaxis, :, :]) ** 2).sum(dim=-1).mean()
-            for idx in range(maxiter // ref_batch_size):
-                # sum-of-squared loss between the original object with different views and different objects
-                pos_loss_sum += ((z_pos[idx * ref_batch_size, np.newaxis, :90]
-                                  - z_pos[np.newaxis, idx * ref_batch_size:idx * ref_batch_size + ref_batch_size, :90]) ** 2).sum(
-                    dim=-1).mean()
-
-        mu_z, logvar_z = self.netE(neg_batch)
-        z_neg = gauss_reparametrize(mu_z, logvar_z).squeeze()
-
-        """
-        NOTE: train[N, 3] is EMPTY! Which is why I'm using idx:idx+2, i.e., 2 distractors
-        For 3, it'll be idx:idx+3
-        """
-        NUM_DISTRACTORS = 2
-        for idx in range(maxiter):
-            # sum-of-squared loss between the original object with different views and different objects
-            # NOTE: We can also do
-            # pos_loss_sum += ((z_neg[:, np.newaxis, :] - z_neg[np.newaxis, :, :]) ** 2).sum(dim=-1).mean()
-            # but what if many same different samples? Unlikely though.
-            neg_loss_sum += ((z_pos[idx, np.newaxis, :90] - z_neg[np.newaxis, idx:idx+NUM_DISTRACTORS, :90]) ** 2).sum(dim=-1).mean()
-
-        return accuracy
+        ref_batch_size = 2
+        return self.get_baseline_qa_losses(maxiter, ref_batch_size,
+                                           self.dataset_loader.get_qa_test_samples)
 
     def train(self):
         """Train network."""
@@ -1404,7 +1386,7 @@ class GAN(object):
                 # z_other=z_real.contiguous().view(self.opt.batchSize,-1)
                 z_real_joint = self.netS(z_real[:,:90].detach(),z_real[:,90:].detach())
                 z_marginal=z_real[:,90:]
-                print(z_marginal.size())
+                #print(z_marginal.size())
                 z_marginal = z_marginal.index_select(0, Variable(torch.randperm(6).cuda()))
                 #z_marginal=z_marginal[torch.randperm(6)]
                 z_real_marginal = self.netS(z_real[:,:90].detach(),z_marginal.detach())
@@ -1434,8 +1416,8 @@ class GAN(object):
                 ############### Supervised training
                 ## needs to be done here, otherwise it'll mess up the shared vars between gen and discrim through self !!
                 supervision_loss = 0
-                pos_neg_losses = None
-                test_accuracy = None
+                supervision_result = None
+                test_result = None
                 if iteration > self.opt.IQ_train_start_iter and \
                         iteration % self.opt.IQ_train_interval == 0:
                     # Perform N iteration of supervised training
@@ -1444,10 +1426,14 @@ class GAN(object):
                     #                                     batch_size=self.opt.IQ_train_same_batchsize,
                     #                                     num_unique_neg_samples=self.opt.IQ_train_num_unique_neg,
                     #                                     neg_sample_batch_size=self.opt.IQ_train_neg_batchsize)
-                    supervision_loss, pos_neg_losses = \
+                    supervision_result = \
                         self.train_supervised_baseline(maxiter=self.opt.IQ_train_maxiter)
-                    test_accuracy = \
+                    supervision_loss = supervision_result['loss']
+                    supervision_acc_pct = supervision_result['accuracy_pct']
+                    test_result = \
                         self.test_supervised_baseline(maxiter=self.opt.IQ_test_maxiter)
+                    test_acc_pct = test_result['accuracy_pct']
+                    test_loss = test_result['loss']
                 ################
                 mse_criterion = nn.MSELoss().cuda()
                 reconstruction_loss = supervision_loss + \
@@ -1473,7 +1459,7 @@ class GAN(object):
 
 
                 # Log print
-                if iteration % self.opt.print_interval == 0 or pos_neg_losses is not None:
+                if iteration % self.opt.print_interval == 0 or supervision_result is not None:
 
                     l2_loss = mse_criterion(fd, self.inputv_depth)
                     Wassertein_D = (errD_real.data[0] - errD_fake.data[0])
@@ -1498,17 +1484,23 @@ class GAN(object):
                     self.writer.add_scalar("Gen_grad_norm",
                                            gnorm_G,
                                            self.iterationa_no)
-                    if pos_neg_losses is not None:
-                        self.writer.add_scalar("supervision loss",
+                    if supervision_result is not None:
+                        self.writer.add_scalar("IQ_task/supervision_loss",
                                                supervision_loss.data[0],
                                                self.iterationa_no)
-                    if test_accuracy is not None:
-                        self.writer.add_scalar("test accuracy",
-                                               test_accuracy.data[0],
+                        self.writer.add_scalar("IQ_task/supervision_acc_pct",
+                                               supervision_acc_pct.data[0],
                                                self.iterationa_no)
-                        print('\n[%d/%d] Test_accuracy: %.4f ' % (
-                              iteration, self.opt.n_iter, test_accuracy.data[0]))
-                    self.writer.add_scalar("mutula_info",
+                    if test_result is not None:
+                        self.writer.add_scalar("IQ_task/test accuracy_pct",
+                                               test_acc_pct.data[0],
+                                               self.iterationa_no)
+                        self.writer.add_scalar("IQ_task/test accuracy_loss",
+                                               test_loss.data[0],
+                                               self.iterationa_no)
+                        print('\n[%d/%d] Test_accuracy: %.4f %%' % (
+                              iteration, self.opt.n_iter, test_acc_pct.data[0]))
+                    self.writer.add_scalar("mutual_info",
                                            mi.data[0],
                                            self.iterationa_no)
                     print('\n[%d/%d] Loss_D: %.4f Loss_G: %.4f Loss_E: %.4f reconstruction_loss: %.4f mi_loss: %.4f Loss_D_real: %.4f '
@@ -1518,17 +1510,19 @@ class GAN(object):
                           errG.data[0], errE.data[0], reconstruction_loss.data[0], mi.data[0],errD_real.data[0], errD_fake.data[0],
                           Wassertein_D, loss.data[0],
                           self.optG_z_lr_scheduler.get_lr()[0], gnorm_D, gnorm_G))
-                    if pos_neg_losses is not None:
+                    if supervision_result is not None:
                         print("supervision loss: %0.4f" % supervision_loss.data[0])
-                        print('neg loss: %0.4f' % pos_neg_losses['neg_loss'].data[0])
-
+                        print('supervision acc : %0.2f %%' % supervision_acc_pct.data[0])
+                    if test_result is not None:
+                        print("test loss: %0.4f" % test_loss.data[0])
+                        print('test acc : %0.2f %%' % test_acc_pct.data[0])
                     l2_file.write('%s\n' % (str(mi.data[0])))
                     l2_file.flush()
-                    if pos_neg_losses is not None:
+                    if supervision_result is not None:
                         l2_file2.write('%s\n' % (str(supervision_loss.data[0])))
                         l2_file2.flush()
-                    if test_accuracy is not None:
-                        l2_file3.write('%s\n' % (str(test_accuracy.data[0])))
+                    if test_result is not None:
+                        l2_file3.write('%s\n' % (str(test_acc_pct.data[0])))
                         l2_file3.flush()
                     print("written to file", str(l2_loss.data[0]))
 

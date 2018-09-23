@@ -137,16 +137,17 @@ class Parameters():
         self.parser.add_argument('--batchSize', type=int, default=4, help='input batch size')
         self.parser.add_argument('--IQ_train_start_iter', type=int, default=10, help='Supervised IQ training starting iteration.')
         self.parser.add_argument('--IQ_train_interval', type=int, default=10, help='Supervised IQ training intervals.')
-        self.parser.add_argument('--IQ_train_maxiter', type=int, default=10, help='Supervised IQ training max iter.')
-        self.parser.add_argument('--IQ_test_maxiter', type=int, default=10, help='Supervised IQ training max iter.')
+        self.parser.add_argument('--IQ_train_maxiter', type=int, default=100, help='Supervised IQ training max iter.')
+        self.parser.add_argument('--IQ_test_maxiter', type=int, default=100, help='Supervised IQ training max iter.')
         self.parser.add_argument('--IQ_train_same_batchsize', type=int, default=4,
                                  help='Number of views of the same object.')
         self.parser.add_argument('--IQ_train_neg_batchsize', type=int, default=2,
                                  help='Number of images of different objects.')
         self.parser.add_argument('--IQ_train_num_unique_neg', type=int, default=3,
                                  help='Number of unique negative samples.')
-        self.parser.add_argument('--IQ_training_use_pos_loss', action='store_true', default=True,
-                                 help='Uses both positive and negative loss during supervised training.')
+        # Always use pos_loss to keep things simple
+        #self.parser.add_argument('--IQ_training_use_pos_loss', action='store_true', default=True,
+        #                         help='Uses both positive and negative loss during supervised training.')
 
         # GAN parameters
         self.parser.add_argument("--criterion", help="GAN Training criterion", choices=['GAN', 'WGAN'], default='WGAN')

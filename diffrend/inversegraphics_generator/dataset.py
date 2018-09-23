@@ -46,9 +46,9 @@ class IqDataset(object):
 
     def _grid_to_obj(self, grid):
         v, f = self.og.grid_to_cubes(grid)
-        if len(v) == 0 or len(f) == 0:
-            print("ERROR: grid is all 0")
-            #raise RuntimeError("ERROR: grid is all 0")
+        # if len(v) == 0 or len(f) == 0:
+        #     print("ERROR: grid is all 0")
+        #     #raise RuntimeError("ERROR: grid is all 0")
         return self.og.generate_obj(grid, v, f)
 
     def get_training_samples_unordered(self, n=1):
