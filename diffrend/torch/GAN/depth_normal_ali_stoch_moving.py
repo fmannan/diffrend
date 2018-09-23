@@ -1201,6 +1201,7 @@ class GAN(object):
         For 3, it'll be idx:idx+3
         """
         correct_count = 0
+        classification_loss = 0
         NUM_DISTRACTORS = 2
         assert z_neg.shape[0] == maxiter * NUM_DISTRACTORS
         neg_loss = []
@@ -1215,13 +1216,19 @@ class GAN(object):
             neg_loss_sum += mse_for_wrong_ans.mean()  # average for distractors
             neg_loss.append(mse_for_wrong_ans)
             correct_count += ((pos_loss[idx] > neg_loss[idx]).sum() == 0).float()
+            pos_neg_dist_softboundary = pos_loss[idx] - neg_loss[idx] + 1.0
+            classification_loss += (pos_neg_dist_softboundary * (pos_neg_dist_softboundary > 0).float()).sum()
 
         # Calculate accuracy
         accuracy_pct = correct_count / maxiter * 100.0
+        classification_loss = classification_loss / maxiter
+        pos_loss_sum /= maxiter
+        neg_loss_sum /= maxiter
 
         return {'pos_loss_sum': pos_loss_sum, 'neg_loss_sum': neg_loss_sum,
                 'pos_loss_list': pos_loss, 'neg_loss_list': neg_loss,
-                'accuracy_pct': accuracy_pct, 'loss': pos_loss_sum - neg_loss_sum}
+                'accuracy_pct': accuracy_pct, 'pos_neg_loss': pos_loss_sum - neg_loss_sum,
+                'classification_loss': classification_loss}
 
     def train_supervised_baseline(self, maxiter):
         """For a given shape, generate multiple views and
@@ -1428,12 +1435,13 @@ class GAN(object):
                     #                                     neg_sample_batch_size=self.opt.IQ_train_neg_batchsize)
                     supervision_result = \
                         self.train_supervised_baseline(maxiter=self.opt.IQ_train_maxiter)
-                    supervision_loss = supervision_result['loss']
+                    supervision_loss = supervision_result['classification_loss']
+                    supervision_pos_neg_loss = supervision_result['pos_neg_loss']
                     supervision_acc_pct = supervision_result['accuracy_pct']
                     test_result = \
                         self.test_supervised_baseline(maxiter=self.opt.IQ_test_maxiter)
                     test_acc_pct = test_result['accuracy_pct']
-                    test_loss = test_result['loss']
+                    test_loss = test_result['classification_loss']
                 ################
                 mse_criterion = nn.MSELoss().cuda()
                 reconstruction_loss = supervision_loss + \
@@ -1485,8 +1493,11 @@ class GAN(object):
                                            gnorm_G,
                                            self.iterationa_no)
                     if supervision_result is not None:
-                        self.writer.add_scalar("IQ_task/supervision_loss",
+                        self.writer.add_scalar("IQ_task/supervision_classification_loss",
                                                supervision_loss.data[0],
+                                               self.iterationa_no)
+                        self.writer.add_scalar("IQ_task/supervision_posneg_loss",
+                                               supervision_pos_neg_loss.data[0],
                                                self.iterationa_no)
                         self.writer.add_scalar("IQ_task/supervision_acc_pct",
                                                supervision_acc_pct.data[0],
@@ -1495,7 +1506,7 @@ class GAN(object):
                         self.writer.add_scalar("IQ_task/test accuracy_pct",
                                                test_acc_pct.data[0],
                                                self.iterationa_no)
-                        self.writer.add_scalar("IQ_task/test accuracy_loss",
+                        self.writer.add_scalar("IQ_task/test classification_loss",
                                                test_loss.data[0],
                                                self.iterationa_no)
                         print('\n[%d/%d] Test_accuracy: %.4f %%' % (
