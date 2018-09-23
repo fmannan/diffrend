@@ -126,18 +126,25 @@ def create_networks(opt, verbose=True, **params):
         netD2.apply(weights_init)
     # Show networks
     netE = LatentEncoder( nz, 3, nef)
+    netS = Stat()
     if opt.netE != '':
         netE.load_state_dict(torch.load(opt.netE))
     else:
         netE.apply(weights_init)
+
+    if opt.netS != '':
+        netS.load_state_dict(torch.load(opt.netS))
+    else:
+        netS.apply(weights_init)
     if verbose:
         print(netG)
         print(netE)
-        print(netG2)
-        print(netD)
-        print(netD2)
 
-    return netG, netG2, netD, netD2, netE
+        print(netD)
+
+        print(netS)
+
+    return netG, netG2, netD, netD2, netE, netS
 
 
 def weights_init(m):
@@ -425,7 +432,7 @@ class DCGAN_G(nn.Module):
         main_2 = nn.Sequential()
         # input is Z, going into a convolution
         main.add_module('initial_{0}-{1}_convt'.format(nz, cngf),
-                        nn.ConvTranspose2d(nz+3, cngf, 4, 1, 0, bias=False))
+                        nn.ConvTranspose2d(nz, cngf, 4, 1, 0, bias=False))
         if norm is not None:
             main.add_module('initial_{0}_batchnorm'.format(cngf),
                             norm(cngf))
@@ -436,55 +443,51 @@ class DCGAN_G(nn.Module):
         i = 0
         while csize < isize // 2:
             if i == 0:
-                main_2.add_module('pyramid_{0}-{1}_convt'.format(cngf, cngf // 2),
-                            nn.ConvTranspose2d(cngf+3, cngf // 2, 4, 2, 1,
+                main.add_module('pyramid_{0}-{1}_convt'.format(cngf, cngf // 2),
+                            nn.ConvTranspose2d(cngf, cngf // 2, 4, 2, 1,
                                                bias=False))
             else:
-                main_2.add_module('pyramid_{0}-{1}_convt'.format(cngf, cngf // 2),
+                main.add_module('pyramid_{0}-{1}_convt'.format(cngf, cngf // 2),
                             nn.ConvTranspose2d(cngf, cngf // 2, 4, 2, 1,
                                                bias=False))
 
             if norm is not None:
-                main_2.add_module('pyramid_{0}_batchnorm'.format(cngf // 2),
+                main.add_module('pyramid_{0}_batchnorm'.format(cngf // 2),
                                   norm(cngf // 2))
-            main_2.add_module('pyramid_{0}_relu'.format(cngf // 2), nn.LeakyReLU())
+            main.add_module('pyramid_{0}_relu'.format(cngf // 2), nn.LeakyReLU())
             cngf = cngf // 2
             csize = csize * 2
             i+=1
 
         # Extra layers
         for t in range(n_extra_layers):
-            main_2.add_module('extra-layers_{0}-{1}_conv'.format(t, cngf),
+            main.add_module('extra-layers_{0}-{1}_conv'.format(t, cngf),
                             nn.Conv2d(cngf, cngf, 3, 1, 1, bias=True))
             if norm is not None:
-                main_2.add_module('extra-layers_{0}-{1}_batchnorm'.format(
+                main.add_module('extra-layers_{0}-{1}_batchnorm'.format(
                     t, cngf), norm(cngf))
-            main_2.add_module('extra-layers_{0}-{1}_relu'.format(t, cngf),
+            main.add_module('extra-layers_{0}-{1}_relu'.format(t, cngf),
                             nn.LeakyReLU())
 
-        main_2.add_module('final_{0}-{1}_convt'.format(cngf, nc),
+        main.add_module('final_{0}-{1}_convt'.format(cngf, nc),
                         nn.ConvTranspose2d(cngf, 1, 4, 2, 1, bias=True))
         if use_tanh:
-            main_2.add_module('final_{0}_tanh'.format(nc), nn.Tanh())
-        main_2.add_module('reshape', ReshapeSplats())
+            main.add_module('final_{0}_tanh'.format(nc), nn.Tanh())
+        main.add_module('reshape', ReshapeSplats())
         self.main = main
-        self.main_2 = main_2
 
 
-    def forward(self, input, cond):
+
+    def forward(self, input):
         """Forward method."""
         if isinstance(input.data, torch.cuda.FloatTensor) and self.ngpu > 1:
             output1 = nn.parallel.data_parallel(self.main, input,
                                                range(self.ngpu))
         else:
-            cond=cond.view(cond.size(0),cond.size(1),1,1)
-            propogated = Variable(torch.ones((input.size(0), cond.size(1), input.size(2), input.size(3))), requires_grad=False).cuda()* cond
-            input=torch.cat([input,propogated],1)
             output = self.main(input)
-            propogated = Variable(torch.ones((output.size(0), cond.size(1), output.size(2), output.size(3))), requires_grad=False).cuda()* cond
-            x=torch.cat([output,propogated],1)
-            output_2 = self.main_2(x)
-        return output_2
+
+
+        return output
 
 def conv3x3(in_planes, out_planes, stride=1):
     """3x3 convolution with padding"""
@@ -644,7 +647,7 @@ class _netD(nn.Module):
 
         self.main = nn.Sequential(
             # input is (nc) x 64 x 64
-            nn.Conv2d(nc+3, ndf, 4, 2, 1, bias=True),
+            nn.Conv2d(nc, ndf, 4, 2, 1, bias=True),
             #nn.Dropout(p=0.3),
             nn.LeakyReLU(),
             # state size. (ndf) x 32 x 32
@@ -675,13 +678,9 @@ class _netD(nn.Module):
 
         )
 
-    def forward(self, x, z, z2):
+    def forward(self, x,  z2):
         # import ipdb; ipdb.set_trace()
-        z = z.view(z.size(0), z.size(1), 1, 1)
-        propogated = Variable(torch.ones((x.size(0), z.size(1),
-                                          x.size(2), x.size(3))),
-                              requires_grad=False).cuda() * z
-        x = torch.cat([x, propogated], 1)
+
         x = self.main(x)
         x2 = torch.cat([x, z2], 1)
         x2= self.main2(x2)
@@ -770,6 +769,27 @@ class LatentEncoder(nn.Module):
         mu = self.enc_mu(conv_out)
         logvar = self.enc_logvar(conv_out)
         return (mu.view(mu.size(0), -1), logvar.view(logvar.size(0), -1))
+
+class Stat(nn.Module):
+    def __init__(self, z_dim=10, dim=196):
+        super(Stat, self).__init__()
+        self.main = nn.Sequential(
+            nn.Conv2d(100, dim, kernel_size=1, padding=0, bias=True),
+            nn.ReLU(True),
+            nn.Conv2d(dim, dim, kernel_size=1, padding=0, bias=True),
+            nn.ReLU(True),
+            nn.Conv2d(dim, 1, kernel_size=1, padding=0, bias=False),
+
+        )
+
+
+    def forward(self, x,z):
+        x=x.view(x.size(0),x.size(1),1,1)
+        z=z.view(z.size(0),z.size(1),1,1)
+
+        input=torch.cat([x,z],1)
+        out = self.main(x)
+        return out.view(-1, 1).squeeze(1)
 class _netD_256(nn.Module):
     def __init__(self, ngpu, nc, ndf, isize, nz,use_sigmoid=0):
         super(_netD_256, self).__init__()

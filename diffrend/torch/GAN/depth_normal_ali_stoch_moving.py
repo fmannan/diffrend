@@ -25,7 +25,7 @@ import torch.nn.functional as F
 import torchvision
 from diffrend.torch.GAN.datasets import Dataset_load
 from diffrend.torch.GAN.iq_objects_loader import IQObjectsDataset
-from diffrend.torch.GAN.twin_networks import create_networks
+from diffrend.torch.GAN.twin_networks_unc import create_networks
 from diffrend.torch.GAN.parameters_halfbox_shapenet import Parameters
 from diffrend.torch.params import SCENE_SPHERE_HALFBOX_0
 from diffrend.torch.utils import (tch_var_f, tch_var_l, get_data,
@@ -75,7 +75,7 @@ See run_IQTraining.sh
 
 def copy_scripts_to_folder(expr_dir):
     """Copy scripts."""
-    shutil.copy("twin_networks.py", expr_dir)
+    shutil.copy("twin_networks_unc.py", expr_dir)
     shutil.copy("../NEstNet.py", expr_dir)
     shutil.copy("../params.py", expr_dir)
     shutil.copy("../renderer.py", expr_dir)
@@ -99,6 +99,9 @@ def mkdir(path):
     if not os.path.exists(path):
         os.makedirs(path)
 
+def log_sum_exp(vec):
+    max_val = vec.max()[0]
+    return max_val + (vec - max_val).exp().sum().log()
 
 def create_scene(width, height, fovy, focal_length, n_samples):
     """Create a semi-empty scene with camera parameters."""
@@ -138,7 +141,7 @@ def calc_gradient_penalty(discriminator, encoder, real_data, fake_data, fake_dat
 
 
     interpolates_cond = Variable(fake_data_cond, requires_grad=True)
-    disc_interpolates = discriminator(interpolates, interpolates_cond, interpolate_z.detach())
+    disc_interpolates = discriminator(interpolates,  interpolate_z.detach())
     gradients = torch.autograd.grad(
         outputs=disc_interpolates, inputs=interpolates,
         grad_outputs=torch.ones(disc_interpolates.size()).cuda(),
@@ -166,7 +169,7 @@ def calc_gradient_penalty2(discriminator, encoder, real_data, fake_data, fake_da
 
     interpolate_z2 = Variable(interpolate_z.data, requires_grad=True)
     interpolates_cond = Variable(fake_data_cond, requires_grad=True)
-    disc_interpolates = discriminator(interpolates, interpolates_cond, interpolate_z2)
+    disc_interpolates = discriminator(interpolates,  interpolate_z2)
     gradients = torch.autograd.grad(
         outputs=disc_interpolates, inputs=interpolates,
         grad_outputs=torch.ones(disc_interpolates.size()).cuda(),
@@ -200,7 +203,7 @@ def calc_gradient_penalty3(discriminator, encoder, real_data, fake_data, fake_da
     interpolate_z = Variable(alpha_z * z_enc + ((1 - alpha_z) * z),
                             requires_grad=True)
     interpolates_cond = Variable(fake_data_cond, requires_grad=True)
-    disc_interpolates = discriminator(interpolates, interpolates_cond, interpolate_z)
+    disc_interpolates = discriminator(interpolates,  interpolate_z)
     gradients = torch.autograd.grad(
         outputs=disc_interpolates, inputs=interpolates,
         grad_outputs=torch.ones(disc_interpolates.size()).cuda(),
@@ -227,7 +230,7 @@ def calc_gradient_penalty4(discriminator, encoder, real_data, fake_data, fake_da
     interpolate_z = Variable(alpha_z * z_enc + ((1 - alpha_z) * z),
                             requires_grad=True)
     interpolates_cond = Variable(fake_data_cond, requires_grad=True)
-    disc_interpolates = discriminator(interpolates, interpolates_cond, interpolate_z)
+    disc_interpolates = discriminator(interpolates, interpolate_z)
     gradients = torch.autograd.grad(
         outputs=disc_interpolates, inputs=interpolates,
         grad_outputs=torch.ones(disc_interpolates.size()).cuda(),
@@ -534,16 +537,16 @@ class GAN(object):
 
             #large_scene['lights']['pos'][0,:3]=tch_var_f(self.light_pos1[idx])
             #self.light_pos1[idx] = self.cam_pos[idx] + [0.05, 0.05, 0.05]
-            light_pos1 = self.cam_pos[idx] + [0.05, 0.05, 0.05]
+            light_pos1 = self.cam_pos[idx] - [0.05, 0.05, 0.05]
             large_scene['lights']['pos'][0,:3]=tch_var_f(light_pos1)
             light_pos2 = uniform_sample_sphere(
-                 radius=self.opt.cam_dist, num_samples=1,
+                 radius=(self.opt.cam_dist-0.1), num_samples=1,
                  axis=self.cam_pos[idx], angle=np.deg2rad(35),
                  theta_range=None,
                  phi_range=None)
 
             light_pos3 = uniform_sample_sphere(
-                 radius=self.opt.cam_dist, num_samples=1,
+                 radius=(self.opt.cam_dist-0.1), num_samples=1,
                  axis=self.cam_pos[idx], angle=np.deg2rad(50),
                  theta_range=None,
                  phi_range=None)
@@ -620,6 +623,7 @@ class GAN(object):
         self.labelv = Variable(self.label)
 
         return {'images': self.inputv}
+
 
     def get_real_fixed_samples(self, fixed_sample=None, batch_size=None):
         """Get a real sample.
@@ -709,16 +713,16 @@ class GAN(object):
 
             #large_scene['lights']['pos'][0,:3]=tch_var_f(self.light_pos1[idx])
             #self.light_pos1[idx] = self.cam_pos[idx] + [0.05, 0.05, 0.05]
-            light_pos1 = cam_pos[idx] + [0.05, 0.05, 0.05]
+            light_pos1 = cam_pos[idx] - [0.05, 0.05, 0.05]
             large_scene['lights']['pos'][0,:3]=tch_var_f(light_pos1)
             light_pos2 = uniform_sample_sphere(
-                 radius=self.opt.cam_dist, num_samples=1,
+                 radius=(self.opt.cam_dist-0.1), num_samples=1,
                  axis=cam_pos[idx], angle=np.deg2rad(35),
                  theta_range=None,
                  phi_range=None)
 
             light_pos3 = uniform_sample_sphere(
-                 radius=self.opt.cam_dist, num_samples=1,
+                 radius=(self.opt.cam_dist-0.1), num_samples=1,
                  axis=cam_pos[idx], angle=np.deg2rad(50),
                  theta_range=None,
                  phi_range=None)
@@ -769,8 +773,6 @@ class GAN(object):
 
         if fixed_sample is not None:
             return {'images': real_samples}
-
-
 
     def generate_noise_vector(self, ):
         """Generate a noise vector."""
@@ -1182,8 +1184,8 @@ class GAN(object):
             #pos_loss_sum += ((z_pos[:, np.newaxis, :] - z_pos[np.newaxis, :, :]) ** 2).sum(dim=-1).mean()
             for idx in range(maxiter // ref_batch_size):
                 # sum-of-squared loss between the original object with different views and different objects
-                pos_loss_sum += ((z_pos[idx * ref_batch_size, np.newaxis, :]
-                                  - z_pos[np.newaxis, idx * ref_batch_size:idx * ref_batch_size + ref_batch_size, :]) ** 2).sum(
+                pos_loss_sum += ((z_pos[idx * ref_batch_size, np.newaxis, :90]
+                                  - z_pos[np.newaxis, idx * ref_batch_size:idx * ref_batch_size + ref_batch_size, :90]) ** 2).sum(
                     dim=-1).mean()
 
         mu_z, logvar_z = self.netE(neg_batch)
@@ -1199,9 +1201,76 @@ class GAN(object):
             # NOTE: We can also do
             # pos_loss_sum += ((z_neg[:, np.newaxis, :] - z_neg[np.newaxis, :, :]) ** 2).sum(dim=-1).mean()
             # but what if many same different samples? Unlikely though.
-            neg_loss_sum += ((z_pos[idx, np.newaxis, :] - z_neg[np.newaxis, idx:idx+NUM_DISTRACTORS, :]) ** 2).sum(dim=-1).mean()
+            neg_loss_sum += ((z_pos[idx, np.newaxis, :90] - z_neg[np.newaxis, idx:idx+NUM_DISTRACTORS, :90]) ** 2).sum(dim=-1).mean()
 
         return pos_loss_sum - neg_loss_sum, {'pos_loss': pos_loss_sum, 'neg_loss': neg_loss_sum}
+
+    def test_supervised_baseline(self, maxiter):
+        """For a given shape, generate multiple views and
+        minimize the latent space distance for the same shape
+        while maximizing the latent space distance for different shapes.
+
+        Note: This function gets called from `train` at specific intervals.
+        real samples from predefined set -> render multiview -> same objects minimize loss and diff objs maximize
+        How are different shapes chosen?
+        1. Can be from the predefined shapes
+        2. Any shape?
+        In this case, from the predefined supervision set
+
+        Total number of same samples = batch_size
+        Total number of different samples = num_different_examples * neg_sample_batch_size
+        """
+        pos_loss_sum = 0
+        neg_loss_sum = 0
+        pos_batch = []
+        neg_batch = []
+        ref_batch_size = 2 if self.opt.IQ_training_use_pos_loss else 1
+        # Note: self.netE has batch-norm, so need to use large batch-size
+        for qa_set in self.dataset_loader.get_qa_test_samples(maxiter):
+            # 4 entires, ref:reference and correct, and ans1, ans2, ans3 are distractors
+            ref_sample = qa_set['ref']
+
+            # images of the same object but different views
+            res = self.get_real_fixed_samples(fixed_sample=ref_sample, batch_size=ref_batch_size)
+            pos_batch.append(res['images'])
+
+            for key in qa_set:
+                if key == 'ref' or len(qa_set[key]) == 0:
+                    continue
+                res = self.get_real_fixed_samples(fixed_sample=qa_set[key], batch_size=1)
+                neg_batch.append(res['images'])
+        pos_batch = torch.cat(pos_batch)
+        neg_batch = torch.cat(neg_batch)
+
+        mu_z, logvar_z = self.netE(pos_batch)
+        z_pos = gauss_reparametrize(mu_z, logvar_z).squeeze()
+
+        if ref_batch_size > 1:
+            # sum-of-squared loss for the same object but different views
+            # z_pos = [2, 100] pos_loss_sum [2, 2]
+            #pos_loss_sum += ((z_pos[:, np.newaxis, :] - z_pos[np.newaxis, :, :]) ** 2).sum(dim=-1).mean()
+            for idx in range(maxiter // ref_batch_size):
+                # sum-of-squared loss between the original object with different views and different objects
+                pos_loss_sum += ((z_pos[idx * ref_batch_size, np.newaxis, :90]
+                                  - z_pos[np.newaxis, idx * ref_batch_size:idx * ref_batch_size + ref_batch_size, :90]) ** 2).sum(
+                    dim=-1).mean()
+
+        mu_z, logvar_z = self.netE(neg_batch)
+        z_neg = gauss_reparametrize(mu_z, logvar_z).squeeze()
+
+        """
+        NOTE: train[N, 3] is EMPTY! Which is why I'm using idx:idx+2, i.e., 2 distractors
+        For 3, it'll be idx:idx+3
+        """
+        NUM_DISTRACTORS = 2
+        for idx in range(maxiter):
+            # sum-of-squared loss between the original object with different views and different objects
+            # NOTE: We can also do
+            # pos_loss_sum += ((z_neg[:, np.newaxis, :] - z_neg[np.newaxis, :, :]) ** 2).sum(dim=-1).mean()
+            # but what if many same different samples? Unlikely though.
+            neg_loss_sum += ((z_pos[idx, np.newaxis, :90] - z_neg[np.newaxis, idx:idx+NUM_DISTRACTORS, :90]) ** 2).sum(dim=-1).mean()
+
+        return accuracy
 
     def train(self):
         """Train network."""
@@ -1217,16 +1286,16 @@ class GAN(object):
             print(' > Discriminator', self.opt.dis_model_path)
             self.netD.load_state_dict(
                 torch.load(open(self.opt.dis_model_path, 'rb')))
-            print(' > Discriminator2', self.opt.dis_model_path2)
-            self.netD2.load_state_dict(
-                torch.load(open(self.opt.dis_model_path2, 'rb')))
+
             print(' > Encoder', self.opt.enc_model_path)
             self.netE.load_state_dict(
                 torch.load(open(self.opt.enc_model_path, 'rb')))
 
         # Start training
-        file_name = os.path.join(self.opt.out_dir, 'L2.txt')
-        with open(file_name, 'wt') as l2_file:
+        file_name = os.path.join(self.opt.out_dir, 'accuracy.txt')
+        file_name2 = os.path.join(self.opt.out_dir, 'mi.txt')
+        file_name3 = os.path.join(self.opt.out_dir, 'supervisedloss.txt')
+        with open(file_name, 'wt') as l2_file,open(file_name2, 'wt') as l2_file2,open(file_name3, 'wt') as l2_file3:
             curr_generator_idx = 0
             for iteration in range(self.opt.n_iter):
                 self.iterationa_no = iteration
@@ -1245,7 +1314,7 @@ class GAN(object):
                     z_real = gauss_reparametrize(mu_z, logvar_z)
 
                     # input_D = torch.cat([self.inputv, self.inputv_depth], 1)
-                    real_output = self.netD(self.inputv, self.inputv_cond.detach(), z_real.detach())
+                    real_output = self.netD(self.inputv, z_real.detach())
 
                     if self.opt.criterion == 'GAN':
                         errD_real = self.criterion(real_output, self.labelv)
@@ -1259,7 +1328,7 @@ class GAN(object):
                     # Train with fake
                     #################
                     self.generate_noise_vector()
-                    fake_z = self.netG(self.noisev, self.inputv_cond)
+                    fake_z = self.netG(self.noisev)
                     # The normal generator is dependent on z
                     # fake_n = self.generate_normals(fake_z, self.inputv_cond,
                     #                                self.scene['camera'])
@@ -1267,8 +1336,7 @@ class GAN(object):
                     fake_rendered, fd, loss = self.render_batch(
                         fake_z, self.inputv_cond)
                     # Do not bp through gen
-                    outD_fake = self.netD(fake_rendered.detach(),
-                                          self.inputv_cond.detach(),self.noisev.detach())
+                    outD_fake = self.netD(fake_rendered.detach(),self.noisev.detach())
                     if self.opt.criterion == 'GAN':
                         labelv = Variable(self.label.fill_(self.fake_label))
                         errD_fake = self.criterion(outD_fake, labelv)
@@ -1310,7 +1378,7 @@ class GAN(object):
                 self.in_critic=0
 
                 self.generate_noise_vector()
-                fake_z = self.netG(self.noisev, self.inputv_cond)
+                fake_z = self.netG(self.noisev)
                 if iteration % self.opt.print_interval*4 == 0:
                     fake_z.register_hook(self.tensorboard_hook)
                 # fake_n = self.generate_normals(fake_z, self.inputv_cond,
@@ -1318,7 +1386,7 @@ class GAN(object):
                 #fake = torch.cat([fake_z, fake_n], 2)
                 fake_rendered, fd, loss = self.render_batch(
                     fake_z, self.inputv_cond)
-                outG_fake = self.netD(fake_rendered, self.inputv_cond, self.noisev)
+                outG_fake = self.netD(fake_rendered, self.noisev)
 
                 if self.opt.criterion == 'GAN':
                     # Fake labels are real for generator cost
@@ -1334,17 +1402,17 @@ class GAN(object):
                 mu_z, logvar_z = self.netE(self.inputv)
 
                 z_real = gauss_reparametrize(mu_z, logvar_z)
-                z_real_mi = self.netS(z_real[:,:90])
-                z_other=z_real[:,90:].contiguous().view(self.opt.batchSize,-1)
-                score = (z_other[:, None] * z_real_mi[None]).sum(-1)
-                mi_estimate = self.opt.entropy_coeff * nn.CrossEntropyLoss()(
-                    score,
-                    tch_var_l(np.arange(self.opt.batchSize))
 
-                )
-                mi_estimate = -1 * mi_estimate
+                z_other=z_real.contiguous().view(self.opt.batchSize,-1)
+                z_real_joint = self.netS(z_real[:,:90].detach(),z_real[:,90:].detach())
+                z_marginal=z_real[:,90:][torch.randperm(z_real.size(0))]
+                z_real_marginal = self.netS(z_real[:,:90].detach(),z_marginal.detach())
+                lower_bound = (  torch.mean(z_real_joint) - log_sum_exp(z_real_marginal) + torch.log(marginal.size(0))) * -1
+                lower_bound.backward()
+                mi = (-1) * lower_bound
+
                 # input_D = torch.cat([self.inputv, self.inputv_depth], 1)
-                real_output_z = self.netD(self.inputv, self.inputv_cond, z_real)
+                real_output_z = self.netD(self.inputv, z_real)
 
                 if self.opt.criterion == 'GAN':
                     errE = self.criterion(real_output_z, self.labelv)
@@ -1355,7 +1423,7 @@ class GAN(object):
                 else:
                     raise ValueError('Unknown GAN criterium')
 
-                reconstruction_z = self.netG(z_real, self.inputv_cond)
+                reconstruction_z = self.netG(z_real)
                 reconstruction_rendered, reconstructiond, loss = self.render_batch(
                     reconstruction_z, self.inputv_cond)
 
@@ -1366,6 +1434,7 @@ class GAN(object):
                 ## needs to be done here, otherwise it'll mess up the shared vars between gen and discrim through self !!
                 supervision_loss = 0
                 pos_neg_losses = None
+                test_accuracy = None
                 if iteration > self.opt.IQ_train_start_iter and \
                         iteration % self.opt.IQ_train_interval == 0:
                     # Perform N iteration of supervised training
@@ -1376,10 +1445,12 @@ class GAN(object):
                     #                                     neg_sample_batch_size=self.opt.IQ_train_neg_batchsize)
                     supervision_loss, pos_neg_losses = \
                         self.train_supervised_baseline(maxiter=self.opt.IQ_train_maxiter)
+                    test_accuracy = \
+                        self.test_supervised_baseline(maxiter=self.opt.IQ_test_maxiter)
                 ################
                 mse_criterion = nn.MSELoss().cuda()
                 reconstruction_loss = supervision_loss + \
-                                      mse_criterion(reconstruction_rendered, self.inputv) + mse_criterion(z_fake_rec, self.noisev)
+                                      mse_criterion(reconstruction_rendered, self.inputv) + mse_criterion(z_fake_rec, self.noisev) + self.opt.entropy_coeff*mi
                 reconstruction_loss.backward()
                 gnorm_G = torch.nn.utils.clip_grad_norm(
                     self.netG.parameters(), self.opt.max_gnorm)  # TODO
@@ -1430,7 +1501,13 @@ class GAN(object):
                         self.writer.add_scalar("supervision loss",
                                                supervision_loss.data[0],
                                                self.iterationa_no)
-
+                    if test_accuracy is not None:
+                        self.writer.add_scalar("test accuracy",
+                                               test_accuracy.data[0],
+                                               self.iterationa_no)
+                    self.writer.add_scalar("mutula_info",
+                                           mi.data[0],
+                                           self.iterationa_no)
                     print('\n[%d/%d] Loss_D: %.4f Loss_G: %.4f Loss_E: %.4f reconstruction_loss: %.4f mi_loss: %.4f Loss_D_real: %.4f '
                           ' Loss_D_fake: %.4f Wassertein_D: %.4f '
                           ' L2_loss: %.4f z_lr: %.8f, Disc_grad_norm: %.8f, Gen_grad_norm: %.8f' % (
@@ -1442,8 +1519,14 @@ class GAN(object):
                         print("supervision loss: %0.4f" % supervision_loss.data[0])
                         print('neg loss: %0.4f' % pos_neg_losses['neg_loss'].data[0])
 
-                    l2_file.write('%s\n' % (str(l2_loss.data[0])))
+                    l2_file.write('%s\n' % (str(mi.data[0])))
                     l2_file.flush()
+                    if pos_neg_losses is not None:
+                        l2_file2.write('%s\n' % (str(supervision_loss.data[0])))
+                        l2_file2.flush()
+                    if test_accuracy is not None:
+                        l2_file3.write('%s\n' % (str(test_accuracy.data[0])))
+                        l2_file3.flush()
                     print("written to file", str(l2_loss.data[0]))
 
                 # Save output images
@@ -1466,7 +1549,7 @@ class GAN(object):
 
                     cam_pos=self.inputv_cond[0].repeat(self.opt.batchSize,1)
 
-                    fake_z = self.netG(self.noisev, cam_pos)
+                    fake_z = self.netG(self.noisev)
                     # # The normal generator is dependent on z
                     # fake_n = self.generate_normals(fake_z, cam_pos,
                     #                                self.scene['camera'])

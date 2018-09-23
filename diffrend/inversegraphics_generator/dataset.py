@@ -126,6 +126,20 @@ class IqDataset(object):
 
             yield {'ref': ref, 'ans1': ans1, 'ans2': ans2, 'ans3': ans3}
 
+    def get_test_questions_answers_inmem(self, n=1):
+        # get N samples and write to disk
+        for idx in range(n):
+            self.test_idx_qa += 1
+            if self.test_idx_qa == len(self.test):
+                self.test_idx_qa = 0
+
+            ref = self._grid_to_obj(self.test[self.test_idx_qa, 0])
+            ans1 = self._grid_to_obj(self.test[self.test_idx_qa, 1])
+            ans2 = self._grid_to_obj(self.test[self.test_idx_qa, 2])
+            ans3 = self._grid_to_obj(self.test[self.test_idx_qa, 3])
+
+            yield {'ref': ref, 'ans1': ans1, 'ans2': ans2, 'ans3': ans3}
+
 
 if __name__ == '__main__':
     # iq = IqDataset(os.path.expanduser("~/data/ig/iqtest-v1.npz"))
@@ -143,4 +157,3 @@ if __name__ == '__main__':
         print(sample)
     for qa_sample in iq.get_training_questions_answers(5):
         print(qa_sample)
-
