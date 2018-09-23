@@ -1405,10 +1405,10 @@ class GAN(object):
                 z_real_joint = self.netS(z_real[:,:90].detach(),z_real[:,90:].detach())
                 z_marginal=z_real[:,90:]
                 print(z_marginal.size())
-                z_marginal = z_marginal.index_select(0, tch_var_l(torch.randperm(6)))
+                z_marginal = z_marginal.index_select(0, Variable(torch.randperm(6).cuda()))
                 #z_marginal=z_marginal[torch.randperm(6)]
                 z_real_marginal = self.netS(z_real[:,:90].detach(),z_marginal.detach())
-                lower_bound = (  torch.mean(z_real_joint) - log_sum_exp(z_real_marginal) + torch.log(marginal.size(0))) * -1
+                lower_bound = (  torch.mean(z_real_joint) - log_sum_exp(z_real_marginal) + torch.log(z_real_marginal.size(0))) * -1
                 lower_bound.backward()
                 mi = (-1) * lower_bound
 
