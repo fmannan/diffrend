@@ -662,48 +662,26 @@ class GAN(object):
 
         # Render scenes
         data, data_depth, data_normal, data_cond = [], [], [], []
-        inpath = self.opt.vis_images + '/'
+        # inpath = self.opt.vis_images + '/'
         for idx in range(batch_size):
             # Save the splats into the rendering scene
-            if self.opt.use_mesh:
-                # if 'sphere' in large_scene['objects']:
-                #     del large_scene['objects']['sphere']
-                if 'disk' in large_scene['objects']:
-                    del large_scene['objects']['disk']
-                if 'triangle' not in large_scene['objects']:
-                    large_scene['objects'] = {
-                        'triangle': {'face': None, 'normal': None,
-                                     'material_idx': None}}
-                # Either use the fixed sample or fetch new samples in every iteration
-                samples = fixed_sample if fixed_sample is not None else self.get_samples()
-                large_scene['camera']['at'] = tch_var_f(samples['mesh']['object_center'])
-                large_scene['objects']['triangle']['material_idx'] = tch_var_l(
-                    np.zeros(samples['mesh']['face'].shape[0],
-                             dtype=int))
-                large_scene['objects']['triangle']['face'] = tch_var_f(samples['mesh']['face'])
-                large_scene['objects']['triangle']['normal'] = tch_var_f(samples['mesh']['normal'])
-            else:
-                # TODO: REMOVE THIS
-                assert False
-                # if 'sphere' in large_scene['objects']:
-                #     del large_scene['objects']['sphere']
-                # if 'triangle' in large_scene['objects']:
-                #     del large_scene['objects']['triangle']
-                # if 'disk' not in large_scene['objects']:
-                #     large_scene['objects'] = {
-                #         'disk': {'pos': None,
-                #                  'normal': None,
-                #                  'material_idx': None}}
-                # large_scene['objects']['disk']['radius'] = tch_var_f(
-                #     np.ones(self.opt.n_splats) * self.opt.splats_radius)
-                # large_scene['objects']['disk']['material_idx'] = tch_var_l(
-                #     np.zeros(self.opt.n_splats, dtype=int).tolist())
-                # large_scene['objects']['disk']['pos'] = Variable(
-                #     samples['splats']['pos'][idx].cuda(),
-                #     requires_grad=False)
-                # large_scene['objects']['disk']['normal'] = Variable(
-                #     samples['splats']['normal'][idx].cuda(),
-                #     requires_grad=False)
+
+            # if 'sphere' in large_scene['objects']:
+            #     del large_scene['objects']['sphere']
+            if 'disk' in large_scene['objects']:
+                del large_scene['objects']['disk']
+            if 'triangle' not in large_scene['objects']:
+                large_scene['objects'] = {
+                    'triangle': {'face': None, 'normal': None,
+                                 'material_idx': None}}
+            # Either use the fixed sample or fetch new samples in every iteration
+            samples = fixed_sample if fixed_sample is not None else self.get_samples()
+            large_scene['camera']['at'] = tch_var_f(samples['mesh']['object_center'])
+            large_scene['objects']['triangle']['material_idx'] = tch_var_l(
+                np.zeros(samples['mesh']['face'].shape[0],
+                         dtype=int))
+            large_scene['objects']['triangle']['face'] = tch_var_f(samples['mesh']['face'])
+            large_scene['objects']['triangle']['normal'] = tch_var_f(samples['mesh']['normal'])
 
             # Set camera position
             if not self.opt.same_view:
@@ -749,30 +727,29 @@ class GAN(object):
                     target_normalmap_img_).view(im.shape[1], im.shape[2],
                                                 3).permute(2, 0, 1)
 
-            # Add depth image to the output structure
-            if self.iterationa_no % self.opt.save_image_interval == 0:
-                imsave((inpath + str(self.iterationa_no) +
-                        'real_normalmap_{:05d}.png'.format(idx)),
-                       target_normalmap_img_)
-                depthmap_img = get_data(depth)
-                depthmap_img = np.uint8(255 * (depthmap_img - depthmap_img.min()) /
-                                        (depthmap_img.max() - depthmap_img.min()))
-                imsave((inpath + str(self.iterationa_no) +
-                        'real_depth_{:05d}.png'.format(idx)), depthmap_img)
-                # imsave(inpath + str(self.iterationa_no) + 'real_depthmap_{:05d}.png'.format(idx), im_d)
-                # imsave(inpath + str(self.iterationa_no) + 'world_normalmap_{:05d}.png'.format(idx), target_worldnormalmap_img_)
+            # # Add depth image to the output structure
+            # if self.iterationa_no % self.opt.save_image_interval == 0:
+            #     imsave((inpath + str(self.iterationa_no) +
+            #             'real_normalmap_{:05d}.png'.format(idx)),
+            #            target_normalmap_img_)
+            #     depthmap_img = get_data(depth)
+            #     depthmap_img = np.uint8(255 * (depthmap_img - depthmap_img.min()) /
+            #                             (depthmap_img.max() - depthmap_img.min()))
+            #     imsave((inpath + str(self.iterationa_no) +
+            #             'real_depth_{:05d}.png'.format(idx)), depthmap_img)
+            #     # imsave(inpath + str(self.iterationa_no) + 'real_depthmap_{:05d}.png'.format(idx), im_d)
+            #     # imsave(inpath + str(self.iterationa_no) + 'world_normalmap_{:05d}.png'.format(idx), target_worldnormalmap_img_)
             data.append(im)
             data_depth.append(im_d)
             data_normal.append(im_n)
             data_cond.append(large_scene['camera']['eye'])
         # Stack real samples
         real_samples = torch.stack(data)
-        real_samples_depth = torch.stack(data_depth)
-        real_samples_normal = torch.stack(data_normal)
-        real_samples_cond = torch.stack(data_cond)
+        # real_samples_depth = torch.stack(data_depth)
+        # real_samples_normal = torch.stack(data_normal)
+        # real_samples_cond = torch.stack(data_cond)
 
-        if fixed_sample is not None:
-            return {'images': real_samples}
+        return {'images': real_samples}
 
     def generate_noise_vector(self, ):
         """Generate a noise vector."""
@@ -1586,6 +1563,47 @@ class GAN(object):
                 if iteration % self.opt.save_interval == 0:
                     self.save_networks(iteration)
 
+    def eval_IQ(self):
+        """Evaluate the encoder network.
+        Usage: python depth_normal_ali_stoch_moving.py --eval_IQ --eval_IQ_data <dataset.npy> \
+                      --enc_model_path=<encoder.pth path>
+        """
+        # Load pretrained model if required
+        print(' > Encoder', self.opt.enc_model_path)
+        self.netE.load_state_dict(
+            torch.load(open(self.opt.enc_model_path, 'rb')))
+        self.netE.eval()
+        print(self.netE)
+
+        # Do a quick test by directly loading the test data
+        # Note that this generates random scenes due to random views,
+        # so the results will change for different runs.
+        sample_results = []
+        for _ in range(5):
+            test_result = self.test_supervised_baseline(maxiter=10)
+            test_acc_pct = test_result['accuracy_pct']
+            test_loss = test_result['classification_loss']
+            sample_results.append(test_acc_pct)
+            print('Acc : %0.2f %%, loss: %.4f' % (test_acc_pct, test_loss))
+        sample_results = np.array(sample_results)
+        print('Mean Acc: %0.2f, std: %.4f' % (np.mean(sample_results), np.std(sample_results)))
+
+        if self.opt.eval_IQ_data is None:
+            return
+
+        test_data = np.load(self.opt.eval_IQ_data)
+        print(test_data.shape)
+        correct = 0
+        for idx in range(test_data.shape[0]):
+            qa_sample = test_data[idx]
+            mu_z, logvar_z = self.netE(tch_var_f(qa_sample))
+            z = get_data(gauss_reparametrize(mu_z, logvar_z).squeeze())
+            diff_sqr = (z - z[0]) ** 2
+            l2_dist = np.sqrt(np.sum(diff_sqr, -1))
+            correct += float(not np.any(l2_dist[1] > l2_dist[2:]))
+        avg_acc = correct / test_data.shape[0] * 100.
+        print('Acc: %0.2f%%' % avg_acc)
+
     def save_networks(self, epoch):
         """Save networks to hard disk."""
         torch.save(self.netG.state_dict(),
@@ -1643,8 +1661,11 @@ def main():
     # Create GAN
     gan = GAN(opt, exp_dir)
 
-    # Train gan
-    gan.train()
+    if opt.eval_IQ:
+        gan.eval_IQ()
+    else:
+        # Train gan
+        gan.train()
 
 
 if __name__ == '__main__':

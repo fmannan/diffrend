@@ -148,6 +148,8 @@ class Parameters():
         # Always use pos_loss to keep things simple
         #self.parser.add_argument('--IQ_training_use_pos_loss', action='store_true', default=True,
         #                         help='Uses both positive and negative loss during supervised training.')
+        self.parser.add_argument('--eval_IQ', action='store_true', help='Evaluate model on IQ test data.')
+        self.parser.add_argument('--eval_IQ_data', type=str, help='IQ Evaluation dataset path.')
 
         # GAN parameters
         self.parser.add_argument("--criterion", help="GAN Training criterion", choices=['GAN', 'WGAN'], default='WGAN')
