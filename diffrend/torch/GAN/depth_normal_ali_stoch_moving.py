@@ -1575,18 +1575,20 @@ class GAN(object):
         self.netE.eval()
         print(self.netE)
 
-        # Do a quick test by directly loading the test data
-        # Note that this generates random scenes due to random views,
-        # so the results will change for different runs.
-        sample_results = []
-        for _ in range(5):
-            test_result = self.test_supervised_baseline(maxiter=10)
-            test_acc_pct = test_result['accuracy_pct']
-            test_loss = test_result['classification_loss']
-            sample_results.append(test_acc_pct)
-            print('Acc : %0.2f %%, loss: %.4f' % (test_acc_pct, test_loss))
-        sample_results = np.array(sample_results)
-        print('Mean Acc: %0.2f, std: %.4f' % (np.mean(sample_results), np.std(sample_results)))
+        # NOTE: uncommenting the following would require running with the options for rendering
+        # Commenting out for standalone runs
+        # # Do a quick test by directly loading the test data
+        # # Note that this generates random scenes due to random views,
+        # # so the results will change for different runs.
+        # sample_results = []
+        # for _ in range(5):
+        #     test_result = self.test_supervised_baseline(maxiter=10)
+        #     test_acc_pct = test_result['accuracy_pct']
+        #     test_loss = test_result['classification_loss']
+        #     sample_results.append(test_acc_pct)
+        #     print('Acc : %0.2f %%, loss: %.4f' % (test_acc_pct, test_loss))
+        # sample_results = np.array(sample_results)
+        # print('Mean Acc: %0.2f, std: %.4f' % (np.mean(sample_results), np.std(sample_results)))
 
         if self.opt.eval_IQ_data is None:
             return
