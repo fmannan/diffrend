@@ -52,7 +52,7 @@ def copy_scripts_to_folder(expr_dir):
     shutil.copy("../params.py", expr_dir)
     shutil.copy("../renderer.py", expr_dir)
     shutil.copy("datasets.py", expr_dir)
-    shutil.copy("objects_folder_multi.py", expr_dir)
+    shutil.copy("objects_folder_multi_divide.py", expr_dir)
     shutil.copy("parameters_halfbox_shapenet.py", expr_dir)
     shutil.copy(__file__, expr_dir)
 
@@ -94,127 +94,6 @@ def gauss_reparametrize(mu, logvar, n_sample=1):
     return z.view(z.size(0)*z.size(1), z.size(2), 1, 1)
 
 
-def calc_gradient_penalty(discriminator, encoder, real_data, fake_data, fake_data_cond, z, z_enc,
-                          gp_lambda):
-    """Calculate GP."""
-    assert real_data.size(0) == fake_data.size(0)
-    alpha = torch.rand(real_data.size(0), 1, 1, 1)
-    alpha = alpha.expand(real_data.size())
-    alpha = alpha.cuda()
-
-    interpolates = Variable(alpha * real_data + ((1 - alpha) * fake_data),
-                            requires_grad=True)
-    encoder_cond = Variable(fake_data_cond, requires_grad=True)
-    interpolate_mu_z, interpolate_logvar_z = encoder(interpolates)
-
-    interpolate_z = gauss_reparametrize(interpolate_mu_z, interpolate_logvar_z)
-
-
-    interpolates_cond = Variable(fake_data_cond, requires_grad=True)
-    disc_interpolates = discriminator(interpolates, interpolates_cond, interpolate_z.detach())
-    gradients = torch.autograd.grad(
-        outputs=disc_interpolates, inputs=interpolates,
-        grad_outputs=torch.ones(disc_interpolates.size()).cuda(),
-        create_graph=True, retain_graph=True, only_inputs=True)[0]
-    gradients = gradients.contiguous().view(gradients.size(0), -1)
-    gradient_penalty = ((gradients.norm(2, dim=1) - 1) ** 2).mean() * gp_lambda
-
-    return gradient_penalty
-
-
-def calc_gradient_penalty2(discriminator, encoder, real_data, fake_data, fake_data_cond, z, z_enc,
-                          gp_lambda):
-    """Calculate GP."""
-    assert real_data.size(0) == fake_data.size(0)
-    alpha = torch.rand(real_data.size(0), 1, 1, 1)
-    alpha = alpha.expand(real_data.size())
-    alpha = alpha.cuda()
-
-    interpolates = Variable(alpha * real_data + ((1 - alpha) * fake_data),
-                            requires_grad=True)
-
-    interpolate_mu_z, interpolate_logvar_z = encoder(interpolates)
-
-    interpolate_z = gauss_reparametrize(interpolate_mu_z, interpolate_logvar_z)
-
-    interpolate_z2 = Variable(interpolate_z.data, requires_grad=True)
-    interpolates_cond = Variable(fake_data_cond, requires_grad=True)
-    disc_interpolates = discriminator(interpolates, interpolates_cond, interpolate_z2)
-    gradients = torch.autograd.grad(
-        outputs=disc_interpolates, inputs=interpolates,
-        grad_outputs=torch.ones(disc_interpolates.size()).cuda(),
-        create_graph=True, retain_graph=True, only_inputs=True)[0]
-
-    gradients_z = torch.autograd.grad(
-        outputs=disc_interpolates, inputs=interpolate_z2,
-        grad_outputs=torch.ones(disc_interpolates.size()).cuda(),
-        create_graph=True, retain_graph=True, only_inputs=True)[0]
-    gradients = gradients.contiguous().view(gradients.size(0), -1)
-    gradients_z = gradients_z.contiguous().view(gradients_z.size(0), -1)
-    gradient_penalty = ((gradients.norm(2, dim=1) - 1) ** 2).mean() * gp_lambda + ((gradients_z.norm(2, dim=1) - 1) ** 2).mean() * gp_lambda
-
-    return gradient_penalty
-
-
-def calc_gradient_penalty3(discriminator, encoder, real_data, fake_data, fake_data_cond, z, z_enc,
-                          gp_lambda):
-    """Calculate GP."""
-    assert real_data.size(0) == fake_data.size(0)
-    alpha = torch.rand(real_data.size(0), 1, 1, 1)
-    alpha = alpha.expand(real_data.size())
-    alpha = alpha.cuda()
-
-    alpha_z = torch.rand(z.size(0), 1, 1, 1)
-    alpha_z = alpha_z.expand(z.size())
-    alpha_z = alpha_z.cuda()
-
-    interpolates = Variable(alpha * real_data + ((1 - alpha) * fake_data),
-                            requires_grad=True)
-    interpolate_z = Variable(alpha_z * z_enc + ((1 - alpha_z) * z),
-                            requires_grad=True)
-    interpolates_cond = Variable(fake_data_cond, requires_grad=True)
-    disc_interpolates = discriminator(interpolates, interpolates_cond, interpolate_z)
-    gradients = torch.autograd.grad(
-        outputs=disc_interpolates, inputs=interpolates,
-        grad_outputs=torch.ones(disc_interpolates.size()).cuda(),
-        create_graph=True, retain_graph=True, only_inputs=True)[0]
-    gradients = gradients.contiguous().view(gradients.size(0), -1)
-    gradient_penalty = ((gradients.norm(2, dim=1) - 1) ** 2).mean() * gp_lambda
-
-    return gradient_penalty
-
-def calc_gradient_penalty4(discriminator, encoder, real_data, fake_data, fake_data_cond, z, z_enc,
-                          gp_lambda):
-    """Calculate GP."""
-    assert real_data.size(0) == fake_data.size(0)
-    alpha = torch.rand(real_data.size(0), 1, 1, 1)
-    alpha = alpha.expand(real_data.size())
-    alpha = alpha.cuda()
-
-    alpha_z = torch.rand(z.size(0), 1, 1, 1)
-    alpha_z = alpha_z.expand(z.size())
-    alpha_z = alpha_z.cuda()
-
-    interpolates = Variable(alpha * real_data + ((1 - alpha) * fake_data),
-                            requires_grad=True)
-    interpolate_z = Variable(alpha_z * z_enc + ((1 - alpha_z) * z),
-                            requires_grad=True)
-    interpolates_cond = Variable(fake_data_cond, requires_grad=True)
-    disc_interpolates = discriminator(interpolates, interpolates_cond, interpolate_z)
-    gradients = torch.autograd.grad(
-        outputs=disc_interpolates, inputs=interpolates,
-        grad_outputs=torch.ones(disc_interpolates.size()).cuda(),
-        create_graph=True, retain_graph=True, only_inputs=True)[0]
-
-    gradients_z = torch.autograd.grad(
-        outputs=disc_interpolates, inputs=interpolate_z,
-        grad_outputs=torch.ones(disc_interpolates.size()).cuda(),
-        create_graph=True, retain_graph=True, only_inputs=True)[0]
-    gradients = gradients.contiguous().view(gradients.size(0), -1)
-    gradients_z = gradients_z.contiguous().view(gradients_z.size(0), -1)
-    gradient_penalty = ((gradients.norm(2, dim=1) - 1) ** 2).mean() * gp_lambda + ((gradients_z.norm(2, dim=1) - 1) ** 2).mean() * gp_lambda
-
-    return gradient_penalty
 
 class GAN(object):
     """GAN class."""
@@ -271,7 +150,7 @@ class GAN(object):
         if self.opt.same_view:
             # self.cam_pos = uniform_sample_sphere(radius=self.opt.cam_dist,
             #                                      num_samples=1)
-            arrays = [np.asarray([0., 0., 1.5]) for _ in
+            arrays = [np.asarray([3., 3., 3.]) for _ in
                       range(self.opt.batchSize)]  # TODO: Magic numbers
             self.cam_pos = np.stack(arrays, axis=0)
 
@@ -283,25 +162,29 @@ class GAN(object):
 
     def create_networks(self, ):
         """Create networks."""
-        self.netG, self.netG2, self.netD, self.netD2, self.netE = create_networks(
+        self.netG, self.netG2, self.netD, self.netD2, self.netE, self.netE2 = create_networks(
             self.opt, verbose=True, depth_only=True)  # TODO: Remove D2 and G2
         # Create the normal estimation network which takes pointclouds in the
         # camera space and outputs the normals
-        assert self.netG2 is None
+        # assert self.netG2 is None
         self.sph_normals = True
         #self.netG2 = NEstNetV1_2(sph=self.sph_normals)
+        print("####################")
         print(self.netG2)
         if not self.opt.no_cuda:
             self.netD = self.netD.cuda()
             self.netG = self.netG.cuda()
             self.netE = self.netE.cuda()
-            #self.netG2 = self.netG2.cuda()
+            self.netG2 = self.netG2.cuda()
+            self.netE = self.netE2.cuda()
 
     def create_scene(self, ):
         """Create a semi-empty scene with camera parameters."""
         self.scene = create_scene(
             self.opt.splats_img_size, self.opt.splats_img_size, self.opt.fovy,
             self.opt.focal_length, self.opt.n_splats)
+        self.scene['materials']['coeffs'] = tch_var_f([[1.0, 0.0, 0.0]] *
+                                                      (self.opt.splats_img_size * self.opt.splats_img_size))
 
     def create_tensors(self, ):
         """Create the tensors."""
@@ -319,6 +202,8 @@ class GAN(object):
 
         self.noise = torch.FloatTensor(
             self.opt.batchSize, int(self.opt.nz), 1, 1)
+        self.noise2 = torch.FloatTensor(
+            self.opt.batchSize, int(self.opt.nz), 1, 1)
         self.fixed_noise = torch.FloatTensor(
             self.opt.batchSize, int(self.opt.nz), 1, 1).normal_(0, 1)
 
@@ -335,6 +220,7 @@ class GAN(object):
 
             self.label = self.label.cuda()
             self.noise = self.noise.cuda()
+            self.noise2 = self.noise2.cuda()
             self.fixed_noise = self.fixed_noise.cuda()
 
             self.one = self.one.cuda()
@@ -357,6 +243,10 @@ class GAN(object):
             self.optimizerG = optim.Adam(itertools.chain(self.netG.parameters(),self.netE.parameters()),
                                          lr=self.opt.lr,
                                          betas=(self.opt.beta1, 0.999))
+
+            self.optimizerG2 = optim.Adam(itertools.chain(self.netG2.parameters(),self.netE2.parameters()),
+                                         lr=self.opt.lr,
+                                         betas=(self.opt.beta1, 0.999))
             # self.optimizerG2 = optim.Adam(self.netG2.parameters(),
             #                               lr=self.opt.lr,
             #                               betas=(self.opt.beta1, 0.999))
@@ -364,6 +254,8 @@ class GAN(object):
             self.optimizerD = optim.RMSprop(self.netD.parameters(),
                                             lr=self.opt.lr)
             self.optimizerG = optim.RMSprop(itertools.chain(self.netG.parameters(),self.netE.parameters()),
+                                            lr=self.opt.lr)
+            self.optimizerG2 = optim.RMSprop(itertools.chain(self.netG2.parameters(),self.netE2.parameters()),
                                             lr=self.opt.lr)
             # self.optimizerG2 = optim.RMSprop(self.netG2.parameters(),
             #                                  lr=self.opt.lr)
@@ -383,12 +275,40 @@ class GAN(object):
         self.optG_z_lr_scheduler = LR_fn(
             self.optimizerG, step_size=self.opt.z_lr_sched_step,
             gamma=self.opt.z_lr_sched_gamma)
-        # self.optG2_normal_lr_scheduler = LR_fn(
-        #     self.optimizerG2, step_size=self.opt.normal_lr_sched_step,
-        #     gamma=self.opt.normal_lr_sched_gamma)
+        self.optG2_normal_lr_scheduler = LR_fn(
+            self.optimizerG2, step_size=self.opt.normal_lr_sched_step,
+            gamma=self.opt.normal_lr_sched_gamma)
         # self.LR_SCHED_MAP = [self.optG_z_lr_scheduler,
         #                      self.optG2_normal_lr_scheduler]
         # self.OPT_MAP = [self.optimizerG, self.optimizerG2]
+    def calc_gradient_penalty(self,  real_data, fake_data, fake_data_cond, z, z_enc,
+                              gp_lambda):
+        """Calculate GP."""
+        assert real_data.size(0) == fake_data.size(0)
+        alpha = torch.rand(real_data.size(0), 1, 1, 1)
+        alpha = alpha.expand(real_data.size())
+        alpha = alpha.cuda()
+
+        interpolates = Variable(alpha * real_data + ((1 - alpha) * fake_data),
+                                requires_grad=True)
+        interpolate_mu_z, interpolate_logvar_z = self.netE(interpolates)
+
+        self.interpolate_z1 = gauss_reparametrize(interpolate_mu_z, interpolate_logvar_z)
+        if self.iterationa_no <= self.opt.warmup_joint_iterations or self.iterationa_no >= self.opt.uniform_albedo_iterations:
+            interpolate_mu_z2, interpolate_logvar_z2 = self.netE2(interpolates)
+
+            self.interpolate_z2 = gauss_reparametrize(interpolate_mu_z2, interpolate_logvar_z2)
+        self.interpolate_z = torch.cat([self.interpolate_z1, self.interpolate_z2], 1)
+        interpolates_cond = Variable(fake_data_cond, requires_grad=True)
+        disc_interpolates = self.netD(interpolates, interpolates_cond, interpolate_z.detach())
+        gradients = torch.autograd.grad(
+            outputs=disc_interpolates, inputs=interpolates,
+            grad_outputs=torch.ones(disc_interpolates.size()).cuda(),
+            create_graph=True, retain_graph=True, only_inputs=True)[0]
+        gradients = gradients.contiguous().view(gradients.size(0), -1)
+        gradient_penalty = ((gradients.norm(2, dim=1) - 1) ** 2).mean() * gp_lambda
+
+        return gradient_penalty
 
     def get_samples(self):
         """Get samples."""
@@ -457,10 +377,13 @@ class GAN(object):
                         'triangle': {'face': None, 'normal': None,
                                      'material_idx': None}}
                 samples = self.get_samples()
-
-                large_scene['objects']['triangle']['material_idx'] = tch_var_l(
-                    np.zeros(samples['mesh']['face'][0].shape[0],
-                             dtype=int).tolist())
+                if self.iterationa_no < self.opt.uniform_albedo_iterations:
+                    large_scene['objects']['triangle']['material_idx'] = tch_var_l(
+                        np.zeros(samples['mesh']['face'][0].shape[0],
+                                 dtype=int).tolist())
+                else:
+                    large_scene['objects']['triangle']['material_idx'] = Variable(samples['mesh']['material_idx'].view(-1).cuda(),
+                requires_grad=False)
                 large_scene['objects']['triangle']['face'] = Variable(
                     samples['mesh']['face'][0].cuda(), requires_grad=False)
                 large_scene['objects']['triangle']['normal'] = Variable(
@@ -493,9 +416,12 @@ class GAN(object):
             else:
                 large_scene['camera']['eye'] = tch_var_f(self.cam_pos[0])
 
-            large_scene['lights']['pos'][0,:3]=tch_var_f(self.light_pos1[idx]+[0.0, 0.0, 0.1])
-            print("light position")
-            print(self.light_pos1[idx]+[0.0, 0.0, 0.1])
+            large_scene['lights']['pos'][0,:3]=tch_var_f(self.light_pos1[idx])
+            if self.iterationa_no >= self.opt.uniform_albedo_iterations:
+                large_scene['materials']['albedo'][0,:3]=tch_var_f(np.random.uniform(0.35,0.65,3))
+                large_scene['materials']['albedo'][1,:3]=tch_var_f(np.random.uniform(0.35,0.65,3))
+                large_scene['materials']['albedo'][2,:3]=tch_var_f(np.random.uniform(0.35,0.65,3))
+                large_scene['materials']['albedo'][3,:3]=tch_var_f(np.random.uniform(0.35,0.65,3))
             #large_scene['lights']['pos'][1,:3]=tch_var_f(self.light_pos2[idx])
 
             # Render scene
@@ -561,6 +487,11 @@ class GAN(object):
         self.noise.resize_(
             self.batch_size, int(self.opt.nz), 1, 1).normal_(0, 1)
         self.noisev = Variable(self.noise)  # TODO: Add volatile=True???
+    def generate_noise_vector2(self, ):
+        """Generate a noise vector."""
+        self.noise2.resize_(
+            self.batch_size, int(self.opt.nz), 1, 1).normal_(0, 1)
+        self.noisev2 = Variable(self.noise2)
 
     # def generate_normals(self, z_batch, cam_pos, camera):
     #     """Generate normals from depth."""
@@ -576,62 +507,27 @@ class GAN(object):
 
     def tensorboard_pos_hook(self, grad):
 
-        self.writer.add_image("position_gradient_im",
-                                torch.sqrt(torch.sum(grad ** 2, dim=-1)),
 
-                               self.iterationa_no)
+
         self.writer.add_scalar("position_mean_channel1",
                                get_data(torch.mean(torch.abs(grad[:,:,0]))),
                                self.iterationa_no)
-        self.writer.add_scalar("position_gradient_mean_channel2",
-                               get_data(torch.mean(torch.abs(grad[:,:,1]))),
-                               self.iterationa_no)
-        self.writer.add_scalar("position_gradient_mean_channel3",
-                               get_data(torch.mean(torch.abs(grad[:,:,2]))),
-                               self.iterationa_no)
-        self.writer.add_scalar("position_gradient_mean",
-                               get_data(torch.mean(grad)),
-                               self.iterationa_no)
-        self.writer.add_histogram("position_gradient_hist_channel1", grad[:,:,0].clone().cpu().data.numpy(),self.iterationa_no)
-        self.writer.add_histogram("position_gradient_hist_channel2", grad[:,:,1].clone().cpu().data.numpy(),self.iterationa_no)
-        self.writer.add_histogram("position_gradient_hist_channel3", grad[:,:,2].clone().cpu().data.numpy(),self.iterationa_no)
-        self.writer.add_histogram("position_gradient_hist_norm", torch.sqrt(torch.sum(grad ** 2, dim=-1)).clone().cpu().data.numpy(),self.iterationa_no)
-        #print('grad', grad)
+
 
     def tensorboard_normal_hook(self, grad):
 
-        self.writer.add_image("normal_gradient_im",
-                                torch.sqrt(torch.sum(grad ** 2, dim=-1)),
 
-                               self.iterationa_no)
-        self.writer.add_scalar("normal_gradient_mean_channel1",
-                               get_data(torch.mean(torch.abs(grad[:,:,0]))),
-                               self.iterationa_no)
         self.writer.add_scalar("normal_gradient_mean_channel2",
                                get_data(torch.mean(torch.abs(grad[:,:,1]))),
                                self.iterationa_no)
-        self.writer.add_scalar("normal_gradient_mean_channel3",
-                               get_data(torch.mean(torch.abs(grad[:,:,2]))),
-                               self.iterationa_no)
-        self.writer.add_scalar("normal_gradient_mean",
-                               get_data(torch.mean(grad)),
-                               self.iterationa_no)
-        self.writer.add_histogram("normal_gradient_hist_channel1", grad[:,:,0].clone().cpu().data.numpy(),self.iterationa_no)
-        self.writer.add_histogram("normal_gradient_hist_channel2", grad[:,:,1].clone().cpu().data.numpy(),self.iterationa_no)
-        self.writer.add_histogram("normal_gradient_hist_channel3", grad[:,:,2].clone().cpu().data.numpy(),self.iterationa_no)
-        self.writer.add_histogram("normal_gradient_hist_norm", torch.sqrt(torch.sum(grad ** 2, dim=-1)).clone().cpu().data.numpy(),self.iterationa_no)
-        #print('grad', grad)
+
 
     def tensorboard_z_hook(self, grad):
 
         self.writer.add_scalar("z_gradient_mean",
                                get_data(torch.mean(torch.abs(grad))),
                                self.iterationa_no)
-        self.writer.add_histogram("z_gradient_hist_channel", grad.clone().cpu().data.numpy(),self.iterationa_no)
 
-        self.writer.add_image("z_gradient_im",
-                               grad,
-                               self.iterationa_no)
 
 
     def render_batch(self, batch, batch_cond=None):
@@ -674,8 +570,7 @@ class GAN(object):
                                               'material_idx': None}}
         lookat = self.opt.at if self.opt.at is not None else [0.0, 0.0, 0.0, 1.0]
         self.scene['camera']['at'] = tch_var_f(lookat)
-        self.scene['objects']['disk']['material_idx'] = tch_var_l(
-            np.zeros(self.opt.splats_img_size * self.opt.splats_img_size))
+        self.scene['objects']['disk']['material_idx'] = None
         loss = 0.0
         loss_ = 0.0
         z_loss_ = 0.0
@@ -716,6 +611,9 @@ class GAN(object):
                     self.scene['camera']['eye'] = batch_cond[0]
 
             self.scene['lights']['pos'][0,:3]=tch_var_f(self.light_pos1[idx])
+            #self.scene['materials']['albedo'] = F.sigmoid(batch[idx][:, 1:4])
+            if self.iterationa_no <= self.opt.warmup_joint_iterations or self.iterationa_no >= self.opt.uniform_albedo_iterations:
+                self.scene['materials']['albedo'] = batch[idx][:, 1:4]
             #self.scene['lights']['pos'][1,:3]=tch_var_f(self.light_pos2[idx])
 
             # Render scene
@@ -907,11 +805,7 @@ class GAN(object):
         self.writer.add_scalar("z_gradient_mean",
                                get_data(torch.mean(grad[0])),
                                self.iterationa_no)
-        self.writer.add_histogram("z_gradient_hist_channel", grad[0].clone().cpu().data.numpy(),self.iterationa_no)
 
-        self.writer.add_image("z_gradient_im",
-                               grad[0].view(self.opt.splats_img_size,self.opt.splats_img_size),
-                               self.iterationa_no)
 
     def train(self, ):
         """Train network."""
@@ -921,9 +815,15 @@ class GAN(object):
             print(' > Generator', self.opt.gen_model_path)
             self.netG.load_state_dict(
                 torch.load(open(self.opt.gen_model_path, 'rb')))
+            print(' > Generator2', self.opt.gen_model_path2)
+            self.netG2.load_state_dict(
+                torch.load(open(self.opt.gen_model_path2, 'rb')))
             print(' > Discriminator', self.opt.dis_model_path)
             self.netD.load_state_dict(
                 torch.load(open(self.opt.dis_model_path, 'rb')))
+            print(' > Discriminator2', self.opt.dis_model_path2)
+            self.netD2.load_state_dict(
+                torch.load(open(self.opt.dis_model_path2, 'rb')))
 
         # Start training
         file_name = os.path.join(self.opt.out_dir, 'L2.txt')
@@ -939,12 +839,15 @@ class GAN(object):
                     self.in_critic=1
                     self.netD.zero_grad()
                     self.get_real_samples()
-
                     mu_z, logvar_z = self.netE(self.inputv)
 
-                    z_real = gauss_reparametrize(mu_z, logvar_z)
+                    z_real1 = gauss_reparametrize(mu_z, logvar_z)
+                    if self.iterationa_no <= self.opt.warmup_joint_iterations and self.iterationa_no >= self.opt.uniform_albedo_iterations:
+                        mu_z2, logvar_z2 = self.netE2(self.inputv)
 
-                    # input_D = torch.cat([self.inputv, self.inputv_depth], 1)
+                        z_real2 = gauss_reparametrize(mu_z2, logvar_z2)
+
+                    z_real = torch.cat([z_real1, z_real2], 1)
                     real_output = self.netD(self.inputv, self.inputv_cond.detach(), z_real.detach())
 
                     if self.opt.criterion == 'GAN':
@@ -959,12 +862,20 @@ class GAN(object):
                     # Train with fake
                     #################
                     self.generate_noise_vector()
-                    fake_z = self.netG(self.noisev, self.inputv_cond)
+                    fake_z1 = self.netG(self.noisev1, self.inputv_cond)
                     # The normal generator is dependent on z
 
+                    # fake_rendered, fd, loss = self.render_batch(
+                    #     fake_z, self.inputv_cond)
+                    # Do not bp through gen
+                    if self.iterationa_no <= self.opt.warmup_joint_iterations or self.iterationa_no >= self.opt.uniform_albedo_iterations:
+                        self.generate_noise_vector2()
+                        fake_z2 = self.netG2(self.noisev2, self.inputv_cond)
+                        # The normal generator is dependent on z
+                    self.noisev=torch.cat([self.noisev1,self.noisev2],1)
+                    fake_z = torch.cat([fake_z1, fake_z2], 2)
                     fake_rendered, fd, loss = self.render_batch(
                         fake_z, self.inputv_cond)
-                    # Do not bp through gen
                     outD_fake = self.netD(fake_rendered.detach(),
                                           self.inputv_cond.detach(),self.noisev.detach())
                     if self.opt.criterion == 'GAN':
@@ -981,8 +892,8 @@ class GAN(object):
 
                     # Compute gradient penalty
                     if self.opt.gp != 'None':
-                        gradient_penalty = calc_gradient_penalty3(
-                            self.netD, self.netE, self.inputv.data, fake_rendered.data,
+                        gradient_penalty = self.calc_gradient_penalty(
+                            self.inputv.data, fake_rendered.data,
                             self.inputv_cond.data, self.noisev.data, z_real.data, self.opt.gp_lambda)
                         gradient_penalty.backward()
                         errD += gradient_penalty
@@ -1007,7 +918,20 @@ class GAN(object):
                 self.netE.zero_grad()
                 self.in_critic=0
                 self.generate_noise_vector()
-                fake_z = self.netG(self.noisev, self.inputv_cond)
+                self.generate_noise_vector()
+                fake_z1 = self.netG(self.noisev1, self.inputv_cond)
+                # The normal generator is dependent on z
+
+                # fake_rendered, fd, loss = self.render_batch(
+                #     fake_z, self.inputv_cond)
+                # Do not bp through gen
+                if self.iterationa_no <= self.opt.warmup_joint_iterations or self.iterationa_no >= self.opt.uniform_albedo_iterations:
+                    self.generate_noise_vector2()
+                    fake_z2 = self.netG2(self.noisev2, self.inputv_cond)
+                    # The normal generator is dependent on z
+                self.noisev=torch.cat([self.noisev1,self.noisev2],1)
+                fake_z = torch.cat([fake_z1, fake_z2], 2)
+                #fake_z = self.netG(self.noisev, self.inputv_cond)
                 if iteration % self.opt.print_interval*4 == 0:
                     fake_z.register_hook(self.tensorboard_hook)
 
@@ -1028,8 +952,13 @@ class GAN(object):
 
                 mu_z, logvar_z = self.netE(self.inputv)
 
-                z_real = gauss_reparametrize(mu_z, logvar_z)
+                z_real1 = gauss_reparametrize(mu_z, logvar_z)
+                if self.iterationa_no <= self.opt.warmup_joint_iterations or self.iterationa_no >= self.opt.uniform_albedo_iterations:
+                    mu_z2, logvar_z2 = self.netE2(self.inputv)
 
+                    z_real2 = gauss_reparametrize(mu_z2, logvar_z2)
+
+                z_real = torch.cat([z_real1, z_real2], 1)
                 # input_D = torch.cat([self.inputv, self.inputv_depth], 1)
                 real_output_z = self.netD(self.inputv, self.inputv_cond, z_real)
 
@@ -1066,7 +995,8 @@ class GAN(object):
                         self.optG_z_lr_scheduler.step()
 
                     self.optimizerG.step()
-
+                    if self.iterationa_no <= self.opt.warmup_joint_iterations or self.iterationa_no >= self.opt.uniform_albedo_iterations:
+                        self.optimizerG2.step()
 
 
                 # Log print

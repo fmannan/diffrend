@@ -407,7 +407,7 @@ class DCGAN_G2(nn.Module):
 class DCGAN_G(nn.Module):
     """DCGAN generator."""
 
-    def __init__(self, isize, nz, nc, ngf, ngpu, n_extra_layers=1,
+    def __init__(self, isize, nz, nc, ngf, ngpu, n_extra_layers=0,
                  use_tanh=False, norm=nn.BatchNorm2d):
         """Constructor."""
 
@@ -463,7 +463,7 @@ class DCGAN_G(nn.Module):
                             nn.LeakyReLU())
 
         main_2.add_module('final_{0}-{1}_convt'.format(cngf, nc),
-                        nn.ConvTranspose2d(cngf, 1, 4, 2, 1, bias=True))
+                        nn.ConvTranspose2d(cngf, 4, 4, 2, 1, bias=True))
         if use_tanh:
             main_2.add_module('final_{0}_tanh'.format(nc), nn.Tanh())
         main_2.add_module('reshape', ReshapeSplats())
@@ -766,12 +766,6 @@ class LatentEncoder(nn.Module):
         # significant difference.
 
     def forward(self, input):
-        # z = z.view(z.size(0), z.size(1), 1, 1)
-        # propogated = Variable(torch.ones((input.size(0), z.size(1),
-        #                                   input.size(2), input.size(3))),
-        #                       requires_grad=False).cuda() * z
-        # input = torch.cat([input, propogated], 1)
-
         conv_out = self.conv_modules(input)
         mu = self.enc_mu(conv_out)
         logvar = self.enc_logvar(conv_out)
