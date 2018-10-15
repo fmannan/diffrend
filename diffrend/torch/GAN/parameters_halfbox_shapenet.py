@@ -81,8 +81,8 @@ class Parameters():
         # Network parameters
         self.parser.add_argument('--gen_type', type=str, default='dcgan', help='One of: mlp, cnn, dcgan, resnet') # try resnet :)
         self.parser.add_argument('--gen_norm', type=str, default='batchnorm', help='One of: None, batchnorm, instancenorm')
-        self.parser.add_argument('--ngf', type=int, default=85, help='number of features in the generator network')
-        self.parser.add_argument('--nef', type=int, default=65, help='number of features in the generator network')
+        self.parser.add_argument('--ngf', type=int, default=60, help='number of features in the generator network')
+        self.parser.add_argument('--nef', type=int, default=50, help='number of features in the generator network')
         self.parser.add_argument('--gen_nextra_layers', type=int, default=1, help='number of extra layers in the generator network')
         self.parser.add_argument('--gen_bias_type', type=str, default=None, help='One of: None, plane')
         self.parser.add_argument('--netG', default='', help="path to netG (to continue training)")
@@ -96,9 +96,10 @@ class Parameters():
         self.parser.add_argument('--disc_norm', type=str, default='None', help='One of: None, batchnorm, instancenorm')
         self.parser.add_argument('--ndf', type=int, default=80, help='number of features in the discriminator network')
         self.parser.add_argument('--disc_nextra_layers', type=int, default=0, help='number of extra layers in the discriminator network')
-        self.parser.add_argument('--nz', type=int, default=100, help='size of the latent z vector')
+        self.parser.add_argument('--nz', type=int, default=60, help='size of the latent z vector')
         self.parser.add_argument('--netD', default='', help="path to netD (to continue training)")
         self.parser.add_argument('--netE', default='', help="path to netD (to continue training)")
+        self.parser.add_argument('--netE2', default='', help="path to netD (to continue training)")
 
         # Optimization parameters
         self.parser.add_argument('--optimizer', type=str, default='adam', help='Optimizer (adam, rmsprop)')
@@ -131,6 +132,8 @@ class Parameters():
                                  help='Spatial smoothness loss weight.')
         self.parser.add_argument('--beta1', type=float, default=0.0, help='beta1 for adam. default=0.5')
         self.parser.add_argument('--n_iter', type=int, default=95201, help='number of iterations to train')
+        self.parser.add_argument('--warmup_joint_iterations', type=int, default=5000, help='number of iterations to train')
+        self.parser.add_argument('--uniform_albedo_iterations', type=int, default=25201, help='number of iterations to train')
         self.parser.add_argument('--batchSize', type=int, default=4, help='input batch size')
 
         # GAN parameters

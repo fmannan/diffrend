@@ -176,7 +176,7 @@ class GAN(object):
             self.netG = self.netG.cuda()
             self.netE = self.netE.cuda()
             self.netG2 = self.netG2.cuda()
-            self.netE = self.netE2.cuda()
+            self.netE2 = self.netE2.cuda()
 
     def create_scene(self, ):
         """Create a semi-empty scene with camera parameters."""
@@ -200,7 +200,7 @@ class GAN(object):
             self.opt.render_img_size)
         self.input_cond = torch.FloatTensor(self.opt.batchSize, 3)
 
-        self.noise = torch.FloatTensor(
+        self.noise1 = torch.FloatTensor(
             self.opt.batchSize, int(self.opt.nz), 1, 1)
         self.noise2 = torch.FloatTensor(
             self.opt.batchSize, int(self.opt.nz), 1, 1)
@@ -219,7 +219,7 @@ class GAN(object):
             self.input_cond = self.input_cond.cuda()
 
             self.label = self.label.cuda()
-            self.noise = self.noise.cuda()
+            self.noise1 = self.noise1.cuda()
             self.noise2 = self.noise2.cuda()
             self.fixed_noise = self.fixed_noise.cuda()
 
@@ -300,7 +300,7 @@ class GAN(object):
             self.interpolate_z2 = gauss_reparametrize(interpolate_mu_z2, interpolate_logvar_z2)
         self.interpolate_z = torch.cat([self.interpolate_z1, self.interpolate_z2], 1)
         interpolates_cond = Variable(fake_data_cond, requires_grad=True)
-        disc_interpolates = self.netD(interpolates, interpolates_cond, interpolate_z.detach())
+        disc_interpolates = self.netD(interpolates, interpolates_cond, self.interpolate_z.detach())
         gradients = torch.autograd.grad(
             outputs=disc_interpolates, inputs=interpolates,
             grad_outputs=torch.ones(disc_interpolates.size()).cuda(),
@@ -484,9 +484,9 @@ class GAN(object):
 
     def generate_noise_vector(self, ):
         """Generate a noise vector."""
-        self.noise.resize_(
+        self.noise1.resize_(
             self.batch_size, int(self.opt.nz), 1, 1).normal_(0, 1)
-        self.noisev = Variable(self.noise)  # TODO: Add volatile=True???
+        self.noisev1 = Variable(self.noise1)  # TODO: Add volatile=True???
     def generate_noise_vector2(self, ):
         """Generate a noise vector."""
         self.noise2.resize_(
@@ -842,7 +842,7 @@ class GAN(object):
                     mu_z, logvar_z = self.netE(self.inputv)
 
                     z_real1 = gauss_reparametrize(mu_z, logvar_z)
-                    if self.iterationa_no <= self.opt.warmup_joint_iterations and self.iterationa_no >= self.opt.uniform_albedo_iterations:
+                    if self.iterationa_no <= self.opt.warmup_joint_iterations or self.iterationa_no >= self.opt.uniform_albedo_iterations:
                         mu_z2, logvar_z2 = self.netE2(self.inputv)
 
                         z_real2 = gauss_reparametrize(mu_z2, logvar_z2)
@@ -916,8 +916,9 @@ class GAN(object):
                 #     p.requires_grad = False
                 self.netG.zero_grad()
                 self.netE.zero_grad()
+                self.netG2.zero_grad()
+                self.netE2.zero_grad()
                 self.in_critic=0
-                self.generate_noise_vector()
                 self.generate_noise_vector()
                 fake_z1 = self.netG(self.noisev1, self.inputv_cond)
                 # The normal generator is dependent on z
@@ -970,8 +971,10 @@ class GAN(object):
                     errE.backward(self.one, retain_graph=True)
                 else:
                     raise ValueError('Unknown GAN criterium')
-                reconstruction_z = self.netG(z_real, self.inputv_cond)
-
+                reconstruction_z1 = self.netG(z_real1, self.inputv_cond)
+                if self.iterationa_no <= self.opt.warmup_joint_iterations or self.iterationa_no >= self.opt.uniform_albedo_iterations:
+                    reconstruction_z2 = self.netG2(z_real2, self.inputv_cond)
+                reconstruction_z = torch.cat([reconstruction_z1, reconstruction_z2], 2)
                 reconstruction_rendered, reconstructiond, loss = self.render_batch(
                     reconstruction_z, self.inputv_cond)
 
@@ -1056,8 +1059,20 @@ class GAN(object):
                 if iteration % (2*self.opt.save_image_interval) == 0:
 
                     cam_pos=self.inputv_cond[0].repeat(self.opt.batchSize,1)
+                    fake_z1 = self.netG(self.noisev1, cam_pos)
+                    # The normal generator is dependent on z
 
-                    fake_z = self.netG(self.noisev, cam_pos)
+                    # fake_rendered, fd, loss = self.render_batch(
+                    #     fake_z, self.inputv_cond)
+                    # Do not bp through gen
+                    if self.iterationa_no <= self.opt.warmup_joint_iterations or self.iterationa_no >= self.opt.uniform_albedo_iterations:
+
+                        fake_z2 = self.netG2(self.noisev2, cam_pos)
+                        # The normal generator is dependent on z
+
+                    fake_z = torch.cat([fake_z1, fake_z2], 2)
+
+                    
                     # The normal generator is dependent on z
 
                     fake_rendered, fd, loss = self.render_batch(

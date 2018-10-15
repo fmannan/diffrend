@@ -675,14 +675,9 @@ def render_splats_along_ray(scene, **params):
     """
     frag_normals = normals_CC[:, :3]
     frag_pos = pos_CC[:, :3]
-    if material_idx is not None:
-        frag_albedo = torch.index_select(material_albedo, 0, material_idx)
-        frag_coeffs = torch.index_select(material_coeffs, 0, material_idx)
-    else:
-        frag_albedo = material_albedo
-        frag_coeffs = material_coeffs
-    # frag_albedo = torch.index_select(material_albedo, 0, material_idx)
-    # frag_coeffs = torch.index_select(material_coeffs, 0, material_idx)
+
+    frag_albedo = torch.index_select(material_albedo, 0, material_idx)
+    frag_coeffs = torch.index_select(material_coeffs, 0, material_idx)
 
     im_color = fragment_shader(frag_normals=frag_normals,
                                light_dir=light_pos_CC[:, np.newaxis, :3] - frag_pos[:, :3],
