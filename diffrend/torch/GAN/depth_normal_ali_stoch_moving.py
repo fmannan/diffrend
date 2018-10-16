@@ -855,7 +855,7 @@ class GAN(object):
                         errD_real.backward()
                     elif self.opt.criterion == 'WGAN':
                         errD_real = real_output.mean()
-                        errD_real.backward(self.mone)
+                        errD_real.backward(self.mone, retain_graph=True)
                     else:
                         raise ValueError('Unknown GAN criterium')
 
@@ -885,7 +885,7 @@ class GAN(object):
                         errD = errD_real + errD_fake
                     elif self.opt.criterion == 'WGAN':
                         errD_fake = outD_fake.mean()
-                        errD_fake.backward(self.one)
+                        errD_fake.backward(self.one, retain_graph=True)
                         errD = errD_fake - errD_real
                     else:
                         raise ValueError('Unknown GAN criterium')
@@ -895,7 +895,7 @@ class GAN(object):
                         gradient_penalty = self.calc_gradient_penalty(
                             self.inputv.data, fake_rendered.data,
                             self.inputv_cond.data, self.noisev.data, z_real.data, self.opt.gp_lambda)
-                        gradient_penalty.backward()
+                        gradient_penalty.backward(retain_graph=True)
                         errD += gradient_penalty
 
                     gnorm_D = torch.nn.utils.clip_grad_norm(
@@ -980,7 +980,7 @@ class GAN(object):
 
                 mse_criterion = nn.MSELoss().cuda()
                 reconstruction_loss = mse_criterion(reconstruction_rendered, self.inputv)
-                reconstruction_loss.backward()
+                reconstruction_loss.backward(retain_graph=True)
                 gnorm_G = torch.nn.utils.clip_grad_norm(
                     self.netG.parameters(), self.opt.max_gnorm)  # TODO
                 if (self.opt.alt_opt_zn_interval is not None and
