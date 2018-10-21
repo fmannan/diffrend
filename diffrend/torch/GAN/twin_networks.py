@@ -130,14 +130,26 @@ def create_networks(opt, verbose=True, **params):
         netE.load_state_dict(torch.load(opt.netE))
     else:
         netE.apply(weights_init)
+    netC = CamEncoder(nz, 3, nef)
+    if opt.netC != '':
+        netC.load_state_dict(torch.load(opt.netC))
+    else:
+        netC.apply(weights_init)
+
+    netS = Stat()
+    if opt.netS != '':
+        netS.load_state_dict(torch.load(opt.netS))
+    else:
+        netS.apply(weights_init)
     if verbose:
         print(netG)
         print(netE)
         print(netG2)
         print(netD)
         print(netD2)
+        print(netC)
 
-    return netG, netG2, netD, netD2, netE
+    return netG,  netD,  netE, netS, netC
 
 
 def weights_init(m):
@@ -407,7 +419,7 @@ class DCGAN_G2(nn.Module):
 class DCGAN_G(nn.Module):
     """DCGAN generator."""
 
-    def __init__(self, isize, nz, nc, ngf, ngpu, n_extra_layers=1,
+    def __init__(self, isize, nz, nc, ngf, ngpu, n_extra_layers=0,
                  use_tanh=False, norm=nn.BatchNorm2d):
         """Constructor."""
 
@@ -644,7 +656,7 @@ class _netD(nn.Module):
 
         self.main = nn.Sequential(
             # input is (nc) x 64 x 64
-            nn.Conv2d(nc+3, ndf, 4, 2, 1, bias=True),
+            nn.Conv2d(nc, ndf, 4, 2, 1, bias=True),
             #nn.Dropout(p=0.3),
             nn.LeakyReLU(),
             # state size. (ndf) x 32 x 32
@@ -675,13 +687,13 @@ class _netD(nn.Module):
 
         )
 
-    def forward(self, x, z, z2):
+    def forward(self, x,  z2):
         # import ipdb; ipdb.set_trace()
-        z = z.view(z.size(0), z.size(1), 1, 1)
-        propogated = Variable(torch.ones((x.size(0), z.size(1),
-                                          x.size(2), x.size(3))),
-                              requires_grad=False).cuda() * z
-        x = torch.cat([x, propogated], 1)
+        # z = z.view(z.size(0), z.size(1), 1, 1)
+        # propogated = Variable(torch.ones((x.size(0), z.size(1),
+        #                                   x.size(2), x.size(3))),
+        #                       requires_grad=False).cuda() * z
+        # x = torch.cat([x, propogated], 1)
         x = self.main(x)
         x2 = torch.cat([x, z2], 1)
         x2= self.main2(x2)
@@ -766,16 +778,49 @@ class LatentEncoder(nn.Module):
         # significant difference.
 
     def forward(self, input):
-        # z = z.view(z.size(0), z.size(1), 1, 1)
-        # propogated = Variable(torch.ones((input.size(0), z.size(1),
-        #                                   input.size(2), input.size(3))),
-        #                       requires_grad=False).cuda() * z
-        # input = torch.cat([input, propogated], 1)
-
         conv_out = self.conv_modules(input)
         mu = self.enc_mu(conv_out)
         logvar = self.enc_logvar(conv_out)
         return (mu.view(mu.size(0), -1), logvar.view(logvar.size(0), -1))
+
+class CamEncoder(nn.Module):
+    def __init__(self, nlatent, input_nc, nef):
+        super(CamEncoder, self).__init__()
+
+        use_bias = False
+        norm_layer = functools.partial(nn.BatchNorm2d, affine=True)
+        kw = 3
+
+        sequence = [
+            nn.Conv2d(10, nef, kernel_size=1, stride=1, padding=0, bias=True),
+            nn.LeakyReLU(),
+
+            nn.Conv2d(nef, 3, kernel_size=1, stride=1, padding=0, bias=use_bias),
+        ]
+
+        self.conv_modules = nn.Sequential(*sequence)
+
+    def forward(self, input):
+        input = input.contiguous().view(input.size(0), input.size(1), 1, 1)
+        conv_out = self.conv_modules(input)
+        return (conv_out.view(conv_out.size(0), -1))
+class Stat(nn.Module):
+    def __init__(self, z_dim=10, dim=164):
+        super(Stat, self).__init__()
+        self.main = nn.Sequential(
+            nn.Conv2d(90, dim, kernel_size=1, padding=0, bias=True),
+            nn.ReLU(True),
+            nn.Conv2d(dim, dim, kernel_size=1, padding=0, bias=True),
+            nn.ReLU(True),
+            nn.Conv2d(dim, z_dim, kernel_size=1, padding=0, bias=False),
+
+        )
+
+
+    def forward(self, x):
+        out = self.main(x)
+        return out.view(x.size(0), -1)
+
 class _netD_256(nn.Module):
     def __init__(self, ngpu, nc, ndf, isize, nz,use_sigmoid=0):
         super(_netD_256, self).__init__()

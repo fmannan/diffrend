@@ -63,7 +63,6 @@ class Parameters():
         self.parser.add_argument('--full_sphere_sampling', action='store_true', default=False, help='Use toy example')
         self.parser.add_argument('--full_sphere_sampling_light', action='store_true', default=True, help='Use toy example')
         self.parser.add_argument('--random_rotation', action='store_true', default=True, help='Use toy example')
-        self.parser.add_argument('--only_foreground_centered', action='store_true', default=True, help='Use toy example')
         self.parser.add_argument('--stoch_enc', action='store_true', default=False, help='Use toy example')
         self.parser.add_argument('--only_background', action='store_true', default=False, help='Use toy example')
         self.parser.add_argument('--only_foreground', action='store_true', default=False, help='Use toy example')
@@ -71,11 +70,10 @@ class Parameters():
         self.parser.add_argument('--use_penality', action='store_true', default=True, help='Use toy example')
         self.parser.add_argument('--use_mesh', action='store_true', default=True, help='Render dataset with meshes')
         self.parser.add_argument('--gen_model_path', type=str, default=None, help='dataset root directory')
-        self.parser.add_argument('--enc_model_path', type=str, default=None, help='dataset root directory')
         self.parser.add_argument('--gen_model_path2', type=str, default=None, help='dataset root directory')
         self.parser.add_argument('--dis_model_path', type=str, default=None, help='dataset root directory')
         self.parser.add_argument('--dis_model_path2', type=str, default=None, help='dataset root directory')
-        self.parser.add_argument('--bg_model', type=str, default='../../../data/plane.obj', help='Background model path')
+        self.parser.add_argument('--bg_model', type=str, default='../../../data/halfbox.obj', help='Background model path')
         self.parser.add_argument('--gz_gi_loss', type=float, default=0.0,help='grad z and grad img consistency.')
         self.parser.add_argument('--pixel_samples', type=int, default=1, help="Samples per pixel.")
 
@@ -91,6 +89,7 @@ class Parameters():
         self.parser.add_argument('--fix_splat_pos', action='store_true', default=True, help='X and Y coordinates are fix')
         self.parser.add_argument('--zloss', type=float, default=0.0, help='use Z loss')
         self.parser.add_argument('--unit_normalloss', type=float, default=0.0, help='use unit_normal loss')
+        self.parser.add_argument('--entropy_coeff', type=float, default=0.01, help='use unit_normal loss')
         self.parser.add_argument('--norm_sph_coord', action='store_true', default=True, help='Use spherical coordinates for the normal')
         self.parser.add_argument('--max_gnorm', type=float, default=500., help='max grad norm to which it will be clipped (if exceeded)')
         self.parser.add_argument('--disc_type', type=str, default='cnn', help='One of: cnn, dcgan')
@@ -100,6 +99,9 @@ class Parameters():
         self.parser.add_argument('--nz', type=int, default=100, help='size of the latent z vector')
         self.parser.add_argument('--netD', default='', help="path to netD (to continue training)")
         self.parser.add_argument('--netE', default='', help="path to netD (to continue training)")
+        self.parser.add_argument('--netS', default='', help="path to netD (to continue training)")
+        self.parser.add_argument('--netC', default='', help="path to netD (to continue training)")
+        self.parser.add_argument('--encoder_cam', action='store_true', default=False, help='Use encoding or noise for camera parameters')
 
         # Optimization parameters
         self.parser.add_argument('--optimizer', type=str, default='adam', help='Optimizer (adam, rmsprop)')
@@ -131,7 +133,7 @@ class Parameters():
         self.parser.add_argument('--spatial_loss_weight', type=float, default=0.5,
                                  help='Spatial smoothness loss weight.')
         self.parser.add_argument('--beta1', type=float, default=0.0, help='beta1 for adam. default=0.5')
-        self.parser.add_argument('--n_iter', type=int, default=95201, help='number of iterations to train')
+        self.parser.add_argument('--n_iter', type=int, default=76201, help='number of iterations to train')
         self.parser.add_argument('--batchSize', type=int, default=4, help='input batch size')
 
         # GAN parameters
@@ -156,11 +158,11 @@ class Parameters():
         self.parser.add_argument('--angle', type=int,  default=30,help='cam angle')
         self.parser.add_argument('--fovy', type=float, default=30, help='Field of view in the vertical direction. Default: 15.0')
         self.parser.add_argument('--focal_length', type=float, default=0.1, help='focal length')
-        self.parser.add_argument('--theta', nargs=2, type=float, default=[0,15], help='Angle in degrees from the z-axis.')
-        self.parser.add_argument('--phi', nargs=2, type=float, default=[0,360], help='Angle in degrees from the x-axis.')
-        self.parser.add_argument('--axis', nargs=3, default=[0.7,0.75,0.8],type=float, help='Axis for random camera position.')
+        self.parser.add_argument('--theta', nargs=2, type=float, default=[20,80], help='Angle in degrees from the z-axis.')
+        self.parser.add_argument('--phi', nargs=2, type=float, default=[20,70], help='Angle in degrees from the x-axis.')
+        self.parser.add_argument('--axis', nargs=3, default=[0.7,1,1],type=float, help='Axis for random camera position.')
         self.parser.add_argument('--cam_pos', nargs=3, type=float, help='Camera position.')
-        self.parser.add_argument('--at', nargs=3, default=[-0.015,-0.045,0.02], type=float, help='Camera lookat position.')
+        self.parser.add_argument('--at', nargs=3, default=[0.05,0.0,0], type=float, help='Camera lookat position.')
         #self.parser.add_argument('--at', nargs=3, default=[ 0, 1, 0], type=float, help='Camera lookat position.')
         self.parser.add_argument('--sphere-halfbox', action='store_true', help='Renders demo sphere-halfbox')
         self.parser.add_argument('--norm_depth_image_only', action='store_true', default=False, help='Render on the normalized'
