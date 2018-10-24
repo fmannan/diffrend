@@ -669,6 +669,7 @@ class GAN(object):
         normal_away_from_cam_loss_ = 0.0
         image_depth_consistency_loss_ = 0.0
         for idx in range(batch_size):
+            scene = copy.deepcopy(self.scene)
             # Get splats positions and normals
             eps = 1e-3
             if self.opt.rescaled:
@@ -680,35 +681,35 @@ class GAN(object):
                 z = F.relu(-batch[idx][:, 0]) + z_min
                 pos = -F.relu(-batch[idx][:, 0]) - z_min
 
-            self.scene['objects']['disk']['pos'] = pos
+            scene['objects']['disk']['pos'] = pos
 
             # Normal estimation network and est_normals don't go together
-            self.scene['objects']['disk']['normal'] = None
+            scene['objects']['disk']['normal'] = None
 
             # Set camera position
             if batch_cond is None:
                 if not self.opt.same_view:
-                    self.scene['camera']['eye'] = tch_var_f(cam_pos[idx])
+                    scene['camera']['eye'] = tch_var_f(cam_pos[idx])
                 else:
-                    self.scene['camera']['eye'] = tch_var_f(cam_pos[0])
+                    scene['camera']['eye'] = tch_var_f(cam_pos[0])
             else:
                 if not self.opt.same_view:
-                    self.scene['camera']['eye'] = batch_cond[idx]
+                    scene['camera']['eye'] = batch_cond[idx]
                 else:
-                    self.scene['camera']['eye'] = batch_cond[0]
+                    scene['camera']['eye'] = batch_cond[0]
 
-            self.scene['lights']['pos'][0,:3]=tch_var_f(self.light_pos1[idx])
+            scene['lights']['pos'][0,:3]=tch_var_f(self.light_pos1[idx])
             #self.scene['lights']['pos'][1,:3]=tch_var_f(self.light_pos2[idx])
 
             # Render scene
             # res = render_splats_NDC(self.scene)
-            res = render_splats_along_ray(self.scene,
+            res = render_splats_along_ray(scene,
                                           samples=self.opt.pixel_samples,
                                           normal_estimation_method='plane')
 
             world_tform = cam_to_world(res['pos'].view((-1, 3)),
                                        res['normal'].view((-1, 3)),
-                                       self.scene['camera'])
+                                       scene['camera'])
 
             # Get rendered output
             res_pos = res['pos'].contiguous()
@@ -812,13 +813,13 @@ class GAN(object):
                 gradImg = grad_spatial2d(torch.mean(im,
                                                     dim=0)[:, :, np.newaxis])
                 for (gZ, gI) in zip(gradZ, gradImg):
-                    loss += (self.opt.gz_gi_loss * torch.mean(torch.abs(
+                    loss = loss + (self.opt.gz_gi_loss * torch.mean(torch.abs(
                                 torch.abs(gZ) - torch.abs(gI))))
             # Store normalized depth into the data
             rendered_data.append(im)
             rendered_data_depth.append(im_d)
-            rendered_data_cond.append(self.scene['camera']['eye'])
-            scenes.append(self.scene)
+            rendered_data_cond.append(scene['camera']['eye'])
+            scenes.append(scene)
 
         rendered_data = torch.stack(rendered_data)
         rendered_data_depth = torch.stack(rendered_data_depth)
@@ -977,7 +978,7 @@ class GAN(object):
                             self.netD, self.netE, self.inputv.data, fake_rendered.data,
                             cam_pos.data, self.noisev.data, z_real.data, self.opt.gp_lambda)
                         gradient_penalty.backward()
-                        errD += gradient_penalty
+                        errD = errD + gradient_penalty
 
                     gnorm_D = torch.nn.utils.clip_grad_norm(
                         self.netD.parameters(), self.opt.max_gnorm)  # TODO
@@ -1146,8 +1147,8 @@ class GAN(object):
                     fake_rendered, fd, loss = self.render_batch(
                         fake_z, cam_pos_same)
 
-                    cs = tch_var_f(contrast_stretch_percentile(
-                        get_data(fd), 200, [fd.data.min(), fd.data.max()]))
+                    # cs = tch_var_f(contrast_stretch_percentile(
+                    #     get_data(fd), 200, [fd.data.min(), fd.data.max()]))
                     torchvision.utils.save_image(
                         fake_rendered.data,
                         os.path.join(self.opt.vis_images,
@@ -1156,8 +1157,8 @@ class GAN(object):
 
                 # Save input images
                 if iteration % (self.opt.save_image_interval) == 0:
-                    cs = tch_var_f(contrast_stretch_percentile(
-                        get_data(fd), 200, [fd.data.min(), fd.data.max()]))
+                    # cs = tch_var_f(contrast_stretch_percentile(
+                    #     get_data(fd), 200, [fd.data.min(), fd.data.max()]))
                     torchvision.utils.save_image(
                         self.inputv.data, os.path.join(
                             self.opt.vis_images, 'input_%d.png' % (iteration)),
