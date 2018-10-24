@@ -86,7 +86,7 @@ def fragment_shader(frag_normals, light_dir, cam_dir,
     # Fragment shading
     #light_dir = light_pos[:, np.newaxis, :] - frag_pos
     light_dir_norm = torch.sqrt(torch.sum(light_dir ** 2, dim=-1))[:, :, np.newaxis]
-    light_dir /= light_dir_norm  # TODO: nonzero_divide
+    light_dir = light_dir / light_dir_norm  # TODO: nonzero_divide
     # Attenuate the lights
     pow_val = 2 if not use_quartic else 4
     per_frag_att_factor = 1 / (light_attenuation_coeffs[:, 0][:, np.newaxis, np.newaxis] +

@@ -41,7 +41,8 @@ def get_data(x):
         return {key: get_data(x[key]) for key in x}
     elif type(x) is list:
         return [get_data(e) for e in x]
-    elif type(x) is not torch.autograd.Variable:
+    elif type(x) is not torch.autograd.Variable and \
+        type(x) is not torch.Tensor:
         return x
     return x.cpu().data.numpy() if x.is_cuda else x.data.numpy()
 
