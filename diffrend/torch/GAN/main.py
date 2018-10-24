@@ -320,8 +320,8 @@ class GAN(object):
         self.fixed_noise = torch.FloatTensor(
             self.opt.batchSize, int(self.opt.nz), 1, 1).normal_(0, 1)
 
-        self.label = torch.FloatTensor(2*self.opt.batchSize)
-        self.one = torch.FloatTensor([1])
+        self.label = torch.tensor(2*self.opt.batchSize) #torch.FloatTensor(2*self.opt.batchSize)
+        self.one = torch.tensor(1.0) #torch.FloatTensor([1])
         self.mone = self.one * -1
 
         # Move them to the GPU
@@ -1006,9 +1006,10 @@ class GAN(object):
                 if self.opt.encoder_cam:
                     cam_pos = self.netC(self.noisev[:,90:])
                 else:
-                    cam_pos = self.netC(z_real[:,90:])
+                    cam_pos = self.netC(z_real[:,90:].contiguous())
+                #cam_pos = z_real[:, :3] # .contiguous()
                 #cam_pos = cam_pos.contiguous().view(cam_pos.size(0),-1)
-                # cam_pos = self.netC(self.noisev[:,90:])
+                #cam_pos = Variable(torch.cuda.FloatTensor(self.cam_pos), requires_grad=False)  # self.netC(self.noisev[:,90:])
                 fake_z = self.netG(self.noisev, cam_pos)
                 if iteration % self.opt.print_interval*4 == 0:
                     fake_z.register_hook(self.tensorboard_hook)
@@ -1174,8 +1175,8 @@ class GAN(object):
                    '%s/netD_epoch_%d.pth' % (self.opt.out_dir, epoch))
         torch.save(self.netE.state_dict(),
                    '%s/netE_epoch_%d.pth' % (self.opt.out_dir, epoch))
-        torch.save(self.netD2.state_dict(),
-                   '%s/netD2_epoch_%d.pth' % (self.opt.out_dir, epoch))
+        torch.save(self.netC.state_dict(),
+                   '%s/netC_epoch_%d.pth' % (self.opt.out_dir, epoch))
 
     def save_images(self, epoch, input, output):
         """Save images."""

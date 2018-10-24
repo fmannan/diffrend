@@ -300,7 +300,10 @@ def lookat(eye, at, up):
     :param up:
     :return:
     """
-    return lookat_inv(eye, at, up).inverse()
+    rot_matrix_T = torch.transpose(lookat_rot_inv(eye, at, up), 1, 0)
+    rot_translate = torch.cat((rot_matrix_T, -torch.mm(rot_matrix_T, eye[:3][:, np.newaxis])), dim=1)
+    return torch.cat((rot_translate, tch_var_f([0, 0, 0, 1.])[np.newaxis, :]), dim=0)
+    #return lookat_inv(eye, at, up).inverse()
 
 
 def lookat_inv(eye, at, up):
