@@ -83,16 +83,16 @@ def tensor_cross_prod(u, M):
 
     return torch.stack((s0, s1, s2), dim=2)
 
+
 def nonzero_divide(x, y):
     """ x and y need to have the same dimensions.
     :param x:
     :param y:
     :return:
     """
-    assert list(x.size()) == list(y.size())
-
-    mask = torch.abs(y) > 0
-    return x.masked_scatter(mask, x.masked_select(mask) / y.masked_select(mask))
+    mask = (torch.abs(y) > 0).float()
+    divisor = y * mask + (1 - mask)
+    return x / divisor
 
 
 def unit_norm2_L2loss(x, scale):
@@ -129,15 +129,14 @@ def unit_norm2sqr_L1loss(x, scale):
 
 def normalize_maxmin(x):
     min_val = torch.min(x)
-    return (x - min_val) / (torch.max(x) - min_val)
+    return nonzero_divide(x - min_val, torch.max(x) - min_val)
 
 
 def normalize(u, eps=1e-10):
     denom = norm_p(u, 2, eps=eps)
     if u.dim() > 1:
         denom = denom[..., np.newaxis]
-    # TODO: nonzero_divide for rows with norm = 0
-    return u / (denom + eps)
+    return nonzero_divide(u, denom)  # u / (denom + eps)
     # if u.dim() == 2:
     #     return torch.renorm(u, 2, 0, 1)
     # elif u.dim() == 3:

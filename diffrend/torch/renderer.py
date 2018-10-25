@@ -4,7 +4,8 @@ import torch
 from diffrend.torch.utils import (tonemap, ray_object_intersections,
                                   generate_rays, where, backface_labeler,
                                   bincount, tch_var_f, norm_p, normalize,
-                                  lookat, reflect_ray, estimate_surface_normals, tensor_dot)
+                                  lookat, reflect_ray, estimate_surface_normals, tensor_dot,
+                                  nonzero_divide)
 from diffrend.utils.utils import get_param_value
 from diffrend.torch.ops import perspective, inv_perspective
 """
@@ -86,12 +87,12 @@ def fragment_shader(frag_normals, light_dir, cam_dir,
     # Fragment shading
     #light_dir = light_pos[:, np.newaxis, :] - frag_pos
     light_dir_norm = torch.sqrt(torch.sum(light_dir ** 2, dim=-1))[:, :, np.newaxis]
-    light_dir = light_dir / light_dir_norm  # TODO: nonzero_divide
+    light_dir = nonzero_divide(light_dir, light_dir_norm)
     # Attenuate the lights
     pow_val = 2 if not use_quartic else 4
-    per_frag_att_factor = 1 / (light_attenuation_coeffs[:, 0][:, np.newaxis, np.newaxis] +
+    per_frag_att_factor = nonzero_divide(1, (light_attenuation_coeffs[:, 0][:, np.newaxis, np.newaxis] +
                                light_dir_norm * light_attenuation_coeffs[:, 1][:, np.newaxis, np.newaxis] +
-                               (light_dir_norm ** pow_val) * light_attenuation_coeffs[:, 2][:, np.newaxis, np.newaxis])
+                               (light_dir_norm ** pow_val) * light_attenuation_coeffs[:, 2][:, np.newaxis, np.newaxis]))
 
     # Diffuse component
     frag_normal_dot_light = tensor_dot(frag_normals, per_frag_att_factor * light_dir, axis=-1)
