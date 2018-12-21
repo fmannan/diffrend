@@ -39,7 +39,7 @@ class Parameters():
             #default_root = '/home/dvazquez/datasets/shapenet/ShapeNetCore.v2'
             default_root = '/home/sai/attenuation/diffrend/data/sphere'
             #default_out = './output'
-            default_out = '/home/sai/output_newcolor_12june'
+            default_out = '/home/sai/output_newcolor_albedolearn'
         else:
             raise ValueError('Add the route for the dataset of your system')
 
@@ -120,7 +120,7 @@ class Parameters():
         self.parser.add_argument('--spatial_loss_weight', type=float, default=0.5,
                                  help='Spatial smoothness loss weight.')
         self.parser.add_argument('--beta1', type=float, default=0.0, help='beta1 for adam. default=0.5')
-        self.parser.add_argument('--n_iter', type=int, default=35201, help='number of iterations to train')
+        self.parser.add_argument('--n_iter', type=int, default=45201, help='number of iterations to train')
         self.parser.add_argument('--batchSize', type=int, default=4, help='input batch size')
 
         # GAN parameters
@@ -143,13 +143,13 @@ class Parameters():
         self.parser.add_argument('--cam_dist', type=float, default=3.0, help='Camera distance from the center of the object')
         self.parser.add_argument('--nv', type=int, default=10, help='Number of views to generate')
         self.parser.add_argument('--angle', type=int,  default=30,help='cam angle')
-        self.parser.add_argument('--fovy', type=float, default=26, help='Field of view in the vertical direction. Default: 15.0')
+        self.parser.add_argument('--fovy', type=float, default=35, help='Field of view in the vertical direction. Default: 15.0')
         self.parser.add_argument('--focal_length', type=float, default=0.1, help='focal length')
         self.parser.add_argument('--theta', nargs=2, type=float, default=[20,70], help='Angle in degrees from the z-axis.')
         self.parser.add_argument('--phi', nargs=2, type=float, default=[0,0], help='Angle in degrees from the x-axis.')
         self.parser.add_argument('--axis', nargs=3, default=[1,1,1],type=float, help='Axis for random camera position.')
         self.parser.add_argument('--cam_pos', nargs=3, type=float, help='Camera position.')
-        self.parser.add_argument('--at', nargs=3, default=[0.05,0.1,0.1], type=float, help='Camera lookat position.')
+        self.parser.add_argument('--at', nargs=3, default=[0.05,0.1,0], type=float, help='Camera lookat position.')
         #self.parser.add_argument('--at', nargs=3, default=[ 0, 1, 0], type=float, help='Camera lookat position.')
         self.parser.add_argument('--sphere-halfbox', action='store_true', help='Renders demo sphere-halfbox')
         self.parser.add_argument('--norm_depth_image_only', action='store_true', default=False, help='Render on the normalized'

@@ -34,6 +34,16 @@ def np_var(x, req_grad=False):
 
 
 def get_data(x):
+    if type(x) is np.ndarray or \
+       type(x) is str:
+        return x
+    elif type(x) is dict:
+        return {key: get_data(x[key]) for key in x}
+    elif type(x) is list:
+        return [get_data(e) for e in x]
+    elif type(x) is not torch.autograd.Variable and \
+        type(x) is not torch.Tensor:
+        return x
     return x.cpu().data.numpy() if x.is_cuda else x.data.numpy()
 
 
@@ -73,16 +83,16 @@ def tensor_cross_prod(u, M):
 
     return torch.stack((s0, s1, s2), dim=2)
 
+
 def nonzero_divide(x, y):
     """ x and y need to have the same dimensions.
     :param x:
     :param y:
     :return:
     """
-    assert list(x.size()) == list(y.size())
-
-    mask = torch.abs(y) > 0
-    return x.masked_scatter(mask, x.masked_select(mask) / y.masked_select(mask))
+    mask = (torch.abs(y) > 0).float()
+    divisor = y * mask + (1 - mask)
+    return x / divisor
 
 
 def unit_norm2_L2loss(x, scale):
@@ -119,15 +129,14 @@ def unit_norm2sqr_L1loss(x, scale):
 
 def normalize_maxmin(x):
     min_val = torch.min(x)
-    return (x - min_val) / (torch.max(x) - min_val)
+    return nonzero_divide(x - min_val, torch.max(x) - min_val)
 
 
 def normalize(u, eps=1e-10):
     denom = norm_p(u, 2, eps=eps)
     if u.dim() > 1:
         denom = denom[..., np.newaxis]
-    # TODO: nonzero_divide for rows with norm = 0
-    return u / (denom + eps)
+    return nonzero_divide(u, denom)  # u / (denom + eps)
     # if u.dim() == 2:
     #     return torch.renorm(u, 2, 0, 1)
     # elif u.dim() == 3:
@@ -302,7 +311,7 @@ def lookat(eye, at, up):
     """
     return lookat_inv(eye, at, up).inverse()
 
-
+const_row_e4 = tch_var_f([0, 0, 0, 1.])[np.newaxis, :]
 def lookat_inv(eye, at, up):
     """Returns the inverse lookat matrix
     :param eye: camera location
@@ -312,8 +321,7 @@ def lookat_inv(eye, at, up):
     """
     rot_matrix = lookat_rot_inv(eye, at, up)
     rot_translate = torch.cat((rot_matrix, eye[:3][:, np.newaxis]), dim=1)
-    return torch.cat((rot_translate, tch_var_f([0, 0, 0, 1.])[np.newaxis, :]), dim=0)
-
+    return torch.cat((rot_translate, const_row_e4), dim=0)
 
 
 def lookat_rot_inv(eye, at, up):
@@ -397,6 +405,7 @@ def ray_object_intersections(eye, ray_dir, scene_objects, **kwargs):
     normals = None
     material_idx = None
     for obj_type in scene_objects:
+        # TODO: skip surfaces facing away
         result = intersection_fn[obj_type](eye, ray_dir, scene_objects[obj_type], **kwargs)
         curr_intersects = result['intersect']
         curr_ray_dist = result['ray_distance']

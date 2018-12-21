@@ -17,7 +17,8 @@ from imageio import imsave
 def render_random_camera(filename, out_dir, num_samples, radius, cam_dist, num_views, width, height,
                          fovy, focal_length, norm_depth_image_only, theta_range=None, phi_range=None,
                          axis=None, angle=None, cam_pos=None, cam_lookat=None, use_mesh=False,
-                         double_sided=False, use_quartic=False, b_shadow=True, b_tiled=True, b_display=False):
+                         double_sided=False, use_quartic=False, b_shadow=True, b_display=False,
+                         tile_size=None):
     """
     Randomly generate N samples on a surface and render them. The samples include position and normal, the radius is set
     to a constant.
@@ -88,7 +89,8 @@ def render_random_camera(filename, out_dir, num_samples, radius, cam_dist, num_v
 
         # main render run
         start_time = time()
-        res = render(scene, tiled=b_tiled, shadow=b_shadow, norm_depth_image_only=norm_depth_image_only,
+        res = render(scene, tile_size=tile_size, tiled=tile_size is not None,
+                     shadow=b_shadow, norm_depth_image_only=norm_depth_image_only,
                      double_sided=double_sided, use_quartic=use_quartic)
         rendering_time.append(time() - start_time)
 
@@ -243,8 +245,8 @@ def render_sphere(out_dir, cam_pos, radius, width, height, fovy, focal_length, n
 
 def render_sphere_halfbox(out_dir, cam_pos, width, height, fovy, focal_length, num_views,
                           cam_dist, norm_depth_image_only, theta_range=None, phi_range=None,
-                          axis=None, angle=None, cam_lookat=None, use_quartic=False, b_tiled=True,
-                          b_shadow=True, b_display=False):
+                          axis=None, angle=None, cam_lookat=None, tile_size=None,
+                          use_quartic=False, b_shadow=True, b_display=False):
     # python splat_render_demo.py --sphere-halfbox --fovy 30 --out_dir ./sphere_halfbox_demo --cam_dist 4 --axis .8 .5 1
     # --angle 5 --at 0 .4 0 --nv 10 --width=256 --height=256
     scene = SCENE_SPHERE_HALFBOX
@@ -264,7 +266,7 @@ def render_sphere_halfbox(out_dir, cam_pos, width, height, fovy, focal_length, n
     lookat = cam_lookat if cam_lookat is not None else [0.0, 0.0, 0.0, 1.0]
     scene['camera']['at'] = tch_var_f(lookat)
 
-    res = render(scene, tiled=b_tiled, shadow=b_shadow)
+    res = render(scene, tile_size=tile_size, tiled=tile_size is not None, shadow=b_shadow)
     im = np.uint8(255. * get_data(res['image']))
     depth = get_data(res['depth'])
 
@@ -371,7 +373,7 @@ if __name__ == '__main__':
     parser.add_argument('--sphere-halfbox', action='store_true', help='Renders demo sphere-halfbox.')
     parser.add_argument('--double-sided', action='store_true', help='Render double-sided triangles.')
     parser.add_argument('--use-quartic', action='store_true', help='Use quartic attenuation.')
-    parser.add_argument('--tiled', action='store_true', default=True, help='Tiled rendering.')
+    parser.add_argument('--tile-size', type=int, default=64**2, help='tile size.')
     parser.add_argument('--shadow', action='store_true', default=True, help='Render shadows')
 
     args = parser.parse_args()
@@ -409,8 +411,9 @@ if __name__ == '__main__':
                               fovy=args.fovy, focal_length=args.f, cam_dist=args.cam_dist, num_views=args.nv,
                               norm_depth_image_only=args.norm_depth_image_only,
                               theta_range=args.theta, phi_range=args.phi,
-                              axis=axis, angle=angle, cam_lookat=args.at, use_quartic=args.use_quartic,
-                              b_tiled=args.tiled, b_shadow=args.shadow, b_display=args.display)
+                              axis=axis, angle=angle, cam_lookat=args.at,
+                              tile_size=args.tile_size, use_quartic=args.use_quartic,
+                              b_shadow=args.shadow, b_display=args.display)
     else:
         render_random_camera(filename=args.model, out_dir=args.out_dir, radius=args.r, num_samples=args.n,
                              cam_dist=args.cam_dist, num_views=args.nv,
@@ -419,5 +422,6 @@ if __name__ == '__main__':
                              norm_depth_image_only=args.norm_depth_image_only,
                              theta_range=args.theta, phi_range=args.phi,
                              axis=axis, angle=angle, cam_pos=cam_pos, cam_lookat=args.at,
-                             use_mesh=args.mesh, b_display=args.display, double_sided=args.double_sided,
-                             b_tiled=args.tiled, b_shadow=args.shadow, use_quartic=args.use_quartic)
+                             tile_size=args.tile_size, use_mesh=args.mesh,
+                             b_display=args.display, double_sided=args.double_sided,
+                             b_shadow=args.shadow, use_quartic=args.use_quartic)

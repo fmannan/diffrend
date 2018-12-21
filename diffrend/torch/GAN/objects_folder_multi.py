@@ -6,7 +6,7 @@ from diffrend.model import load_model, obj_to_triangle_spec
 from diffrend.utils.sample_generator import uniform_sample_mesh
 from diffrend.numpy.ops import axis_angle_matrix
 from diffrend.numpy.ops import normalize as np_normalize
-
+from diffrend.torch.utils import tch_var_f, tch_var_l
 
 class ObjectsFolderMultiObjectDataset(Dataset):
     """Objects folder dataset."""
@@ -48,9 +48,9 @@ class ObjectsFolderMultiObjectDataset(Dataset):
             self.fg_obj = load_model(obj_path)
             self.bg_obj = load_model(self.opt.bg_model)
             self.loaded = True
-        obj_model = self.fg_obj
+        obj1 = self.fg_obj
         obj2 = self.bg_obj
-        v1 = (obj_model['v'] - obj_model['v'].mean()) / (obj_model['v'].max() - obj_model['v'].min())
+        v1 = (obj1['v'] - obj1['v'].mean()) / (obj1['v'].max() - obj1['v'].min())
         v2 = obj2['v']  # / (obj2['v'].max() - obj2['v'].min())
         scale = (obj2['v'].max() - obj2['v'].min()) * 0.25
         offset = np.array([5.0, 5.0, 5.0]) #+ 2 * np.random.rand(3)
@@ -67,20 +67,31 @@ class ObjectsFolderMultiObjectDataset(Dataset):
             else:
                 v1 = scale * v1 + offset
             v = np.concatenate((v1, v2))
-            f = np.concatenate((obj_model['f'], obj2['f'] + v1.shape[0]))
+            f = np.concatenate((obj1['f'], obj2['f'] + v1.shape[0]))
 
         obj_model = {'v': v, 'f': f}
 
         if self.opt.use_mesh:
-            # normalize the vertices
             v = obj_model['v']
             axis_range = np.max(v, axis=0) - np.min(v, axis=0)
             v = (v - np.mean(v, axis=0)) / max(axis_range)  # Normalize to make the largest spread 1
             obj_model['v'] = v
             mesh = obj_to_triangle_spec(obj_model)
+            #import ipdb; ipdb.set_trace()
+            material_idx = np.array([0] * obj1['f'].shape[0] + [1] * obj2['f'].shape[0])
             meshes = {'face': mesh['face'].astype(np.float32),
-                      'normal': mesh['normal'].astype(np.float32)}
+                      'normal': mesh['normal'].astype(np.float32),
+                      'material_idx': material_idx}
             sample = {'synset': 0, 'mesh': meshes}
+            # normalize the vertices
+            # v = obj_model['v']
+            # axis_range = np.max(v, axis=0) - np.min(v, axis=0)
+            # v = (v - np.mean(v, axis=0)) / max(axis_range)  # Normalize to make the largest spread 1
+            # obj_model['v'] = v
+            # mesh = obj_to_triangle_spec(obj_model)
+            # meshes = {'face': mesh['face'].astype(np.float32),
+            #           'normal': mesh['normal'].astype(np.float32)}
+            # sample = {'synset': 0, 'mesh': meshes}
         else:
             # Sample points from the 3D mesh
             v, vn = uniform_sample_mesh(obj_model,
