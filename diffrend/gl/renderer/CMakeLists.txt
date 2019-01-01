@@ -27,7 +27,7 @@ include_directories(
 )
 
 set(LIBRARIES
-    glfw3
+    glfw
     X11
     pthread
     dl
