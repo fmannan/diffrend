@@ -9,3 +9,6 @@ make
 ```
 
 ## Run
+```bash
+./render_server -s ../../../../scenes/basic.json -o tmp
+```
