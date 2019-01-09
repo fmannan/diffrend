@@ -19,7 +19,7 @@ void GLRenderer::key_callback(GLFWwindow* window, int key,
 void GLRenderer::init() {
     glfwSetErrorCallback(error_callback);
 
-    // glfwInitHint(GLFW_COCOA_MENUBAR, GLFW_FALSE);
+    glfwInitHint(GLFW_COCOA_MENUBAR, GLFW_FALSE);
 
     if(!glfwInit()) {
         exit(EXIT_FAILURE);
