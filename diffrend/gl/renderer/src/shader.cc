@@ -29,7 +29,12 @@ GLuint compile_shader(const std::string& shader,
     glGetShaderiv(shader_id, GL_COMPILE_STATUS, &res);
     glGetShaderiv(shader_id, GL_INFO_LOG_LENGTH, &infoLogLength);
     if(infoLogLength > 0) {
-
+        std::cout << "compile_shader error:" << std::endl;
+        GLchar* pInfoLog = new GLchar[infoLogLength + 1];
+        GLint length = 0;
+        glGetShaderInfoLog(shader_id, infoLogLength, &length, pInfoLog);
+        std::cout << pInfoLog << std::endl;
+        delete [] pInfoLog;
     }
     return res;
 }
