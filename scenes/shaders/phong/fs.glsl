@@ -17,7 +17,7 @@ varying vec3 frag_coeffs;
 
 void main() {
     //gl_FragColor = frag_normal; //frag_position; //vec4(frag_albedo, 1.0);
-    vec4 light_irradiance = vec4(0.0); //vec4(light_color[0], 1.0) * dot(normalize(frag_normal), normalize(light_pos[0] - frag_position));
+    vec4 light_irradiance = vec4(light_color[0], 1.0) * dot(normalize(frag_normal), normalize(light_pos[0] - frag_position));
     for(int i = 1; i < MAX_NUM_LIGHTS; i++) {
         light_irradiance += vec4(light_color[i], 1.0) * dot(normalize(frag_normal), normalize(light_pos[i] - frag_position));
     }

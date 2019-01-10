@@ -68,7 +68,7 @@ void GLRenderer::render(Scene* scene) {
     render();
 }
 
-void GLRenderer::render() {
+void GLRenderer::render(const Camera* camera, const std::string& outfilename) {
     /**
      * Activate shader program
      * set camera and global transformations
@@ -78,7 +78,7 @@ void GLRenderer::render() {
      * Write buffer to file
      */
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    mScene->render();
+    mScene->render(camera);
 
 #if USE_NATIVE_OSMESA
     glfwGetOSMesaColorBuffer(mWindow, &mWidth, &mHeight, NULL, (void**) &buffer);
@@ -88,7 +88,7 @@ void GLRenderer::render() {
 #endif
 
     // Write image Y-flipped because OpenGL
-    stbi_write_png("offscreen.png",
+    stbi_write_png((outfilename + ".png").c_str(),
                    mWidth, mHeight, 4,
                    buffer + (mWidth * 4 * (mHeight - 1)),
                    -mWidth * 4);

@@ -31,14 +31,11 @@ public:
         glfwTerminate();
     }
 
-    // Default rendering
-    void render();
-
     // Render a given scene. Useful when the scene is updated
     void render(Scene* scene);
 
     // Render the current scene from a different viewpoint
-    void render(Camera& camera);
+    void render(const Camera* camera = nullptr, const std::string& outfilename="offscreen");
 
     int shouldClose() { return glfwWindowShouldClose(mWindow); }
     void swapBuffers() { glfwSwapBuffers(mWindow);  }

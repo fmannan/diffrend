@@ -24,7 +24,7 @@ public:
     }
 
     void setup();
-    void render();
+    void render(const Camera* camera = nullptr);
 
     int getWidth() { return mCamera->getWidth(); }
     int getHeight() { return mCamera->getHeight(); }

@@ -10,4 +10,4 @@ mkdir -p "$BUILD_DIR"
 cd $BUILD_DIR
 cmake ..
 make
-./render_server -s ../../../../scenes/basic_multiobj.json
+./render_server -s ../../../../scenes/basic_multiobj.json -t ../../../../scenes/camera_trajectory.json

@@ -131,10 +131,13 @@ void Scene::setup()
     }
 }
 
-void Scene::render() {
+void Scene::render(const Camera* camera) {
+    if(camera == nullptr) {
+        camera = mCamera;
+    }
     glm::mat4 mModel = glm::mat4(1.0);
-    glm::mat4 mView = mCamera->getViewMatrix();
-    glm::mat4 mProjection = mCamera->getProjectionMatrix();
+    glm::mat4 mView = camera->getViewMatrix();
+    glm::mat4 mProjection = camera->getProjectionMatrix();
     glUseProgram(mProgram);
     
     glUniform3fv(ambient_location, 1, glm::value_ptr(mAmbient));
