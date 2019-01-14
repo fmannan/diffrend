@@ -108,6 +108,7 @@ void Scene::setup()
     model_matrix_location = glGetUniformLocation(mProgram, "model");
     view_matrix_location = glGetUniformLocation(mProgram, "view");
     projection_matrix_location = glGetUniformLocation(mProgram, "projection");
+    inv_model_view_transpose_location = glGetUniformLocation(mProgram, "inv_model_view_transpose");
 
     position_location = glGetAttribLocation(mProgram, "position");
     normal_location = glGetAttribLocation(mProgram, "normal");
@@ -148,7 +149,9 @@ void Scene::render(const Camera* camera) {
     glUniformMatrix4fv(projection_matrix_location, 1, GL_FALSE, glm::value_ptr(mProjection));
     for(auto obj: mObjects) {
         glm::mat4 curr_model_tform = mModel * obj->get_transformation();
+        glm::mat4 inv_model_view_transpose_tform = glm::transpose(glm::inverse(mView * mModel));
         glUniformMatrix4fv(model_matrix_location, 1, GL_FALSE, glm::value_ptr(curr_model_tform));
+        glUniformMatrix4fv(inv_model_view_transpose_location, 1, GL_FALSE, glm::value_ptr(inv_model_view_transpose_tform));
         obj->render(model_matrix_location);
     }
 }

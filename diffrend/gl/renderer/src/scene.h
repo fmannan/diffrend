@@ -49,6 +49,7 @@ private:
     GLuint mProgram;
     GLint model_matrix_location, view_matrix_location, projection_matrix_location;
     GLint position_location, normal_location, albedo_location, coeffs_location;
+    GLint inv_model_view_transpose_location;
     GLint ambient_location;
     GLint light_pos_location;
     GLint light_attenuation_location;
