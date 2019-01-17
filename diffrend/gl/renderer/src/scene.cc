@@ -50,6 +50,25 @@ void Scene::loadScene(const std::string& filename)
         if(obj["scale"]) {
             scale = glm::vec3(obj["scale"][0].asFloat(), obj["scale"][1].asFloat(), obj["scale"][2].asFloat());
         }
+        if(obj["rotate"]) {
+            auto rotate_spec = obj["rotate"];
+            std::cout << rotate_spec << std::endl;
+            glm::vec3 axis(0.0);
+            for(int i = 0; i < 3; i++) {
+                axis[i] = rotate_spec["axis"][i].asFloat();
+                std::cout << axis[i] << " ";
+            }
+            std::cout << std::endl;
+            float angle = rotate_spec["angle_deg"].asFloat();
+            std::cout << "angle in degrees: " << angle << std::endl;
+            rotate = glm::rotate(glm::mat4(1.0), glm::radians(angle), axis);
+            for(int i = 0; i < 4; i++) {
+                for(int j = 0; j < 4; j++) {
+                    std::cout << rotate[i][j] << " ";
+                }
+                std::cout << std::endl;
+            }
+        }
         int mat_idx = obj["material_idx"].asInt();
         mObjects.push_back(new TriangleMesh(basedir + "/" + obj["path"].asString(), 
             mMaterials[mat_idx], translate, rotate, scale));

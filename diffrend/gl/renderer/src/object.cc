@@ -93,7 +93,8 @@ void TriangleMesh::loadObj(const std::string& filename,
             }
         }
     }
-    assert(shapes.size() <= 1); // for now, 1 shape per obj file
+    //assert(shapes.size() <= 1); // for now, 1 shape per obj file
+    std::cout << "Number of shapes: " << shapes.size() << std::endl;
     //mMaterial.albedo = glm::vec3(0.8); // TODO: FIX
     //mMaterial.coeffs = glm::vec3(1, 0, 0);
 
