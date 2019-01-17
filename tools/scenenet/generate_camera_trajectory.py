@@ -30,7 +30,7 @@ def main():
     print('Number of trajectories:{0}'.format(len(trajectories.trajectories)))
 
     all_out_path = []
-    for traj in trajectories.trajectories:
+    for traj_no, traj in enumerate(trajectories.trajectories):
         layout_type = sn.SceneLayout.LayoutType.Name(traj.layout.layout_type)
         layout_path = traj.layout.model
 
@@ -57,10 +57,12 @@ def main():
                       'frame_no': view.frame_num,
                       'timestamp': shutter_open.timestamp,
                       'obj_path': layout_path,
-                      'render_path': traj.render_path
+                      'render_path': traj.render_path,
+                      "near": 0.1,
+                      "far": 1000.0
                      }
             camera_traj.append(camera)
-        outfilename = traj.render_path + '_' + layout_path
+        outfilename = 'traj_{}_'.format(traj_no) + traj.render_path + '_' + layout_path
         outfilename = outfilename.replace('/', '_').replace('.obj', '.json')
         assert outfilename not in all_out_path
         print(outfilename)
