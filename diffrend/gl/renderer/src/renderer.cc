@@ -4,6 +4,7 @@
 #include "renderer.h"
 #include <stb/stb_image_write.h>
 #include <fstream>
+#include <npy/npy.hpp>
 
 static void error_callback(int error, const char* description) {
     fprintf(stderr, "Error: %s\n", description);
@@ -109,6 +110,16 @@ void GLRenderer::render(Scene* scene) {
     render();
 }
 
+void store_as_npy(const std::string& outfilename_prefix,
+    int width, int height, int nchannels, float* data)
+{
+    unsigned long out_shape[] = {height, width, nchannels};
+    std::vector<float> out_data(height * width * nchannels);
+    memcpy(&out_data[0], data, sizeof(float) * height * width * nchannels);
+    npy::SaveArrayAsNumpy(outfilename_prefix + ".npy",
+        false, 3, out_shape, out_data);
+}
+
 void GLRenderer::render(const Camera* camera, const std::string& outfilename) {
     /**
      * Activate shader program
@@ -125,20 +136,21 @@ void GLRenderer::render(const Camera* camera, const std::string& outfilename) {
         mScene->render(camera);
         glReadBuffer(GL_COLOR_ATTACHMENT0);
         glReadPixels(0, 0, mWidth, mHeight, GL_RGBA, GL_FLOAT, mRGBA);
+        store_as_npy(mOutputDir + outfilename, mWidth, mHeight, 4, mRGBA);
         {
-        std::ofstream outfile((outfilename + ".dat").c_str(), std::ios::out | std::ios::binary);
+        std::ofstream outfile((mOutputDir + outfilename + ".dat").c_str(), std::ios::out | std::ios::binary);
         outfile.write((const char*) mRGBA, mWidth * mHeight * 4 * sizeof(float));
         }
         glReadBuffer(GL_COLOR_ATTACHMENT1);
         glReadPixels(0, 0, mWidth, mHeight, GL_RGBA, GL_FLOAT, mRGBA);
         {
-        std::ofstream outfile((outfilename + "_pos.dat").c_str(), std::ios::out | std::ios::binary);
+        std::ofstream outfile((mOutputDir + outfilename + "_pos.dat").c_str(), std::ios::out | std::ios::binary);
         outfile.write((const char*) mRGBA, mWidth * mHeight * 4 * sizeof(float));
         }
         glReadBuffer(GL_COLOR_ATTACHMENT2);
         glReadPixels(0, 0, mWidth, mHeight, GL_RGBA, GL_FLOAT, mRGBA);
         {
-        std::ofstream outfile((outfilename + "_normal.dat").c_str(), std::ios::out | std::ios::binary);
+        std::ofstream outfile((mOutputDir + outfilename + "_normal.dat").c_str(), std::ios::out | std::ios::binary);
         outfile.write((const char*) mRGBA, mWidth * mHeight * 4 * sizeof(float));
         }
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -148,7 +160,7 @@ void GLRenderer::render(const Camera* camera, const std::string& outfilename) {
 
     glReadPixels(0, 0, mWidth, mHeight, GL_RGBA, GL_UNSIGNED_BYTE, mBuffer);
     // Write image Y-flipped because OpenGL
-    stbi_write_png((outfilename + ".png").c_str(),
+    stbi_write_png((mOutputDir + outfilename + ".png").c_str(),
                    mWidth, mHeight, 4,
                    mBuffer + (mWidth * 4 * (mHeight - 1)),
                    -mWidth * 4);

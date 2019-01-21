@@ -41,6 +41,8 @@ int main(int argc, char** argv) {
     std::string out_dir = "";
     if(args["output-dir"].count() > 0)
         out_dir = args["output-dir"].as<std::string>();
+    if(out_dir.size() > 0)
+        out_dir = out_dir + "/";
     bool bGUIMode = args["gui"].as<bool>();
 
     CameraTrajectory *cam_traj = nullptr;
