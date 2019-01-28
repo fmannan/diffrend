@@ -24,19 +24,19 @@ layout(location=2) out vec4 normal;
 vec4 get_cam_dir_normal()
 {
     // Flip per-fragment normals if needed based on the camera direction
+    vec3 surface_normal = normalize(frag_normal.xyz);
     vec4 cam_pos_viewspace = view * vec4(cam_pos, 1.0);
     vec3 cam_dir = normalize(cam_pos_viewspace.xyz - frag_position.xyz);
-    float dot_prod = dot(cam_dir, frag_normal.xyz);
+    float dot_prod = dot(cam_dir, surface_normal);
     float sgn = sign(dot_prod);
-    //return vec4(frag_normal.xyz * sgn, 0.0);
-    return normalize(vec4(frag_normal.xyz, 0));
+    return sgn * vec4(surface_normal, 0.0);
 }
 
 void main() {
     pos = frag_position;
     normal = get_cam_dir_normal();
     vec4 light_irradiance = vec4(0.0);
-    
+
     for(int i = 0; i < MAX_NUM_LIGHTS; i++) {
         vec4 lpos = view * light_pos[i];
         vec4 light_dir = lpos - pos;

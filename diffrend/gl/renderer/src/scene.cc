@@ -138,6 +138,7 @@ void Scene::setup()
     light_pos_location = glGetUniformLocation(mProgram, "light_pos");
     light_color_location = glGetUniformLocation(mProgram, "light_color");
     light_attenuation_location = glGetUniformLocation(mProgram, "light_attenuation");
+    cam_pos_location = glGetUniformLocation(mProgram, "cam_pos");
 
     std::cout << "ambient_location : " << ambient_location << std::endl;
     std::cout << "light_attenuation_location : " << light_attenuation_location << std::endl;
@@ -160,6 +161,7 @@ void Scene::render(const Camera* camera) {
     glm::mat4 mProjection = camera->getProjectionMatrix();
     glUseProgram(mProgram);
     
+    glUniform3fv(cam_pos_location, 1, glm::value_ptr(mCamera->getPosition()));
     glUniform3fv(ambient_location, 1, glm::value_ptr(mAmbient));
     glUniform4fv(light_pos_location, MAX_NUM_LIGHTS, glm::value_ptr(mLightPos[0]));
     glUniform3fv(light_color_location, MAX_NUM_LIGHTS, glm::value_ptr(mLightColor[0]));

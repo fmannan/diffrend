@@ -20,6 +20,7 @@ public:
     int getWidth() const { return mViewport[2] - mViewport[0]; }
     int getHeight() const { return mViewport[3] - mViewport[1]; }
 
+    glm::vec3 getPosition() { return mPos; }
     std::string str() const;
 private:
     glm::vec3 mPos;

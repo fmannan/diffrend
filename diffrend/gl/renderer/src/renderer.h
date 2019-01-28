@@ -11,6 +11,7 @@
 #include "object.h"
 #include "scene.h"
 #include "camera.h"
+#include <thread>
 
 class GLRenderer {
 public:
@@ -28,16 +29,7 @@ public:
             init();
             setupScene();
         }
-    ~GLRenderer() {
-        if(mRGBA) {
-            free(mRGBA);
-        }
-        if(mBuffer) {
-            free(mBuffer);
-        }
-        glfwDestroyWindow(mWindow);
-        glfwTerminate();
-    }
+    ~GLRenderer();
 
     // Render a given scene. Useful when the scene is updated
     void render(Scene* scene);
@@ -63,6 +55,8 @@ private:
     GLuint mTexRGBA;
     GLuint mTexPosition;
     GLuint mTexNormal;
+
+    std::thread mFrameWriterThread;
 
     void init();
     void setupScene();
