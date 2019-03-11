@@ -266,7 +266,8 @@ def render_sphere_halfbox(out_dir, cam_pos, width, height, fovy, focal_length, n
     lookat = cam_lookat if cam_lookat is not None else [0.0, 0.0, 0.0, 1.0]
     scene['camera']['at'] = tch_var_f(lookat)
 
-    res = render(scene, tile_size=tile_size, tiled=tile_size is not None, shadow=b_shadow)
+    b_tiled = tile_size is not None
+    res = render(scene, tile_size=tile_size, tiled=b_tiled, shadow=b_shadow)
     im = np.uint8(255. * get_data(res['image']))
     depth = get_data(res['depth'])
 

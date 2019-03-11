@@ -1,0 +1,54 @@
+{"file-format": {"type": "diffrend", "version": "0.2"},
+ "glsl": {"vertex": "./shaders/phong/vs.glsl", "fragment": "./shaders/phong/fs.glsl"},
+ "camera": {
+    "proj_type": "perspective",
+    "viewport": [0, 0, 640, 480],
+    "fovy": 1.04,
+    "focal_length": 1.0,
+    "eye": [3.5, 2.0, 3.5, 1.0],
+    "up": [0.0, 1.0, 0.0, 0.0],
+    "at": [0.0, 1.0, 0.0, 1.0],
+    "near": 0.1, "far": 1000.0
+    },
+ "lights": {"pos": [[2.0, 2.0, 2.0, 1.0],
+        [1.0, 2.0, 5.0, 1.0],
+        [1.0, 10.0, 1.0, 1.0]
+        ],
+    "color_idx": [1, 2, 3],
+    "attenuation": [[0.0, 0.0, 0.4],
+    [1.0, 0.0, 0.0], [0.0, 0.0, 0.08]],
+    "ambient": [0.001, 0.001, 0.001]
+    },
+ "colors": [[0.6, 0.6, 0.6], 
+            [0.76, 0.898, 0.941],
+            [0.455, 0.596, 0.643],
+            [0.643, 0.635, 0.631]
+            ],
+ "materials": {
+     "albedo": [[0.0, 0.0, 0.0], [0.1, 0.1, 0.1], [0.2, 0.2, 0.2], [0.5, 0.5, 0.5], [0.8, 0.8, 0.8], [0.44, 0.55, 0.64]],
+     "coeffs": [[1.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 0.0, 0.0]]
+  },
+ "objects": {"obj": [{"path": "./objs/halfbox.obj", "material_idx": 5,
+                      "scale": [2.0, 2.0, 2.0],
+                      "renormalize_range": {"x": [-1, 1], "y": [-1, 1], "z": [-1, 1]}
+                     },
+                     {"path": "./objs/bunny.obj", "material_idx": 5, 
+                      "translate": [1.0, 1.4, 1.0],
+                      "scale": [5.0, 5.0, 5.0],
+                      "renormalize_range": {"x": [-1, 1], "y": [-1, 1], "z": [-1, 1]}
+                     },
+                     {"path": "./objs/sphere.obj", "material_idx": 5, 
+                        "translate": [0.0, 0.0, 0.0],
+                        "scale": [0.5, 0.5, 0.5],
+                        "renormalize_range": {"x": [-1, 1], "y": [-1, 1], "z": [-1, 1]}
+                     },
+                     {"path": "../data/dragon.obj", "material_idx": 5, 
+                        "translate": [1.0, 1.0, 2.0],
+                        "rotate": {"angle_deg": 110.0, "axis": [0, 1, 0]},
+                        "scale": [0.1, 0.1, 0.1],
+                        "renormalize_range": {"x": [-1, 1], "y": [-1, 1], "z": [-1, 1]}
+                     }
+                    ]
+  },
+ "tonemap": {"type": "gamma", "gamma": [0.8]}
+}

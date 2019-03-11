@@ -125,6 +125,14 @@ def fragment_shader(frag_normals, light_dir, cam_dir,
     return im_color
 
 
+def get_as_list(var):
+    if type(var) is np.ndarray:
+        return var.tolist()
+    if type(var) is torch.Tensor:
+        return var.cpu().numpy().tolist()
+    return var
+
+
 def render(scene, **params):
     """Render.
 
@@ -257,7 +265,7 @@ def render(scene, **params):
     # Lighting
     color_table = scene['colors']
     light_pos = scene['lights']['pos'][:, :3]
-    light_clr_idx = scene['lights']['color_idx']
+    light_clr_idx = get_as_list(scene['lights']['color_idx'])
     light_colors = color_table[light_clr_idx]
     light_attenuation_coeffs = scene['lights']['attenuation']
     #if 'ambient' not in scene['lights']:
@@ -273,7 +281,7 @@ def render(scene, **params):
     Get the normal and material for the visible objects.
     """
 
-    tmp_idx = torch.gather(material_idx, 0, nearest_obj)
+    tmp_idx = torch.gather(material_idx.long(), 0, nearest_obj)
     frag_albedo = torch.index_select(material_albedo, 0, tmp_idx)
     frag_coeffs = torch.index_select(material_coeffs, 0, tmp_idx)
 

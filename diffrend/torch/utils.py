@@ -357,24 +357,28 @@ def tonemap(im, **kwargs):
         return torch.pow(im, kwargs['gamma'])
 
 
+def make_list2np(var):
+    return np.array(var) if type(var) is list else var
+
+
 def generate_rays(camera):
-    viewport = np.array(camera['viewport'])
+    viewport = make_list2np(camera['viewport'])
     W, H = viewport[2] - viewport[0], viewport[3] - viewport[1]
-    aspect_ratio = W / H
+    aspect_ratio = float(W) / float(H)
 
     x, y = np.meshgrid(np.linspace(-1, 1, W), np.linspace(1, -1, H))
     n_pixels = x.size
 
-    fovy = np.array(camera['fovy'])
-    focal_length = np.array(camera['focal_length'])
+    fovy = make_list2np(camera['fovy'])
+    focal_length = make_list2np(camera['focal_length'])
     h = np.tan(fovy / 2) * 2 * focal_length
     w = h * aspect_ratio
 
-    x *= w / 2
-    y *= h / 2
-
     x = tch_var_f(x.ravel())
     y = tch_var_f(y.ravel())
+
+    x *= w / 2
+    y *= h / 2
 
     eye = camera['eye'][:3]
     at = camera['at'][:3]
