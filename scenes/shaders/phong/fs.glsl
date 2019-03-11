@@ -10,7 +10,7 @@ uniform vec3 ambient;
 uniform vec4 light_pos[MAX_NUM_LIGHTS];
 uniform vec3 light_color[MAX_NUM_LIGHTS];  // emission
 uniform vec3 light_attenuation[MAX_NUM_LIGHTS]; // attenuation coeffs constant, linear, quadratic
-//uniform int num_lights;
+uniform int num_lights;
 
 in vec4 frag_position;
 in vec4 frag_normal;
@@ -37,7 +37,7 @@ void main() {
     normal = get_cam_dir_normal();
     vec4 light_irradiance = vec4(0.0);
 
-    for(int i = 0; i < MAX_NUM_LIGHTS; i++) {
+    for(int i = 0; i < num_lights; i++) {
         vec4 lpos = view * light_pos[i];
         vec4 light_dir = lpos - pos;
         float light_dist = length(light_dir);
@@ -46,9 +46,9 @@ void main() {
         if(abs(divisor) < 1e-8)
             divisor = 1.0;
         float att_factor = 1.0 / divisor;
-        light_irradiance += vec4(light_color[i], 1.0) * dot(normal, light_dir) * att_factor;
+        light_irradiance += vec4(light_color[i], 1.0) * dot(normal, light_dir) * att_factor; //
     }
-    vec4 clr = clamp(vec4(frag_albedo, 1.0) * light_irradiance + vec4(ambient * 10.0, 1.0), 0.0, 1.0);
+    vec4 clr = vec4(frag_albedo, 1.0) * light_irradiance + vec4(ambient, 1.0);
 
     color = vec4(clr.xyz, 1.0);
 }

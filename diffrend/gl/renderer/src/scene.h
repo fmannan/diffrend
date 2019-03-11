@@ -54,7 +54,7 @@ private:
     GLint light_pos_location;
     GLint light_attenuation_location;
     GLint light_color_location;
-    //GLint num_lights;
+    GLint num_lights_location;
     GLint cam_pos_location;
     
     std::string mVertexShaderPath;

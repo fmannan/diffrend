@@ -103,6 +103,7 @@ void Scene::loadLights(const Json::Value& light_spec,
         mLightPos[i] = glm::vec4(light_pos[0].asFloat(), light_pos[1].asFloat(), light_pos[2].asFloat(), light_pos[3].asFloat());
         mLightColor[i] = colors[light_spec["color_idx"][i].asInt()];
         mLightAttenuation[i] = glm::vec3(attenuation[0].asFloat(), attenuation[1].asFloat(), attenuation[2].asFloat());
+        std::cout << "Light " << i << std::endl;
         std::cout << mLightColor[i][0] << " " << mLightColor[i][1] << " " << mLightColor[i][2] << std::endl;
         std::cout << mLightAttenuation[i][0] << " " << mLightAttenuation[i][1] << " " << mLightAttenuation[i][2] << std::endl;
     }
@@ -139,6 +140,7 @@ void Scene::setup()
     light_color_location = glGetUniformLocation(mProgram, "light_color");
     light_attenuation_location = glGetUniformLocation(mProgram, "light_attenuation");
     cam_pos_location = glGetUniformLocation(mProgram, "cam_pos");
+    num_lights_location = glGetUniformLocation(mProgram, "num_lights");
 
     std::cout << "ambient_location : " << ambient_location << std::endl;
     std::cout << "light_attenuation_location : " << light_attenuation_location << std::endl;
@@ -161,6 +163,7 @@ void Scene::render(const Camera* camera) {
     glm::mat4 mProjection = camera->getProjectionMatrix();
     glUseProgram(mProgram);
     
+    glUniform1i(num_lights_location, mNumLights);
     glUniform3fv(cam_pos_location, 1, glm::value_ptr(mCamera->getPosition()));
     glUniform3fv(ambient_location, 1, glm::value_ptr(mAmbient));
     glUniform4fv(light_pos_location, MAX_NUM_LIGHTS, glm::value_ptr(mLightPos[0]));
