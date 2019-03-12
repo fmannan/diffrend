@@ -108,6 +108,9 @@ def render_scene(scene_file):
 
 def main():
     import argparse
+    import os
+    from imageio import imsave
+
     parser = argparse.ArgumentParser(usage="render.py --scene scene_filename --out_dir output_dir")
     parser.add_argument('--scene', type=str, default='../../scenes/basic_triangle_phong.json', help='Path to the model file')
     parser.add_argument('--out_dir', type=str, default='./render_samples/', help='Directory for rendered images.')
@@ -115,8 +118,15 @@ def main():
     print(args)
 
     res = render_scene(args.scene)
-    img = res['image'].cpu().numpy().squeeze()
+    img = np.uint8(255 * res['image'].cpu().numpy().squeeze())
     depth = res['depth'].cpu().numpy().squeeze()
+
+    if not os.path.exists(args.out_dir):
+        os.makedirs(args.out_dir)
+    imsave(args.out_dir + '/im.png', img)
+
+    im_depth = np.uint8(255. * (depth - depth.min()) / (depth.max() - depth.min()))
+    imsave(args.out_dir + '/depth.png', depth)
 
     import matplotlib.pyplot as plt
     plt.ion()
