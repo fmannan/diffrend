@@ -111,3 +111,5 @@ diffrend/tensorflow/output/
 diffrend/torch/output/
 diffrend/numpy/output/
 analysis/exp/
+render_samples/
+.DS_Store
