@@ -5,9 +5,10 @@ from diffrend.torch.utils import (tonemap, ray_object_intersections,
                                   generate_rays, where, backface_labeler,
                                   bincount, tch_var_f, norm_p, normalize,
                                   lookat, reflect_ray, estimate_surface_normals, tensor_dot,
-                                  nonzero_divide)
+                                  nonzero_divide, FloatTensor)
 from diffrend.utils.utils import get_param_value
 from diffrend.torch.ops import perspective, inv_perspective
+
 """
 Scalable Rendering TODO:
 1. Backface culling. Cull splats for which dot((eye - pos), normal) <= 0 [DONE]
@@ -85,14 +86,16 @@ def fragment_shader(frag_normals, light_dir, cam_dir,
                     frag_albedo, double_sided,
                     use_quartic, light_visibility):
     # Fragment shading
-    #light_dir = light_pos[:, np.newaxis, :] - frag_pos
+    # light_dir = light_pos[:, np.newaxis, :] - frag_pos
     light_dir_norm = torch.sqrt(torch.sum(light_dir ** 2, dim=-1))[:, :, np.newaxis]
     light_dir = nonzero_divide(light_dir, light_dir_norm)
     # Attenuate the lights
     pow_val = 2 if not use_quartic else 4
     per_frag_att_factor = nonzero_divide(1, (light_attenuation_coeffs[:, 0][:, np.newaxis, np.newaxis] +
-                               light_dir_norm * light_attenuation_coeffs[:, 1][:, np.newaxis, np.newaxis] +
-                               (light_dir_norm ** pow_val) * light_attenuation_coeffs[:, 2][:, np.newaxis, np.newaxis]))
+                                             light_dir_norm * light_attenuation_coeffs[:, 1][:, np.newaxis,
+                                                              np.newaxis] +
+                                             (light_dir_norm ** pow_val) * light_attenuation_coeffs[:, 2][:, np.newaxis,
+                                                                           np.newaxis]))
 
     # Diffuse component
     frag_normal_dot_light = tensor_dot(frag_normals, per_frag_att_factor * light_dir, axis=-1)
@@ -101,7 +104,7 @@ def fragment_shader(frag_normals, light_dir, cam_dir,
     reflected_light_dir = reflect_ray(-light_dir, frag_normals)
 
     # View dir, i.e., from vector originating from frag_pos towards the eye
-    #cam_dir = normalize(camera['eye'][np.newaxis, np.newaxis, :3] - frag_pos[:, :, :3])
+    # cam_dir = normalize(camera['eye'][np.newaxis, np.newaxis, :3] - frag_pos[:, :, :3])
     reflected_cam_dot = tensor_dot(cam_dir, reflected_light_dir, axis=-1)
 
     if double_sided:
@@ -203,7 +206,7 @@ def render(scene, **params):
     else:
         obj_intersections, ray_dist, normals, material_idx = ray_object_intersections(ray_orig, ray_dir, scene_objects,
                                                                                       disable_normals=disable_normals)
-        #num_objects = obj_intersections.size()[0]
+        # num_objects = obj_intersections.size()[0]
         # Valid distances
         valid_pixels = (camera['near'] <= ray_dist) * (ray_dist <= camera['far'])
         pixel_dist = where(valid_pixels, ray_dist, camera['far'] + 1)
@@ -268,9 +271,9 @@ def render(scene, **params):
     light_clr_idx = get_as_list(scene['lights']['color_idx'])
     light_colors = color_table[light_clr_idx]
     light_attenuation_coeffs = scene['lights']['attenuation']
-    #if 'ambient' not in scene['lights']:
+    # if 'ambient' not in scene['lights']:
     #    ambient_light = tch_var_f([0.0, 0.0, 0.0])
-    #else:
+    # else:
     ambient_light = scene['lights']['ambient']
 
     material_albedo = scene['materials']['albedo']
@@ -308,7 +311,8 @@ def render(scene, **params):
                 valid_dist = (ray_dist > 0) * (ray_dist < frag_to_light_dist[start_idx:end_idx])
                 ray_dist = where(valid_dist, ray_dist, 1001)
                 nearest_depth, nobj_idx = ray_dist.min(0)
-                b_light_visible = (((nearest_depth == 1001) + (nobj_idx == nearest_obj[start_idx:end_idx])) > 0).type(torch.cuda.FloatTensor)
+                b_light_visible = (((nearest_depth == 1001) + (nobj_idx == nearest_obj[start_idx:end_idx])) > 0).type(
+                    FloatTensor)
                 single_light_vis.append(b_light_visible)
             light_visibility.append(torch.cat(single_light_vis))
         light_visibility = torch.stack(light_visibility, dim=0)
@@ -345,13 +349,13 @@ def render(scene, **params):
         'normal': frag_normals.view(H, W, 3),
         'pos': frag_pos.view(H, W, 3),
         'ray_dist': ray_dist,
-        #'obj_dist': pixel_dist,
+        # 'obj_dist': pixel_dist,
         'nearest': nearest_obj.view(H, W),
         'ray_dir': ray_dir,
-        #'valid_pixels': valid_pixels,
-        #'obj_pixel_count': obj_pixel_count,
-        #'pixel_obj_count': pixel_obj_count,
-        #'valid_pixels_mask': valid_pixels_mask,
+        # 'valid_pixels': valid_pixels,
+        # 'obj_pixel_count': obj_pixel_count,
+        # 'pixel_obj_count': pixel_obj_count,
+        # 'valid_pixels_mask': valid_pixels_mask,
     }
 
 
@@ -373,7 +377,7 @@ def render_splats_NDC(scene, **params):
     at = camera['at'][:3]
     up = camera['up'][:3]
     Mcam = lookat(eye=eye, at=at, up=up)
-    #M = perspective(fovy, aspect_ratio, near, far)
+    # M = perspective(fovy, aspect_ratio, near, far)
     Minv = inv_perspective(fovy, aspect_ratio, near, far)
 
     splats = scene['objects']['disk']
@@ -424,7 +428,7 @@ def render_splats_NDC(scene, **params):
     """
     Get the normal and material for the visible objects.
     """
-    normals_CC = normals_SLC   # TODO: Transform to CC, or assume SLC is CC
+    normals_CC = normals_SLC  # TODO: Transform to CC, or assume SLC is CC
     frag_normals = normals_CC[:, :3]
     frag_pos = pos_CC[:, :3]
 
@@ -524,13 +528,13 @@ def render_splats_along_ray(scene, **params):
     at = camera['at'][:3]
     up = camera['up'][:3]
     Mcam = lookat(eye=eye, at=at, up=up)
-    #M = perspective(fovy, aspect_ratio, near, far)
-    #Minv = inv_perspective(fovy, aspect_ratio, near, far)
+    # M = perspective(fovy, aspect_ratio, near, far)
+    # Minv = inv_perspective(fovy, aspect_ratio, near, far)
 
     splats = scene['objects']['disk']
     pos_ray = splats['pos']
     normals_CC = get_param_value('normal', splats, None)
-    #num_objects = pos_ray.size()[0]
+    # num_objects = pos_ray.size()[0]
 
     fovy = camera['fovy']
     focal_length = camera['focal_length']
@@ -542,7 +546,7 @@ def render_splats_along_ray(scene, **params):
     if pos_ray.dim() == 1:
         Z = -torch.nn.functional.relu(-pos_ray)  # -torch.abs(pos_ray[:, 2])
     else:
-        Z = -torch.nn.functional.relu(-pos_ray[:, 2]) #-torch.abs(pos_ray[:, 2])
+        Z = -torch.nn.functional.relu(-pos_ray[:, 2])  # -torch.abs(pos_ray[:, 2])
 
     x, y = np.meshgrid(np.linspace(-1, 1, W), np.linspace(1, -1, H))
     x *= w / 2
@@ -550,7 +554,7 @@ def render_splats_along_ray(scene, **params):
 
     x = tch_var_f(x.ravel())
     y = tch_var_f(y.ravel())
-    #sgn = 1 if get_param_value('use_old_sign', params, False) else -1
+    # sgn = 1 if get_param_value('use_old_sign', params, False) else -1
     X = -Z * x / focal_length
     Y = -Z * y / focal_length
 
@@ -642,7 +646,8 @@ def render_splats_along_ray(scene, **params):
         normals_CC = reshape_upsampled_data(normals_CC_supersampled, H, W, 3, samples)
         material_idx = reshape_upsampled_data(material_idx_supersampled, H, W, 1, samples).view(-1)
         if light_visibility is not None:
-            light_visibility = reshape_upsampled_data(light_visibility_supersampled, H, W, light_visibility.shape[1], samples).transpose(1, 0)
+            light_visibility = reshape_upsampled_data(light_visibility_supersampled, H, W, light_visibility.shape[1],
+                                                      samples).transpose(1, 0)
         H *= samples
         W *= samples
         ####
@@ -675,7 +680,6 @@ def render_splats_along_ray(scene, **params):
 
     material_albedo = scene['materials']['albedo']
     material_coeffs = scene['materials']['coeffs']
-
 
     light_pos_CC = torch.mm(light_pos, Mcam.transpose(1, 0))
 
@@ -714,7 +718,7 @@ def render_splats_along_ray(scene, **params):
     im = torch.nn.functional.relu(im)
 
     # Tonemapping
-    #if 'tonemap' in scene:
+    # if 'tonemap' in scene:
     #    im = tonemap(im, **scene['tonemap'])
 
     return {
