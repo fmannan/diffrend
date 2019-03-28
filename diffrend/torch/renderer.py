@@ -725,7 +725,7 @@ def render_splats_along_ray(scene, **params):
         'image': im,
         'depth': im_depth,
         'pos': pos_CC.view(H, W, 3),
-        'normal': normals_CC.contiguous().view(H, W, 3)
+        'normal': normals_CC[:,:3].contiguous().view(H, W, 3)
     }
 
 
