@@ -34,7 +34,8 @@ SCENE_TEST = {
             [1., 0., 0.0],
             [0., 0., 0.01],
             [0., 0., 0.01],
-        ])
+        ]),
+        'ambient': tch_var_f([0.01, 0.01, 0.01])
     },
     'colors': tch_var_f([
         [0.0, 0.0, 0.0],
@@ -315,7 +316,7 @@ def test_sphere_splat_render_along_ray(out_dir, cam_pos, width, height, fovy, fo
     pos_CC = tch_var_f(pos) #torch.matmul(tch_var_f(pos), Mcam.transpose(1, 0))
 
     large_scene['objects']['disk']['pos'] = pos_CC
-    large_scene['objects']['disk']['normal'] = tch_var_f(normals)
+    large_scene['objects']['disk']['normal'] = None  # Estimate the normals tch_var_f(normals)
     # large_scene['camera']['eye'] = tch_var_f([-10., 0., 10.])
     # large_scene['camera']['eye'] = tch_var_f([2., 0., 10.])
     large_scene['camera']['eye'] = tch_var_f([-5., 0., 0.])
@@ -326,7 +327,7 @@ def test_sphere_splat_render_along_ray(out_dir, cam_pos, width, height, fovy, fo
     rendering_time.append(time() - start_time)
 
     # Test cam_to_world
-    res_world = cam_to_world(res['pos'], res['normal'], large_scene['camera'])
+    res_world = cam_to_world(res['pos'].reshape(-1, 3), res['normal'].reshape(-1, 3), large_scene['camera'])
 
     im = get_data(res['image'])
     im = np.uint8(255. * im)
@@ -369,7 +370,7 @@ def test_sphere_splat_render_along_ray(out_dir, cam_pos, width, height, fovy, fo
         ax.set_ylabel('y')
 
         plt.figure()
-        pos_world = get_data(res['pos'])
+        pos_world = get_data(res['pos'].reshape(-1, 3))
         posx_world = pos_world[:, 0].reshape((im.shape[0], im.shape[1]))
         posy_world = pos_world[:, 1].reshape((im.shape[0], im.shape[1]))
         posz_world = pos_world[:, 2].reshape((im.shape[0], im.shape[1]))
@@ -404,7 +405,7 @@ def main():
     parser.add_argument('--f', type=float, default=0.1, help='Focal length of camera.')
     parser.add_argument('--norm_depth_image_only', action='store_true', default=False, help='Render on the normalized'
                                                                                             ' depth image.')
-    parser.add_argument('--test_along_ray', action='store_true', help='')
+    parser.add_argument('--test_NDC', action='store_true', help='')
     parser.add_argument('--display', action='store_true', help='Optionally display using matplotlib.')
     parser.add_argument('--use_quartic', action='store_true', help='Use quartic attenuation')
 
@@ -418,7 +419,7 @@ def main():
     #print(res)
     #render_sphere_world(out_dir='./test_out', cam_pos=[0, 0, 10], radius=0.03, width=64, height=64,
     #                    fovy=11.5, focal_length=0.01, b_display=True)
-    if args.test_along_ray:
+    if not args.test_NDC:
         test_sphere_splat_render_along_ray(out_dir=args.out_dir, cam_pos=[0, 0, 10], width=args.width,
                                            height=args.height, fovy=11.5, focal_length=0.01,
                                            use_quartic=args.use_quartic, b_display=True)
