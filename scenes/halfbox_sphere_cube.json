@@ -2,7 +2,7 @@
  "glsl": {"vertex": "./shaders/phong/vs.glsl", "fragment": "./shaders/phong/fs.glsl"},
  "camera": {
     "proj_type": "perspective",
-    "viewport": [0, 0, 320, 240],
+    "viewport": [0, 0, 160, 120],
     "fovy": 0.7854,
     "focal_length": 1.0,
     "eye": [3.0, 3.0, 3.0, 1.0],
