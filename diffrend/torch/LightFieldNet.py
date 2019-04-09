@@ -1,4 +1,5 @@
 import torch.nn as nn
+from torch.utils.checkpoint import checkpoint_sequential
 
 
 class LFNetBase(nn.Module):
@@ -9,10 +10,12 @@ class LFNetBase(nn.Module):
         super(LFNetBase, self).__init__()
         self.in_ch = in_ch  # 3 position + 3 direction
         self.out_ch = out_ch  # 3 RGB radiance
+        self.chunks = 4 if 'chunks' not in params else params['chunks']
         self.params = params
 
     def forward(self, x):
-        x = self.net(x)
+        modules = [module for k, module in self._modules.items()][0]
+        x = checkpoint_sequential(modules, self.chunks, x)
         return x
 
 
@@ -34,6 +37,7 @@ def test_LFNet():
     import numpy as np
     pos = tch_var_f(list(np.random.rand(1, 10, 8)))
     y = LFNetV0(in_ch=8, out_ch=3).cuda()(pos)
+    print(y)
     print(y.shape, y)
 
 

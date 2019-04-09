@@ -1,10 +1,13 @@
-from diffrend.torch.utils import tch_var_f, get_data
+from diffrend.torch.utils import tch_var_f, get_data, grad_spatial2d
 from diffrend.torch.LightFieldNet import LFNetV0
 from diffrend.torch.render import render_scene
 from diffrend.utils.sample_generator import uniform_sample_sphere
+from torch import optim
+from torch.optim.lr_scheduler import StepLR
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
+import os
 
 
 def lf_renderer_v0(pos, normal, lfnet, num_samples=10):
@@ -56,40 +59,107 @@ def lf_renderer(pos, normal, lfnet, num_samples=20):
     return im
 
 
-def optimize_lfnet(scene, lfnet, samples=20):
-    pass
+def test_render(scene, lfnet, num_samples=200):
+    res = render_scene(scene)
+
+    pos = get_data(res['pos'])
+    normal = get_data(res['normal'])
+
+    im = lf_renderer(pos, normal, lfnet, num_samples=num_samples)
+    im_ = get_data(im)
+    im_ = im_ / im_.max()
+
+    plt.figure()
+    plt.imshow(im_)
+    plt.show()
 
 
-scene_file = '../../scenes/halfbox_sphere_cube.json'
-res = render_scene(scene_file)
+def optimize_lfnet(scene, lfnet, max_iter=2000, num_samples=120, lr=1e-3,
+                   print_interval=10, imsave_interval=100,
+                   out_dir='./tmp_lf_opt'):
+    """
+    Args:
+        scene: scene file
+        lfnet: Light Field Network
 
-img = get_data(res['image'])
-pos = get_data(res['pos'])
-normal = get_data(res['normal'])
-depth = get_data(res['depth'])
+    Returns:
 
-lfnet = LFNetV0(in_ch=6, out_ch=3).cuda()
-num_samples = 20
-im = lf_renderer(pos, normal, lfnet, num_samples=num_samples)
-im_ = get_data(im)
-plt.ion()
-plt.figure()
-plt.imshow(im_)
+    """
+    if not os.path.exists(out_dir):
+        os.makedirs(out_dir)
 
-plt.figure()
-plt.imshow(img)
-plt.figure()
-plt.imshow(normal)
+    res = render_scene(scene)
 
-plt.show()
+    pos = get_data(res['pos'])
+    normal = get_data(res['normal'])
 
-# max_iter = 5
-# # Optimize lfnet
-# for iter in range(max_iter):
-#     im = lf_renderer(pos, normal, lfnet, num_samples=num_samples)
-#     im_ = get_data(im)
-#     plt.figure()
-#     plt.imshow(im_)
+    opt_vars = lfnet.parameters()
+    criterion = torch.nn.MSELoss(size_average=True).cuda()
+    optimizer = optim.Adam(opt_vars, lr=lr)
+    lr_scheduler = StepLR(optimizer, step_size=500, gamma=0.8)
+
+    loss_per_iter = []
+    target_im = res['image']
+    target_im_grad = grad_spatial2d(target_im.mean(dim=-1)[..., np.newaxis])
+    h1 = plt.figure()
+    plt.figure(h1.number)
+    plt.imshow(get_data(target_im))
+    plt.title('Target')
+    plt.savefig(out_dir + '/Target.png')
+
+    for iter in range(max_iter):
+        im_est = lf_renderer(pos, normal, lfnet, num_samples=num_samples)
+        im_est_grad = grad_spatial2d(im_est.mean(dim=-1)[..., np.newaxis])
+        optimizer.zero_grad()
+        loss = criterion(im_est * 255, target_im * 255) + criterion(target_im_grad * 100, im_est_grad * 100)
+
+        loss_ = get_data(loss)
+        loss_per_iter.append(loss_)
+        if iter % print_interval == 0 or iter == max_iter - 1:
+            print('{}. Loss: {}'.format(iter, loss_))
+        if iter % imsave_interval == 0 or iter == max_iter - 1:
+            im_out_ = get_data(im_est)
+            im_out_ = np.uint8(255 * im_out_ / im_out_.max())
+
+            plt.figure(h1.number)
+            plt.imshow(im_out_)
+            plt.title('%d. loss= %f' % (iter, loss_))
+            plt.savefig(out_dir + '/fig_%05d.png' % iter)
+
+        loss.backward()
+        lr_scheduler.step()
+        optimizer.step()
+
+    plt.figure()
+    plt.plot(loss_per_iter, linewidth=2)
+    plt.xlabel('Iteration', fontsize=14)
+    plt.title('Loss', fontsize=12)
+    plt.grid(True)
+    plt.savefig(out_dir + '/loss.png')
+
+
+def main():
+    import argparse
+    parser = argparse.ArgumentParser(usage='Light Field Renderer Demo.')
+    parser.add_argument('--scene', type=str, default='../../scenes/halfbox_sphere_cube.json',
+                        help='Scene file to test rendering.')
+    parser.add_argument('--maxiter', type=int, default=2000, help='Max iter.')
+    parser.add_argument('--outdir', type=str, default='./tmp_lf_opt',
+                        help='Output directory.')
+    parser.add_argument('--test-render', action='store_true', help='Test render a scene.')
+
+    args = parser.parse_args()
+    print(args)
+    lfnet = LFNetV0(in_ch=6, out_ch=3, chunks=4).cuda()
+    if args.test_render:
+        test_render(args.scene, lfnet)
+    else:
+        optimize_lfnet(args.scene, lfnet, args.maxiter)
+
+
+if __name__ == '__main__':
+    main()
+
 
 
 
