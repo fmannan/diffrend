@@ -112,7 +112,7 @@ def main():
     from imageio import imsave
 
     parser = argparse.ArgumentParser(usage="render.py --scene scene_filename --out_dir output_dir")
-    parser.add_argument('--scene', type=str, default='../../scenes/basic_triangle_phong.json', help='Path to the model file')
+    parser.add_argument('--scene', type=str, default='../../scenes/halfbox_sphere_cube.json', help='Path to the model file')
     parser.add_argument('--out_dir', type=str, default='./render_samples/', help='Directory for rendered images.')
     args = parser.parse_args()
     print(args)
@@ -126,7 +126,7 @@ def main():
     imsave(args.out_dir + '/im.png', img)
 
     im_depth = np.uint8(255. * (depth - depth.min()) / (depth.max() - depth.min()))
-    imsave(args.out_dir + '/depth.png', depth)
+    imsave(args.out_dir + '/depth.png', im_depth)
 
     import matplotlib.pyplot as plt
     plt.ion()
