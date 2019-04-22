@@ -143,6 +143,15 @@ def normalize(u, eps=1e-10):
     #     return torch.renorm(u, 2, )
 
 
+def scatter_mean_dim0(x, idx):
+    data = []
+    freq = torch.zeros_like(x[:, 0]).scatter_add_(0, idx.long(), torch.ones_like(x[:, 0]))
+    for channel_idx in range(x.shape[-1]):
+        data.append(nonzero_divide(torch.zeros_like(x[..., channel_idx]).scatter_add(0, idx.long(),
+                                                                                     x[..., channel_idx]),
+                                   freq))
+    return torch.stack(data, dim=-1)
+
 
 def reflect_ray(incident, normal):
     """

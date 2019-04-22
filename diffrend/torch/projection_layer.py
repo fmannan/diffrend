@@ -2,14 +2,14 @@ import torch
 import numpy as np
 from diffrend.torch.utils import cam_to_world, world_to_cam, get_data
 from diffrend.torch.render import render_scene, load_scene, make_torch_var
-from diffrend.torch.utils import make_list2np, tch_var_f
+from diffrend.torch.utils import make_list2np, tch_var_f, scatter_mean_dim0
 
 
 """Projection Layer
 1. Project to the image plane
 2. Transform to viewport
 3. Find pixel index
-4. index_select (gather) surfel data to pixel (TODO: currently only selects but take the per-pixel average)
+4. scatter_mean surfel data to pixels
 """
 
 
@@ -72,7 +72,7 @@ def project_image_coordinates(surfels, camera):
     return px_coord_idx, {'px_coord': px_coord, 'px_coord_idx': px_coord_idx}
 
 
-def project_input(surfels, input, camera):
+def project_input_0(surfels, input, camera):
     """Project surfels given in world coordinate to the camera's projection plane.
 
     Args:
@@ -90,6 +90,10 @@ def project_input(surfels, input, camera):
     viewport = make_list2np(camera['viewport'])
     W = int(viewport[2] - viewport[0])
     idx = px_coord_idx[:, 1] * W + px_coord_idx[:, 0]
+    # TODO: scatter_mean ?? (not all types of data can be averaged)
+    # channels = []
+    # for _ in range(input.shape[-1]):
+    #     channels.append(torch.zeros_like())
     return torch.index_select(input.reshape(-1, input.shape[-1]), 0, idx.long())
 
 
@@ -107,7 +111,11 @@ def projection_renderer(surfels, rgb, camera):
         RGB image of dimensions [batch_size, H, W, 3] from projected surfels
 
     """
-    rgb_out = project_input(surfels, rgb.reshape(-1, 3), camera)
+    px_coord_idx, _ = project_image_coordinates(surfels, camera)
+    viewport = make_list2np(camera['viewport'])
+    W = int(viewport[2] - viewport[0])
+    idx = px_coord_idx[:, 1] * W + px_coord_idx[:, 0]
+    rgb_out = scatter_mean_dim0(rgb.view(-1, 3), idx.long())
     return rgb_out.reshape(rgb.shape)
 
 
@@ -186,4 +194,4 @@ def main():
 
 
 if __name__ == '__main__':
-     main()
+    main()
