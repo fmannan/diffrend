@@ -144,13 +144,22 @@ def normalize(u, eps=1e-10):
 
 
 def scatter_mean_dim0(x, idx):
+    """
+    for something like
+      x = [[1, 2, 3], [3, 4, 5], [6. 7, 8]]
+      idx = [1, 0, 1]
+    The output will be
+      output = [[3, 4, 5], [(1+6)/2, (2 + 7)/2, (3 + 8)/2]]
+
+    Except that the dimensions are:
+      x: [batch_size, nsurfels, surfel_size]
+      idx: [batch_size, nsurfels]
+    """
     data = []
-    freq = torch.zeros_like(x[:, 0]).scatter_add_(0, idx.long(), torch.ones_like(x[:, 0]))
-    for channel_idx in range(x.shape[-1]):
-        data.append(nonzero_divide(torch.zeros_like(x[..., channel_idx]).scatter_add(0, idx.long(),
-                                                                                     x[..., channel_idx]),
-                                   freq))
-    return torch.stack(data, dim=-1)
+    idx = idx.unsqueeze(-1).repeat(1, 1, x.size(-1))
+    freq = torch.zeros_like(x).scatter_add(-2, idx.long(), torch.ones_like(x))
+    out = torch.zeros_like(x).scatter_add(-2, idx.long(), x)
+    return nonzero_divide(out, freq)
 
 
 def reflect_ray(incident, normal):
@@ -320,7 +329,6 @@ def lookat(eye, at, up):
     """
     return lookat_inv(eye, at, up).inverse()
 
-const_row_e4 = tch_var_f([0, 0, 0, 1.])[np.newaxis, :]
 def lookat_inv(eye, at, up):
     """Returns the inverse lookat matrix
     :param eye: camera location
@@ -329,8 +337,13 @@ def lookat_inv(eye, at, up):
     :return: 4x4 inverse lookat matrix
     """
     rot_matrix = lookat_rot_inv(eye, at, up)
-    rot_translate = torch.cat((rot_matrix, eye[:3][:, np.newaxis]), dim=1)
-    return torch.cat((rot_translate, const_row_e4), dim=0)
+    rot_translate = torch.cat((rot_matrix, eye[...,:3][..., np.newaxis]), dim=-1)
+
+    const_row_e4 = tch_var_f([0, 0, 0, 1.]).unsqueeze(0)
+    if const_row_e4.dim() < rot_translate.dim():
+        const_row_e4 = const_row_e4.repeat(rot_translate.size(0), 1, 1)
+
+    return torch.cat((rot_translate, const_row_e4), dim=-2)
 
 
 def lookat_rot_inv(eye, at, up):
@@ -358,7 +371,7 @@ def lookat_rot_inv(eye, at, up):
     # The input `up` vector may not be orthogonal to z.
     y = torch.cross(z, x)
 
-    return torch.stack((x, y, z), dim=1)
+    return torch.stack((x, y, z), dim=-1)
 
 
 def tonemap(im, **kwargs):
@@ -494,6 +507,35 @@ def world_to_cam(pos, normal, camera):
         normal_WC = normal[:, :3]
         # M^{-T}n = (n^T M^{-1})^T
         normal_CC = torch.mm(normal_WC, inv_view_matrix[:3, :3])
+
+    return {'pos': pos_CC, 'normal': normal_CC}
+
+
+def world_to_cam_batched(pos, normal, camera):
+    """Transforms from the camera coordinate to the world coordinate
+    :param pos_normal: Assumes [batch_size, N, 3] or [batch_size, N, 4] position and normals
+    :param camera: camera specification, in which 'eye', 'at' and 'up' are of size [batch_size]. Only eye, at, and up are needed
+    :return: positions and normals in the world coordinate. [batch_size, N, 3]
+    """
+    eye = camera['eye'][...,:3]
+    at = camera['at'][...,:3]
+    up = camera['up'][...,:3]
+
+    pos_CC = None
+    normal_CC = None
+
+    if pos is not None:
+        view_matrix = lookat(eye=eye, at=at, up=up).transpose(-1, -2)
+        if pos.size(-1) == 3:
+            ones = np.ones((*pos.size()[:-1], 1))
+            pos = torch.cat((pos, tch_var_f(ones)), dim=-1)
+        pos_CC = torch.bmm(pos, view_matrix)
+
+    if normal is not None:
+        inv_view_matrix = lookat_inv(eye=eye, at=at, up=up)[..., :3, :3]
+        normal_WC = normal[..., :3]
+        # M^{-T}n = (n^T M^{-1})^T
+        normal_CC = torch.bmm(normal_WC, inv_view_matrix)
 
     return {'pos': pos_CC, 'normal': normal_CC}
 

@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-from diffrend.torch.utils import cam_to_world, world_to_cam, get_data
+from diffrend.torch.utils import cam_to_world, world_to_cam, world_to_cam_batched, get_data
 from diffrend.torch.render import render_scene, load_scene, make_torch_var
 from diffrend.torch.utils import make_list2np, tch_var_f, scatter_mean_dim0
 
@@ -28,14 +28,14 @@ def project_surfels(surfel_pos_WC, camera):
 
     """
     # TODO (fmannan): Assuming batch_size = 1 for now. For batch_size > 1 need to do batch_transformation
-    surfels_cc = world_to_cam(surfel_pos_WC, None, camera)['pos']
+    surfels_cc = world_to_cam_batched(surfel_pos_WC, None, camera)['pos']
 
     """ If a 3D point (X, Y, Z) is projected to a 2D point (x, y) then for focal_length f,
     x/f = X/Z and y/f = Y/Z
     """
     focal_length = camera['focal_length']
-    x = focal_length * surfels_cc[:, 0] / surfels_cc[:, 2]
-    y = focal_length * surfels_cc[:, 1] / surfels_cc[:, 2]
+    x = focal_length * surfels_cc[..., 0] / surfels_cc[..., 2]
+    y = focal_length * surfels_cc[..., 1] / surfels_cc[..., 2]
 
     return torch.stack((x, y), dim=-1)
 
@@ -65,8 +65,7 @@ def project_image_coordinates(surfels, camera):
     h = np.tan(fovy / 2) * 2 * focal_length
     w = h * aspect_ratio
 
-    px_coord = surfels_2d * tch_var_f([-(W - 1) / w, (H - 1) / h])[np.newaxis, :] + tch_var_f([W / 2., H / 2.])[
-                                                                                    np.newaxis, :]
+    px_coord = surfels_2d * tch_var_f([-(W - 1) / w, (H - 1) / h]).unsqueeze(-2) + tch_var_f([W / 2., H / 2.]).unsqueeze(-2)
     px_coord_idx = torch.round(px_coord - 0.5)
 
     return px_coord_idx, {'px_coord': px_coord, 'px_coord_idx': px_coord_idx}
@@ -103,9 +102,8 @@ def projection_renderer(surfels, rgb, camera):
     Args:
         surfels: [batch_size, num_surfels, pos]
         rgb: [batch_size, num_surfels, D-channel data]
-        camera: [{'eye': [], 'lookat': [], 'up': [], 'viewport': [0, 0, W, H], 'fovy': <radians>}
-                  ...num_batches...
-                ]
+        camera: [{'eye': [num_batches,...], 'lookat': [num_batches,...], 'up': [num_batches,...],
+                    'viewport': [0, 0, W, H], 'fovy': <radians>}]
 
     Returns:
         RGB image of dimensions [batch_size, H, W, 3] from projected surfels
@@ -114,12 +112,12 @@ def projection_renderer(surfels, rgb, camera):
     px_coord_idx, _ = project_image_coordinates(surfels, camera)
     viewport = make_list2np(camera['viewport'])
     W = int(viewport[2] - viewport[0])
-    idx = px_coord_idx[:, 1] * W + px_coord_idx[:, 0]
-    rgb_out = scatter_mean_dim0(rgb.view(-1, 3), idx.long())
+    idx = px_coord_idx[..., 1] * W + px_coord_idx[..., 0]
+    rgb_out = scatter_mean_dim0(rgb.view(camera['eye'].size(0), -1, 3), idx.long())
     return rgb_out.reshape(rgb.shape)
 
 
-def test_raster_coordinates(scene):
+def test_raster_coordinates(scene, batch_size):
     """Test if the projected raster coordinates are correct
 
     Args:
@@ -131,18 +129,26 @@ def test_raster_coordinates(scene):
     """
     res = render_scene(scene)
     scene = make_torch_var(load_scene(scene))
-    pos_cc = res['pos'].reshape(-1, res['pos'].shape[-1])
+    pos_cc = res['pos'].reshape(1, -1, res['pos'].shape[-1])
+    pos_cc = pos_cc.repeat(batch_size, 1, 1)
+
     camera = scene['camera']
+    camera['eye'] = camera['eye'].repeat(batch_size, 1)
+    camera['at'] = camera['at'].repeat(batch_size, 1)
+    camera['up'] = camera['up'].repeat(batch_size, 1)
+
     viewport = make_list2np(camera['viewport'])
     W, H = float(viewport[2] - viewport[0]), float(viewport[3] - viewport[1])
-    px_coord_idx, _ = project_image_coordinates(pos_cc, scene['camera'])
+    px_coord_idx, _ = project_image_coordinates(pos_cc, camera)
     xp, yp = np.meshgrid(np.linspace(0, W - 1, int(W)), np.linspace(0, H - 1, int(H)))
+    xp = xp.ravel()[None, ...].repeat(batch_size, axis=0)
+    yp = yp.ravel()[None, ...].repeat(batch_size, axis=0)
 
-    np.testing.assert_array_almost_equal(xp.ravel(), get_data(px_coord_idx[:, 0]))
-    np.testing.assert_array_almost_equal(yp.ravel(), get_data(px_coord_idx[:, 1]))
+    np.testing.assert_array_almost_equal(xp, get_data(px_coord_idx[..., 0]))
+    np.testing.assert_array_almost_equal(yp, get_data(px_coord_idx[..., 1]))
 
 
-def test_render_projection_consistency(scene):
+def test_render_projection_consistency(scene, batch_size):
     """ First render using the full renderer to get the surfel position and color
     and then render using the projection layer for testing
 
@@ -152,9 +158,17 @@ def test_render_projection_consistency(scene):
     res = render_scene(scene)
 
     scene = make_torch_var(load_scene(scene))
-    pos_cc = res['pos'].reshape(-1, res['pos'].shape[-1])
-    im = projection_renderer(pos_cc, res['image'], scene['camera'])
-    diff = np.abs(get_data(res['image']) - get_data(im))
+    pos_cc = res['pos'].reshape(-1, res['pos'].shape[-1]).repeat(batch_size, 1, 1)
+
+    camera = scene['camera']
+    camera['eye'] = camera['eye'].repeat(batch_size, 1)
+    camera['at'] = camera['at'].repeat(batch_size, 1)
+    camera['up'] = camera['up'].repeat(batch_size, 1)
+
+    image = res['image'].repeat(batch_size, 1, 1, 1)
+
+    im = projection_renderer(pos_cc, image, camera)
+    diff = np.abs(get_data(image) - get_data(im))
     np.testing.assert_(diff.sum() < 1e-10, 'Non-zero difference.')
 
 
@@ -188,9 +202,11 @@ def main():
     if not os.path.exists(args.out_dir):
         os.makedirs(args.out_dir)
 
-    test_render_projection_consistency(scene)
-    test_raster_coordinates(scene)
-    test_render_projection_consistency(scene)
+    batch_size = 5
+
+    test_render_projection_consistency(scene, batch_size)
+    test_raster_coordinates(scene, batch_size)
+    test_render_projection_consistency(scene, batch_size)
 
 
 if __name__ == '__main__':
