@@ -113,8 +113,8 @@ def projection_renderer(surfels, rgb, camera):
     viewport = make_list2np(camera['viewport'])
     W = int(viewport[2] - viewport[0])
     idx = px_coord_idx[..., 1] * W + px_coord_idx[..., 0]
-    rgb_out = scatter_mean_dim0(rgb.view(camera['eye'].size(0), -1, 3), idx.long())
-    return rgb_out.reshape(rgb.shape)
+    rgb_out, mask = scatter_mean_dim0(rgb.view(camera['eye'].size(0), -1, 3), idx.long())
+    return rgb_out.reshape(rgb.shape), mask.reshape(rgb.shape)
 
 
 def test_raster_coordinates(scene, batch_size):
@@ -167,7 +167,7 @@ def test_render_projection_consistency(scene, batch_size):
 
     image = res['image'].repeat(batch_size, 1, 1, 1)
 
-    im = projection_renderer(pos_cc, image, camera)
+    im, mask = projection_renderer(pos_cc, image, camera)
     diff = np.abs(get_data(image) - get_data(im))
     np.testing.assert_(diff.sum() < 1e-10, 'Non-zero difference.')
 

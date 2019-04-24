@@ -149,7 +149,8 @@ def scatter_mean_dim0(x, idx):
       x = [[1, 2, 3], [3, 4, 5], [6. 7, 8]]
       idx = [1, 0, 1]
     The output will be
-      output = [[3, 4, 5], [(1+6)/2, (2 + 7)/2, (3 + 8)/2]]
+      output = [[3, 4, 5], [(1+6)/2, (2 + 7)/2, (3 + 8)/2], [0, 0, 0]]
+      mask = [0, 0, 1]
 
     Except that the dimensions are:
       x: [batch_size, nsurfels, surfel_size]
@@ -159,7 +160,8 @@ def scatter_mean_dim0(x, idx):
     idx = idx.unsqueeze(-1).repeat(1, 1, x.size(-1))
     freq = torch.zeros_like(x).scatter_add(-2, idx.long(), torch.ones_like(x))
     out = torch.zeros_like(x).scatter_add(-2, idx.long(), x)
-    return nonzero_divide(out, freq)
+    mask = freq == 0
+    return nonzero_divide(out, freq), mask
 
 
 def reflect_ray(incident, normal):
