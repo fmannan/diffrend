@@ -155,13 +155,24 @@ def scatter_mean_dim0(x, idx):
     Except that the dimensions are:
       x: [batch_size, nsurfels, surfel_size]
       idx: [batch_size, nsurfels]
+
+    idx can contain indices in the range [0, nsurfels] (inclusive). Anything
+    in the last index [:, -1] will be thrown out
     """
-    data = []
+    new_shape = (x.size(0), x.size(1) + 1, x.size(2))
+
+    x_padding = tch_var_f(np.zeros((x.size(0), 1, x.size(2))))
+    x = torch.cat((x, x_padding), -2)
+
+    # Fill the index with the max index which will be thrown out after
+    idx_padding = tch_var_l(np.full((*idx.size()[:-1], 1), idx.size(-1)))
+    idx = torch.cat((idx, idx_padding), -1)
     idx = idx.unsqueeze(-1).repeat(1, 1, x.size(-1))
-    freq = torch.zeros_like(x).scatter_add(-2, idx.long(), torch.ones_like(x))
-    out = torch.zeros_like(x).scatter_add(-2, idx.long(), x)
+
+    freq = tch_var_f(np.zeros(new_shape)).scatter_add_(-2, idx.long(), torch.ones_like(x))
+    out = tch_var_f(np.zeros(new_shape)).scatter_add_(-2, idx.long(), x)
     mask = freq == 0
-    return nonzero_divide(out, freq), mask
+    return nonzero_divide(out, freq)[...,:-1,:], mask[...,:-1,:]
 
 
 def reflect_ray(incident, normal):
