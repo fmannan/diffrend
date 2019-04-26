@@ -367,16 +367,16 @@ def lookat_rot_inv(eye, at, up):
     :return: 4x4 inverse lookat matrix
     """
     if up.size()[-1] == 4:
-        assert get_data(up)[3] == 0
-        up = up[:3]
+        assert (get_data(up)[...,3] == 0).all()
+        up = up[...,:3]
 
     if eye.size()[-1] == 4:
-        assert abs(get_data(eye)[3]) > 0
-        eye = eye[:3] / eye[3]
+        assert (abs(get_data(eye)[...,3]) > 0).all()
+        eye = eye[...,:3] / eye[...,3]
 
     if at.size()[-1] == 4:
-        assert abs(get_data(at)[3]) > 0
-        at = at[:3] / at[3]
+        assert (abs(get_data(at)[...,3]) > 0).all()
+        at = at[...,:3] / at[...,3]
 
     z = normalize(eye - at)
     up = normalize(up)
@@ -576,6 +576,33 @@ def cam_to_world(pos, normal, camera):
         view_matrix = lookat(eye=eye, at=at, up=up)
         normal_CC = normal[:, :3]
         normal_WC = torch.mm(normal_CC, view_matrix[:3, :3])
+
+    return {'pos': pos_WC, 'normal': normal_WC}
+
+def cam_to_world_batched(pos, normal, camera):
+    """Transforms from the camera coordinate to the world coordinate
+    :param pos_normal: Assumes N x 3 or N x 4 position and normals
+    :param camera: Camera specification. Only eye, at, and up are needed
+    :return: positions and normals in the world coordinate. N x 3
+    """
+    eye = camera['eye'][...,:3]
+    at = camera['at'][...,:3]
+    up = camera['up'][...,:3]
+
+    pos_WC = None
+    normal_WC = None
+
+    if pos is not None:
+        inv_view_matrix = lookat_inv(eye=eye, at=at, up=up).transpose(-1, -2)
+        if pos.size(-1) == 3:
+            ones = np.ones((*pos.size()[:-1], 1))
+            pos = torch.cat((pos, tch_var_f(ones)), dim=-1)
+        pos_WC = torch.bmm(pos, inv_view_matrix)
+
+    if normal is not None:
+        view_matrix = lookat(eye=eye, at=at, up=up)[..., :3, :3]
+        normal_CC = normal[..., :3]
+        normal_WC = torch.bmm(normal_CC, view_matrix)
 
     return {'pos': pos_WC, 'normal': normal_WC}
 

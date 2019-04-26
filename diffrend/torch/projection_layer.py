@@ -1,8 +1,9 @@
 import torch
 import numpy as np
-from diffrend.torch.utils import cam_to_world, world_to_cam, world_to_cam_batched, get_data
+from diffrend.torch.utils import cam_to_world, world_to_cam, world_to_cam_batched, cam_to_world_batched, get_data
 from diffrend.torch.render import render_scene, load_scene, make_torch_var
 from diffrend.torch.utils import make_list2np, tch_var_f, tch_var_l, scatter_mean_dim0
+from diffrend.torch.renderer import z_to_pcl_CC, z_to_pcl_CC_batched
 
 
 """Projection Layer
@@ -250,19 +251,22 @@ def test_visual_render(scene, batch_size):
     res = render_scene(scene)
 
     scene = make_torch_var(load_scene(scene))
-    pos_cc = res['pos'].reshape(-1, res['pos'].shape[-1]).repeat(batch_size, 1, 1)
 
     camera = scene['camera']
     camera['eye'] = camera['eye'].repeat(batch_size, 1)
     camera['at'] = camera['at'].repeat(batch_size, 1)
     camera['up'] = camera['up'].repeat(batch_size, 1)
 
+    depth = res['depth'].repeat(batch_size, 1, 1).reshape(batch_size, -1)
+    pos_cc = z_to_pcl_CC_batched(-depth, scene['camera']) # NOTE: z = -depth
+    pos_wc = cam_to_world_batched(pos_cc, None, scene['camera'])['pos']
+
     randomly_rotate_cameras(camera, theta_range=[-np.pi / 16, np.pi / 16], phi_range=[-np.pi / 8, np.pi / 8])
 
     image = res['image'].repeat(batch_size, 1, 1, 1)
     save_image(image.permute(0, 3, 1, 2), 'test-original.png', nrow=2)
 
-    im, mask = projection_renderer(pos_cc, image, camera)
+    im, mask = projection_renderer(pos_wc, image, camera)
     save_image(im.permute(0, 3, 1, 2), 'test-rotated-reprojected.png', nrow=2)
 
 
@@ -300,7 +304,7 @@ def test_optimization(scene, batch_size, print_interval=20, imsave_interval=20, 
     res = render_scene(scene)
 
     scene = make_torch_var(load_scene(scene))
-    pos_cc = res['pos'].reshape(-1, res['pos'].shape[-1]).repeat(batch_size, 1, 1)
+    pos_wc = res['pos'].reshape(-1, res['pos'].shape[-1]).repeat(batch_size, 1, 1)
 
     camera = scene['camera']
     camera['eye'] = camera['eye'].repeat(batch_size, 1)
@@ -318,7 +322,7 @@ def test_optimization(scene, batch_size, print_interval=20, imsave_interval=20, 
     h1 = plt.figure()
     loss_per_iter = []
     for iter in range(100):
-        im_est, mask = projection_renderer(pos_cc, input_image, camera)
+        im_est, mask = projection_renderer(pos_wc, input_image, camera)
         optimizer.zero_grad()
         loss = criterion(im_est * 255, target_image * 255)
         loss_ = get_data(loss)
@@ -336,6 +340,34 @@ def test_optimization(scene, batch_size, print_interval=20, imsave_interval=20, 
         loss.backward()
         optimizer.step()
 
+
+def test_depth_to_world_consistency(scene, batch_size):
+    res = render_scene(scene)
+
+    scene = make_torch_var(load_scene(scene))
+
+    pos_wc1 = res['pos'].reshape(-1, res['pos'].shape[-1])
+
+    # First test the non-batched z_to_pcl_CC method:
+    depth = res['depth'].reshape(-1)
+    pos_cc2 = z_to_pcl_CC(-depth, scene['camera']) # NOTE: z = -depth
+    pos_wc2 = cam_to_world(pos_cc2, None, scene['camera'])['pos']
+
+    np.testing.assert_array_almost_equal(pos_wc1, pos_wc1)
+
+    # Then test the batched version:
+    camera = scene['camera']
+    camera['eye'] = camera['eye'].repeat(batch_size, 1)
+    camera['at'] = camera['at'].repeat(batch_size, 1)
+    camera['up'] = camera['up'].repeat(batch_size, 1)
+
+    pos_wc1 = pos_wc1.repeat(batch_size, 1, 1)
+
+    depth = res['depth'].repeat(batch_size, 1, 1).reshape(batch_size, -1)
+    pos_cc2 = z_to_pcl_CC_batched(-depth, scene['camera']) # NOTE: z = -depth
+    pos_wc2 = cam_to_world_batched(pos_cc2, None, scene['camera'])['pos']
+
+    np.testing.assert_array_almost_equal(pos_wc1[...,:3], pos_wc2[...,:3])
 
 
 def main():
@@ -355,6 +387,7 @@ def main():
 
     batch_size = 6
 
+    test_depth_to_world_consistency(scene, batch_size)
     test_visual_render(scene, batch_size)
     test_render_projection_consistency(scene, batch_size)
     # test_raster_coordinates(scene, batch_size) # FIXME

@@ -507,6 +507,32 @@ def z_to_pcl_CC(z, camera):
 
     return torch.stack((X, Y, Z), dim=1)
 
+def z_to_pcl_CC_batched(z, camera):
+    viewport = np.array(camera['viewport'])
+    W, H = int(viewport[2] - viewport[0]), int(viewport[3] - viewport[1])
+    aspect_ratio = W / H
+
+    fovy = camera['fovy']
+    focal_length = camera['focal_length']
+    h = np.tan(fovy / 2) * 2 * focal_length
+    w = h * aspect_ratio
+
+    ##### Find (X, Y) in the Camera's view frustum
+    # Force the caller to set the z coordinate with the correct sign
+    Z = -torch.nn.functional.relu(-z)
+
+    x, y = np.meshgrid(np.linspace(-1, 1, W), np.linspace(1, -1, H))
+    x *= w / 2
+    y *= h / 2
+
+    x = tch_var_f(x.ravel()).unsqueeze(0).repeat(z.shape[0], 1)
+    y = tch_var_f(y.ravel()).unsqueeze(0).repeat(z.shape[0], 1)
+
+    X = -Z * x / focal_length
+    Y = -Z * y / focal_length
+
+    return torch.stack((X, Y, Z), dim=-1)
+
 
 def render_splats_along_ray(scene, **params):
     """Render splats specified in the camera's coordinate system
