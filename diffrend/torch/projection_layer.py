@@ -4,6 +4,7 @@ from diffrend.torch.utils import cam_to_world, world_to_cam, world_to_cam_batche
 from diffrend.torch.render import render_scene, load_scene, make_torch_var
 from diffrend.torch.utils import make_list2np, tch_var_f, tch_var_l, scatter_mean_dim0
 from diffrend.torch.renderer import z_to_pcl_CC, z_to_pcl_CC_batched
+import copy
 
 
 """Projection Layer
@@ -111,7 +112,7 @@ def projection_renderer(surfels, rgb, camera):
 
     Args:
         surfels: [batch_size, num_surfels, pos]
-        rgb: [batch_size, num_surfels, D-channel data]
+        rgb: [batch_size, num_surfels, D-channel data] or [batch_size, H, W, D-channel data]
         camera: [{'eye': [num_batches,...], 'lookat': [num_batches,...], 'up': [num_batches,...],
                     'viewport': [0, 0, W, H], 'fovy': <radians>}]
 
@@ -340,6 +341,111 @@ def test_optimization(scene, batch_size, print_interval=20, imsave_interval=20, 
         loss.backward()
         optimizer.step()
 
+def test_depth_optimization(scene, batch_size, print_interval=20, imsave_interval=20, max_iter=100,
+                      out_dir='./proj_tmp_depth/'):
+    """ First render using the full renderer to get the surfel position and color
+    and then render using the projection layer for testing
+
+    Returns:
+
+    """
+    from torch import optim
+    import os
+    import matplotlib
+    matplotlib.use('agg')
+    import matplotlib.pyplot as plt
+    import imageio
+    plt.ion()
+
+    if not os.path.exists(out_dir):
+        os.makedirs(out_dir)
+
+    res = render_scene(scene)
+
+    scene = make_torch_var(load_scene(scene))
+    # true_pos_wc = res['pos'].reshape(-1, res['pos'].shape[-1]).repeat(batch_size, 1, 1)
+    true_input_img = res['image'].unsqueeze(0).repeat(batch_size, 1, 1, 1)
+
+    camera = scene['camera']
+    camera['eye'] = camera['eye'].repeat(batch_size, 1)
+    camera['at'] = camera['at'].repeat(batch_size, 1)
+    camera['up'] = camera['up'].repeat(batch_size, 1)
+
+    true_depth = res['depth'].repeat(batch_size, 1, 1).reshape(batch_size, -1)
+    depth = true_depth.clone() + 0.1 * torch.randn(res['depth'].size(), device=res['depth'].device)
+    depth.requires_grad = True
+
+    true_pos_cc = z_to_pcl_CC_batched(-true_depth, camera) # NOTE: z = -depth
+    true_pos_wc = cam_to_world_batched(true_pos_cc, None, camera)['pos']
+
+    rotated_camera = copy.deepcopy(camera)
+    randomly_rotate_cameras(rotated_camera, theta_range=[-np.pi / 16, np.pi / 16], phi_range=[-np.pi / 8, np.pi / 8])
+    target_image, _ = projection_renderer(true_pos_wc, true_input_img, rotated_camera)
+
+    input_image = true_input_img # + 0.1 * torch.randn(target_image.size(), device=target_image.device)
+
+    criterion = torch.nn.MSELoss(size_average=True).cuda()
+    optimizer = optim.Adam([depth], lr=1e-2)
+
+    h1 = plt.figure()
+    fig_imgs = []
+    depth_imgs = []
+    out_imgs = []
+
+    imageio.imsave(out_dir + '/optimization_target_image.png', target_image[0])
+
+    loss_per_iter = []
+    for iter in range(100):
+        pos_cc = z_to_pcl_CC_batched(-depth, camera) # NOTE: z = -depth
+        pos_wc = cam_to_world_batched(pos_cc, None, camera)['pos']
+        im_est, mask = projection_renderer(pos_wc, input_image, rotated_camera)
+        optimizer.zero_grad()
+        loss = criterion(im_est * 255, target_image * 255)
+        loss_ = get_data(loss)
+        loss_per_iter.append(loss_)
+        if iter % print_interval == 0 or iter == max_iter - 1:
+            print('{}. Loss: {}'.format(iter, loss_))
+        if iter % imsave_interval == 0 or iter == max_iter - 1:
+            # Input image
+            im_out_ = get_data(input_image.detach())
+            im_out_ = np.uint8(255 * im_out_ / im_out_.max())
+            fig = plt.figure(h1.number)
+            plot = fig.add_subplot(111)
+            plot.imshow(im_out_[0].squeeze())
+            plot.set_title('%d. loss= %f' % (iter, loss_))
+            # plt.savefig(out_dir + '/fig_%05d.png' % iter)
+            fig_data = np.array(fig.canvas.renderer._renderer)
+            fig_imgs.append(fig_data)
+
+            # Depth
+            im_out_ = get_data(depth.view(*input_image.size()[:-1], 1).detach())
+            im_out_ = np.uint8(255 * im_out_ / im_out_.max())
+            fig = plt.figure(h1.number)
+            plot = fig.add_subplot(111)
+            plot.imshow(im_out_[0].squeeze())
+            plot.set_title('%d. loss= %f' % (iter, loss_))
+            # plt.savefig(out_dir + '/fig_%05d.png' % iter)
+            depth_data = np.array(fig.canvas.renderer._renderer)
+            depth_imgs.append(depth_data)
+
+            # Output image
+            im_out_ = get_data(im_est.detach())
+            im_out_ = np.uint8(255 * im_out_ / im_out_.max())
+            fig = plt.figure(h1.number)
+            plot = fig.add_subplot(111)
+            plot.imshow(im_out_[0].squeeze())
+            plot.set_title('%d. loss= %f' % (iter, loss_))
+            # plt.savefig(out_dir + '/fig_%05d.png' % iter)
+            out_data = np.array(fig.canvas.renderer._renderer)
+            out_imgs.append(out_data)
+
+        # loss.backward()
+        # optimizer.step()
+    
+    imageio.mimsave(out_dir + '/optimization_anim_in.gif', fig_imgs)
+    imageio.mimsave(out_dir + '/optimization_anim_depth.gif', depth_imgs)
+    imageio.mimsave(out_dir + '/optimization_anim_out.gif', out_imgs)
+
 
 def test_depth_to_world_consistency(scene, batch_size):
     res = render_scene(scene)
@@ -364,8 +470,8 @@ def test_depth_to_world_consistency(scene, batch_size):
     pos_wc1 = pos_wc1.repeat(batch_size, 1, 1)
 
     depth = res['depth'].repeat(batch_size, 1, 1).reshape(batch_size, -1)
-    pos_cc2 = z_to_pcl_CC_batched(-depth, scene['camera']) # NOTE: z = -depth
-    pos_wc2 = cam_to_world_batched(pos_cc2, None, scene['camera'])['pos']
+    pos_cc2 = z_to_pcl_CC_batched(-depth, camera) # NOTE: z = -depth
+    pos_wc2 = cam_to_world_batched(pos_cc2, None, camera)['pos']
 
     np.testing.assert_array_almost_equal(pos_wc1[...,:3], pos_wc2[...,:3])
 
@@ -393,6 +499,7 @@ def main():
     # test_raster_coordinates(scene, batch_size) # FIXME
     test_transformation_consistency(scene, batch_size)
     test_optimization(scene, 1)
+    test_depth_optimization(scene, 1)
 
 
 if __name__ == '__main__':
