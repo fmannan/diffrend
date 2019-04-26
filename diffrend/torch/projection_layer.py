@@ -135,10 +135,10 @@ def randomly_rotate_cameras(camera, theta_range=[-np.pi / 2, np.pi / 2], phi_ran
     Modifies the camera object in place
     """
     # Sample a theta and phi to add to the current camera rotation
-    theta_samples, phi_samples = uniform_sample_sphere_patch(camera['eye'].shape[0], theta_range, phi_range)
+    theta_samples, phi_samples = uniform_sample_sphere_patch(get_data(camera['eye']).shape[0], theta_range, phi_range)
 
     # Get the current camera rotation (relative to the 'lookat' position)
-    camera_eye = cartesian_to_spherical(camera['eye'] - camera['at'])
+    camera_eye = cartesian_to_spherical(get_data(camera['eye']) - get_data(camera['at']))
 
     # Rotate the camera
     new_thetas = camera_eye[...,0] + theta_samples
@@ -240,6 +240,7 @@ def test_render_projection_consistency(scene, batch_size):
     diff = np.abs(get_data(image) - get_data(im))
     np.testing.assert_(diff.sum() < 1e-10, 'Non-zero difference.')
 
+
 def test_visual_render(scene, batch_size):
     """
     Test that outputs visual images for the user to compare
@@ -280,6 +281,63 @@ def test_transformation_consistency(scene, batch_size):
     np.testing.assert_array_almost_equal(get_data(normal_cc), get_data(surfels_cc['normal'][:, :3]))
 
 
+def test_optimization(scene, batch_size, print_interval=20, imsave_interval=20, max_iter=100,
+                      out_dir='./proj_tmp/'):
+    """ First render using the full renderer to get the surfel position and color
+    and then render using the projection layer for testing
+
+    Returns:
+
+    """
+    from torch import optim
+    import os
+    import matplotlib.pyplot as plt
+    plt.ion()
+
+    if not os.path.exists(out_dir):
+        os.makedirs(out_dir)
+
+    res = render_scene(scene)
+
+    scene = make_torch_var(load_scene(scene))
+    pos_cc = res['pos'].reshape(-1, res['pos'].shape[-1]).repeat(batch_size, 1, 1)
+
+    camera = scene['camera']
+    camera['eye'] = camera['eye'].repeat(batch_size, 1)
+    camera['at'] = camera['at'].repeat(batch_size, 1)
+    camera['up'] = camera['up'].repeat(batch_size, 1)
+
+    target_image = res['image'].repeat(batch_size, 1, 1, 1)
+
+    input_image = target_image + 0.1 * torch.randn(target_image.size(), device=target_image.device)
+    input_image.requires_grad = True
+
+    criterion = torch.nn.MSELoss(size_average=True).cuda()
+    optimizer = optim.Adam([input_image], lr=1e-2)
+
+    h1 = plt.figure()
+    loss_per_iter = []
+    for iter in range(100):
+        im_est, mask = projection_renderer(pos_cc, input_image, camera)
+        optimizer.zero_grad()
+        loss = criterion(im_est * 255, target_image * 255)
+        loss_ = get_data(loss)
+        loss_per_iter.append(loss_)
+        if iter % print_interval == 0 or iter == max_iter - 1:
+            print('{}. Loss: {}'.format(iter, loss_))
+        if iter % imsave_interval == 0 or iter == max_iter - 1:
+            im_out_ = get_data(input_image)
+            im_out_ = np.uint8(255 * im_out_ / im_out_.max())
+            plt.figure(h1.number)
+            plt.imshow(im_out_[0].squeeze())
+            plt.title('%d. loss= %f' % (iter, loss_))
+            plt.savefig(out_dir + '/fig_%05d.png' % iter)
+
+        loss.backward()
+        optimizer.step()
+
+
+
 def main():
     import argparse
     import os
@@ -301,6 +359,7 @@ def main():
     test_render_projection_consistency(scene, batch_size)
     # test_raster_coordinates(scene, batch_size) # FIXME
     test_transformation_consistency(scene, batch_size)
+    test_optimization(scene, 1)
 
 
 if __name__ == '__main__':
