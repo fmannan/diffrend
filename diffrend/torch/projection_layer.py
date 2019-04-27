@@ -28,7 +28,6 @@ def project_surfels(surfel_pos_WC, camera):
         [batch_size, num_surfels, 2D pos]
 
     """
-    # TODO (fmannan): Assuming batch_size = 1 for now. For batch_size > 1 need to do batch_transformation
     surfels_cc = world_to_cam_batched(surfel_pos_WC, None, camera)['pos']
 
     """ If a 3D point (X, Y, Z) is projected to a 2D point (x, y) then for focal_length f,
@@ -46,7 +45,7 @@ def project_image_coordinates(surfels, camera):
 
     Args:
         surfels: [batch_size, pos]
-                camera: [{'eye': [num_batches,...], 'lookat': [num_batches,...], 'up': [num_batches,...],
+        camera: [{'eye': [num_batches,...], 'lookat': [num_batches,...], 'up': [num_batches,...],
                     'viewport': [0, 0, W, H], 'fovy': <radians>}]
 
     Returns:
@@ -79,32 +78,7 @@ def project_image_coordinates(surfels, camera):
     mask = (px_coord_idx[..., 1] < 0) | (px_coord_idx[..., 0] < 0) | (px_coord_idx[..., 1] >= H) | (px_coord_idx[..., 1] >= W)
     px_idx = torch.where(mask, max_idx_tensor, px_idx)
 
-    return px_idx
-
-
-def project_input_0(surfels, input, camera):
-    """Project surfels given in world coordinate to the camera's projection plane.
-
-    Args:
-        surfels: [batch_size, num_surfels, pos]
-        input: [batch_size, num_surfels, D-dim data]
-        camera: [{'eye': [num_batches,...], 'lookat': [num_batches,...], 'up': [num_batches,...],
-                    'viewport': [0, 0, W, H], 'fovy': <radians>}]
-
-    Returns:
-        output [batch_size, num_surfels, D-dim data] from projected surfels
-
-    """
-    px_idx = project_image_coordinates(surfels, camera)
-    viewport = make_list2np(camera['viewport'])
-    W = int(viewport[2] - viewport[0])
-    # TODO: scatter_mean ?? (not all types of data can be averaged)
-    # channels = []
-    # for _ in range(input.shape[-1]):
-    #     channels.append(torch.zeros_like())
-    zeros = tch_var_f(np.zeros((*input.shape[:-1], 1)))
-    input = torch.cat((input, zeros), -1)
-    return torch.index_select(input.reshape(-1, input.shape[-1]), 0, px_idx.long())[...,:-1]
+    return px_idx, px_coord
 
 
 def projection_renderer(surfels, rgb, camera):
@@ -120,7 +94,7 @@ def projection_renderer(surfels, rgb, camera):
         RGB image of dimensions [batch_size, H, W, 3] from projected surfels
 
     """
-    px_idx = project_image_coordinates(surfels, camera)
+    px_idx, px_coord = project_image_coordinates(surfels, camera)
     viewport = make_list2np(camera['viewport'])
     W = int(viewport[2] - viewport[0])
     rgb_reshaped = rgb.view(rgb.size(0), -1, rgb.size(-1))
@@ -209,14 +183,15 @@ def test_raster_coordinates(scene, batch_size):
 
     viewport = make_list2np(camera['viewport'])
     W, H = float(viewport[2] - viewport[0]), float(viewport[3] - viewport[1])
-    px_coord_idx = project_image_coordinates(pos_cc, camera)
+    px_coord_idx, px_coord = project_image_coordinates(pos_cc, camera)
     xp, yp = np.meshgrid(np.linspace(0, W - 1, int(W)), np.linspace(0, H - 1, int(H)))
     xp = xp.ravel()[None, ...].repeat(batch_size, axis=0)
     yp = yp.ravel()[None, ...].repeat(batch_size, axis=0)
 
-    # FIXME broken since I changed project_image_coordinates since it doesnt return the sam thing
-    np.testing.assert_array_almost_equal(xp, get_data(px_coord_idx[..., 0]))
-    np.testing.assert_array_almost_equal(yp, get_data(px_coord_idx[..., 1]))
+    px_coord = torch.round(px_coord - 0.5).long()
+
+    np.testing.assert_array_almost_equal(xp, get_data(px_coord[..., 0]))
+    np.testing.assert_array_almost_equal(yp, get_data(px_coord[..., 1]))
 
 
 def test_render_projection_consistency(scene, batch_size):
@@ -496,7 +471,7 @@ def main():
     test_depth_to_world_consistency(scene, batch_size)
     test_visual_render(scene, batch_size)
     test_render_projection_consistency(scene, batch_size)
-    # test_raster_coordinates(scene, batch_size) # FIXME
+    test_raster_coordinates(scene, batch_size)
     test_transformation_consistency(scene, batch_size)
     test_optimization(scene, 1)
     test_depth_optimization(scene, 1)
