@@ -434,7 +434,7 @@ def test_depth_to_world_consistency(scene, batch_size):
     pos_cc2 = z_to_pcl_CC(-depth, scene['camera']) # NOTE: z = -depth
     pos_wc2 = cam_to_world(pos_cc2, None, scene['camera'])['pos']
 
-    np.testing.assert_array_almost_equal(pos_wc1, pos_wc1)
+    np.testing.assert_array_almost_equal(get_data(pos_wc1[...,:3]), get_data(pos_wc2[...,:3]))
 
     # Then test the batched version:
     camera = scene['camera']
@@ -448,7 +448,7 @@ def test_depth_to_world_consistency(scene, batch_size):
     pos_cc2 = z_to_pcl_CC_batched(-depth, camera) # NOTE: z = -depth
     pos_wc2 = cam_to_world_batched(pos_cc2, None, camera)['pos']
 
-    np.testing.assert_array_almost_equal(pos_wc1[...,:3], pos_wc2[...,:3])
+    np.testing.assert_array_almost_equal(get_data(pos_wc1[...,:3]), get_data(pos_wc2[...,:3]))
 
 
 def main():

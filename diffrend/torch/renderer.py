@@ -5,7 +5,7 @@ from diffrend.torch.utils import (tonemap, ray_object_intersections,
                                   generate_rays, where, backface_labeler,
                                   bincount, tch_var_f, norm_p, normalize,
                                   lookat, reflect_ray, estimate_surface_normals, tensor_dot,
-                                  nonzero_divide)
+                                  nonzero_divide, get_data)
 from diffrend.utils.utils import get_param_value
 from diffrend.torch.ops import perspective, inv_perspective
 """
@@ -482,7 +482,7 @@ def reshape_upsampled_data(x, H, W, C, K):
 
 
 def z_to_pcl_CC(z, camera):
-    viewport = np.array(camera['viewport'])
+    viewport = np.array(get_data(camera['viewport']))
     W, H = int(viewport[2] - viewport[0]), int(viewport[3] - viewport[1])
     aspect_ratio = W / H
 
@@ -508,7 +508,7 @@ def z_to_pcl_CC(z, camera):
     return torch.stack((X, Y, Z), dim=1)
 
 def z_to_pcl_CC_batched(z, camera):
-    viewport = np.array(camera['viewport'])
+    viewport = np.array(get_data(camera['viewport']))
     W, H = int(viewport[2] - viewport[0]), int(viewport[3] - viewport[1])
     aspect_ratio = W / H
 
