@@ -3,7 +3,7 @@ import numpy as np
 from diffrend.torch.utils import cam_to_world, world_to_cam, world_to_cam_batched, cam_to_world_batched, get_data
 from diffrend.torch.render import render_scene, load_scene, make_torch_var
 from diffrend.torch.utils import make_list2np, tch_var_f, tch_var_l, scatter_mean_dim0
-from diffrend.torch.renderer import z_to_pcl_CC, z_to_pcl_CC_batched
+from diffrend.torch.renderer import z_to_pcl_CC, z_to_pcl_CC_batched, render
 import copy
 
 
@@ -101,6 +101,52 @@ def projection_renderer(surfels, rgb, camera):
     rgb_out, mask = scatter_mean_dim0(rgb_reshaped, px_idx.long())
     return rgb_out.reshape(rgb.shape), mask.reshape(rgb.shape)
 
+def projection_renderer_differentiable(surfels, rgb, camera, rotated_image=None, sigma=3, rotated_image_weight=10):
+    """Project surfels given in world coordinate to the camera's projection plane
+       in a way that is differentiable w.r.t depth. This is achieved by interpolating
+       the surfel values using a Gaussian filter.
+
+    Args:
+        surfels: [batch_size, num_surfels, pos]
+        rgb: [batch_size, num_surfels, D-channel data] or [batch_size, H, W, D-channel data]
+        camera: [{'eye': [num_batches,...], 'lookat': [num_batches,...], 'up': [num_batches,...],
+                    'viewport': [0, 0, W, H], 'fovy': <radians>}]
+        rotated_image: [batch_size, num_surfels, D-channel data] or [batch_size, H, W, D-channel data]
+                        Image to mix in with the result of the rotation. Surfels from this image will
+                        be placed at pixel center locations before the Gaussian filtering step
+        sigma: Std of the Gaussian used for filtering. As a rule of thumb, surfels in a radius of 3*sigma
+               around a pixel will have a contribution on that pixel in the final image.
+        rotated_image_weight: weight of the rotated image pixels compared to the weights for the surfels
+                              Controls how much the rotated image appears in the final image
+
+    Returns:
+        RGB image of dimensions [batch_size, H, W, 3] from projected surfels
+
+    """
+    px_idx, px_coord = project_image_coordinates(surfels, camera)
+    viewport = make_list2np(camera['viewport'])
+    W = int(viewport[2] - viewport[0])
+    H = int(viewport[3] - viewport[1])
+    rgb_reshaped = rgb.view(rgb.size(0), -1, rgb.size(-1))
+
+    # Perform a weighted average of points surrounding a pixel using a Gaussian filter
+    # Very similar to the idea in this paper: https://arxiv.org/pdf/1810.09381.pdf
+    # TODO fast implementation https://github.com/eldar/differentiable-point-clouds/blob/master/dpc/util/point_cloud.py#L60
+
+    x, y = np.meshgrid(np.linspace(0, W - 1, W), np.linspace(0, H - 1, H))
+    x, y = tch_var_f(x.ravel()).repeat(surfels.size(0), 1), tch_var_f(y.ravel()).repeat(surfels.size(0), 1)
+    x, y = x.unsqueeze(-1), y.unsqueeze(-1)
+
+    xp, yp = px_coord[...,0].unsqueeze(-2), px_coord[...,1].unsqueeze(-2)
+    scale = torch.exp((-(xp - x)**2 - (yp - y)**2) / (2 * sigma**2))
+
+    if rotated_image is not None:
+        rotated_image = rotated_image.view(*rgb_reshaped.size())
+        out = (rotated_image_weight * rotated_image + torch.sum(scale.unsqueeze(-1) * rgb_reshaped.unsqueeze(-3), -2)) / (scale.sum(-1) + rotated_image_weight).unsqueeze(-1)
+    else:
+        out = torch.sum(scale.unsqueeze(-1) * rgb_reshaped.unsqueeze(-3), -2) / scale.sum(-1).unsqueeze(-1)
+
+    return out.view(*rgb.size())
 
 def randomly_rotate_cameras(camera, theta_range=[-np.pi / 2, np.pi / 2], phi_range=[-np.pi, np.pi]):
     """
@@ -243,7 +289,27 @@ def test_visual_render(scene, batch_size):
     save_image(image.permute(0, 3, 1, 2), 'test-original.png', nrow=2)
 
     im, mask = projection_renderer(pos_wc, image, camera)
-    save_image(im.permute(0, 3, 1, 2), 'test-rotated-reprojected.png', nrow=2)
+    save_image(im.permute(0, 3, 1, 2), 'test-rotated-reprojected-nonblurred.png', nrow=2)
+
+    # If we want to merge with another already rotated image
+    # NOTE: only works on batch 1 because `render` is not batched
+    rotated_scene = copy.deepcopy(scene)
+    rotated_scene['camera'] = copy.deepcopy(camera)
+    rotated_scene['camera']['eye'] = rotated_scene['camera']['eye'][0]
+    rotated_scene['camera']['at'] = rotated_scene['camera']['at'][0]
+    rotated_scene['camera']['up'] = rotated_scene['camera']['up'][0]
+    res_rotated = render(rotated_scene)
+    rotated_image = res_rotated['image'].repeat(batch_size, 1, 1, 1)
+
+    save_image(rotated_image.permute(0, 3, 1, 2), 'test-original-rotated.png', nrow=2)
+
+    ims = []
+    for i in range(6):
+        rotated_image_weight = 0 if i == 0 else 3**(i-1)
+        with torch.no_grad():
+            ims.append(projection_renderer_differentiable(pos_wc, image, camera, rotated_image, rotated_image_weight=rotated_image_weight))
+    im = torch.cat(ims, 0)
+    save_image(im.permute(0, 3, 1, 2), 'test-rotated-reprojected-merged.png', nrow=6)
 
 
 def test_transformation_consistency(scene, batch_size):
@@ -469,7 +535,7 @@ def main():
     batch_size = 6
 
     test_depth_to_world_consistency(scene, batch_size)
-    test_visual_render(scene, batch_size)
+    test_visual_render(scene, 1)
     test_render_projection_consistency(scene, batch_size)
     test_raster_coordinates(scene, batch_size)
     test_transformation_consistency(scene, batch_size)
