@@ -286,10 +286,10 @@ def test_visual_render(scene, batch_size):
     randomly_rotate_cameras(camera, theta_range=[-np.pi / 16, np.pi / 16], phi_range=[-np.pi / 8, np.pi / 8])
 
     image = res['image'].repeat(batch_size, 1, 1, 1)
-    save_image(image.permute(0, 3, 1, 2), 'test-original.png', nrow=2)
+    save_image(image.clone().permute(0, 3, 1, 2), 'test-original.png', nrow=2)
 
     im, mask = projection_renderer(pos_wc, image, camera)
-    save_image(im.permute(0, 3, 1, 2), 'test-rotated-reprojected-nonblurred.png', nrow=2)
+    save_image(im.clone().permute(0, 3, 1, 2), 'test-rotated-reprojected-nonblurred.png', nrow=2)
 
     # If we want to merge with another already rotated image
     # NOTE: only works on batch 1 because `render` is not batched
@@ -301,7 +301,7 @@ def test_visual_render(scene, batch_size):
     res_rotated = render(rotated_scene)
     rotated_image = res_rotated['image'].repeat(batch_size, 1, 1, 1)
 
-    save_image(rotated_image.permute(0, 3, 1, 2), 'test-original-rotated.png', nrow=2)
+    save_image(rotated_image.clone().permute(0, 3, 1, 2), 'test-original-rotated.png', nrow=2)
 
     ims = []
     for i in range(6):
@@ -309,7 +309,7 @@ def test_visual_render(scene, batch_size):
         with torch.no_grad():
             ims.append(projection_renderer_differentiable(pos_wc, image, camera, rotated_image, rotated_image_weight=rotated_image_weight))
     im = torch.cat(ims, 0)
-    save_image(im.permute(0, 3, 1, 2), 'test-rotated-reprojected-merged.png', nrow=6)
+    save_image(im.clone().permute(0, 3, 1, 2), 'test-rotated-reprojected-merged.png', nrow=6)
 
 
 def test_transformation_consistency(scene, batch_size):
