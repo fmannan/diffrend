@@ -5,6 +5,7 @@ from diffrend.torch.render import render_scene, load_scene, make_torch_var
 from diffrend.torch.utils import make_list2np, tch_var_f, tch_var_l, scatter_mean_dim0
 from diffrend.torch.renderer import z_to_pcl_CC, z_to_pcl_CC_batched, render
 import copy
+import math
 
 
 """Projection Layer
@@ -131,9 +132,8 @@ def projection_renderer_differentiable(surfels, rgb, camera, rotated_image=None,
 
     # Perform a weighted average of points surrounding a pixel using a Gaussian filter
     # Very similar to the idea in this paper: https://arxiv.org/pdf/1810.09381.pdf
-    # TODO fast implementation https://github.com/eldar/differentiable-point-clouds/blob/master/dpc/util/point_cloud.py#L60
 
-    x, y = np.meshgrid(np.linspace(0, W - 1, W), np.linspace(0, H - 1, H))
+    x, y = np.meshgrid(np.linspace(0, W - 1, W) + 0.5, np.linspace(0, H - 1, H) + 0.5)
     x, y = tch_var_f(x.ravel()).repeat(surfels.size(0), 1), tch_var_f(y.ravel()).repeat(surfels.size(0), 1)
     x, y = x.unsqueeze(-1), y.unsqueeze(-1)
 
@@ -142,11 +142,74 @@ def projection_renderer_differentiable(surfels, rgb, camera, rotated_image=None,
 
     if rotated_image is not None:
         rotated_image = rotated_image.view(*rgb_reshaped.size())
-        out = (rotated_image_weight * rotated_image + torch.sum(scale.unsqueeze(-1) * rgb_reshaped.unsqueeze(-3), -2)) / (scale.sum(-1) + rotated_image_weight).unsqueeze(-1)
+        out = (rotated_image_weight * rotated_image + torch.sum(scale.unsqueeze(-1) * rgb_reshaped.unsqueeze(-3), -2)) / (scale.sum(-1) + rotated_image_weight + 1e-10).unsqueeze(-1)
     else:
-        out = torch.sum(scale.unsqueeze(-1) * rgb_reshaped.unsqueeze(-3), -2) / scale.sum(-1).unsqueeze(-1)
+        out = torch.sum(scale.unsqueeze(-1) * rgb_reshaped.unsqueeze(-3), -2) / (scale.sum(-1) + 1e-10).unsqueeze(-1)
 
     return out.view(*rgb.size())
+
+
+def projection_renderer_differentiable_fast(surfels, rgb, camera, sigma=3):
+    """Project surfels given in world coordinate to the camera's projection plane
+       in a way that is differentiable w.r.t depth. This is achieved by interpolating
+       the surfel values using bilinear interpolation then blurring the output image using a Gaussian filter.
+
+    Args:
+        surfels: [batch_size, num_surfels, pos]
+        rgb: [batch_size, num_surfels, D-channel data] or [batch_size, H, W, D-channel data]
+        camera: [{'eye': [num_batches,...], 'lookat': [num_batches,...], 'up': [num_batches,...],
+                    'viewport': [0, 0, W, H], 'fovy': <radians>}]
+        sigma: Std of the Gaussian used for filtering. As a rule of thumb, surfels in a radius of 3*sigma
+               around a pixel will have a contribution on that pixel in the final image.
+
+    Returns:
+        RGB image of dimensions [batch_size, H, W, 3] from projected surfels
+    """
+    _, px_coord = project_image_coordinates(surfels, camera)
+    viewport = make_list2np(camera['viewport'])
+    W = int(viewport[2] - viewport[0])
+    H = int(viewport[3] - viewport[1])
+    rgb_in = rgb.view(rgb.size(0), -1, rgb.size(-1))
+
+    # First create a uniform grid through bilinear interpolation
+    # Then, perform a convolution with a Gaussian kernel to blur the output image
+    # Idea from this paper: https://arxiv.org/pdf/1810.09381.pdf
+    # Tensorflow implementation: https://github.com/eldar/differentiable-point-clouds/blob/master/dpc/util/point_cloud.py#L60
+
+    px_idx = torch.floor(px_coord - 0.5).long()
+
+    # Difference to the nearest pixel center on the top left
+    x = (px_coord[...,0] - 0.5) - px_idx[...,0].float()
+    y = (px_coord[...,1] - 0.5) - px_idx[...,1].float()
+    x, y = x.unsqueeze(-1), y.unsqueeze(-1)
+
+    def flat_px(px):
+        """Flatten the pixel locations and make sure everything is within bounds"""
+        out = px[...,1] * W + px[...,0]
+        max_idx = tch_var_l([W * H])
+        mask = (px[...,1] < 0) | (px[...,0] < 0) | (px[...,1] >= H) | (px[...,1] >= W)
+        out = torch.where(mask, max_idx, out)
+        return out
+
+    rgb_out = scatter_mean_dim0(rgb_in * (1 - x) * (1 - y), flat_px(px_idx + tch_var_l([0, 0])))[0]
+    rgb_out += scatter_mean_dim0(rgb_in * (1 - x) * y, flat_px(px_idx + tch_var_l([0, 1])))[0]
+    rgb_out += scatter_mean_dim0(rgb_in * x * (1 - y), flat_px(px_idx + tch_var_l([1, 0])))[0]
+    rgb_out += scatter_mean_dim0(rgb_in * x * y, flat_px(px_idx + tch_var_l([1, 1])))[0]
+
+    rgb_out = rgb_out.view(*rgb.size()).permute(0, 3, 1, 2)
+
+    # Finally, blur the output image
+    half_kernel_size = math.floor(3 * sigma)
+    gaussian_x = torch.arange(-half_kernel_size, half_kernel_size + 1, device=rgb_out.device).float()
+    gaussian_kernel = torch.exp(-gaussian_x**2 / (2 * sigma**2))
+    gaussian_kernel = gaussian_kernel / gaussian_kernel.sum() # Normalize
+    gaussian_kernel = torch.eye(rgb_out.size(1), device=gaussian_kernel.device).unsqueeze(-1).unsqueeze(-1) * gaussian_kernel.view(1, 1, 1, -1)
+
+    blurred = torch.nn.functional.conv2d(rgb_out, gaussian_kernel, padding=(0, half_kernel_size))
+    blurred = torch.nn.functional.conv2d(blurred, gaussian_kernel.transpose(-1, -2), padding=(half_kernel_size, 0))
+
+    return blurred.permute(0, 2, 3, 1)
+
 
 def randomly_rotate_cameras(camera, theta_range=[-np.pi / 2, np.pi / 2], phi_range=[-np.pi, np.pi]):
     """
@@ -302,6 +365,9 @@ def test_visual_render(scene, batch_size):
     rotated_image = res_rotated['image'].repeat(batch_size, 1, 1, 1)
 
     save_image(rotated_image.clone().permute(0, 3, 1, 2), 'test-original-rotated.png', nrow=2)
+
+    im = projection_renderer_differentiable_fast(pos_wc, image, camera, sigma=1.5)
+    save_image(im.clone().permute(0, 3, 1, 2), 'test-fast-rotated-reprojected.png', nrow=2)
 
     ims = []
     for i in range(6):
