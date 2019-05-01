@@ -149,7 +149,7 @@ def projection_renderer_differentiable(surfels, rgb, camera, rotated_image=None,
     return out.view(*rgb.size())
 
 
-def projection_renderer_differentiable_fast(surfels, rgb, camera, rotated_image=None, sigma=3):
+def projection_renderer_differentiable_fast(surfels, rgb, camera, rotated_image=None, blur_size=0.15):
     """Project surfels given in world coordinate to the camera's projection plane
        in a way that is differentiable w.r.t depth. This is achieved by interpolating
        the surfel values using bilinear interpolation then blurring the output image using a Gaussian filter.
@@ -161,8 +161,8 @@ def projection_renderer_differentiable_fast(surfels, rgb, camera, rotated_image=
                     'viewport': [0, 0, W, H], 'fovy': <radians>}]
         rotated_image: [batch_size, num_surfels, D-channel data] or [batch_size, H, W, D-channel data]
                         Image to mix in with the result of the rotation.
-        sigma: Std of the Gaussian used for filtering. As a rule of thumb, surfels in a radius of 3*sigma
-               around a pixel will have a contribution on that pixel in the final image.
+        blur_size: (between 0 and 1). Determines the size of the gaussian kernel as a percentage of the width of the input image
+                   The standard deviation of the Gaussian kernel is automatically calculated from this value
 
     Returns:
         RGB image of dimensions [batch_size, H, W, 3] from projected surfels
@@ -207,7 +207,8 @@ def projection_renderer_differentiable_fast(surfels, rgb, camera, rotated_image=
     soft_mask = soft_mask.view(*rgb.size()[:-1], 1).permute(0, 3, 1, 2)
 
     # Finally, blur the output image
-    half_kernel_size = math.floor(3 * sigma)
+    sigma = blur_size * rgb.size(-2) / 6
+    half_kernel_size = math.floor(sigma * 3)
     gaussian_x = torch.arange(-half_kernel_size, half_kernel_size + 1, device=rgb_out.device).float()
     gaussian_kernel = torch.exp(-gaussian_x**2 / (2 * sigma**2))
     gaussian_kernel = gaussian_kernel / gaussian_kernel.sum() # Normalize
@@ -391,10 +392,10 @@ def test_visual_render(scene, batch_size):
 
     save_image(rotated_image.clone().permute(0, 3, 1, 2), 'test-original-rotated.png', nrow=2)
 
-    im, soft_mask, unmerged = projection_renderer_differentiable_fast(pos_wc, image, camera, rotated_image, sigma=1.5)
+    im, soft_mask = projection_renderer_differentiable_fast(pos_wc, image, camera, rotated_image, blur_size=0.02)
     save_image(im.clone().permute(0, 3, 1, 2), 'test-fast-rotated-reprojected.png', nrow=2)
     save_image(soft_mask.clone().permute(0, 3, 1, 2), 'test-fast-soft-mask.png', nrow=2)
-    save_image(unmerged.clone().permute(0, 3, 1, 2), 'test-fast-unmerged.png', nrow=2)
+
     # ims = []
     # for i in range(6):
     #     rotated_image_weight = 0 if i == 0 else 3**(i-1)
