@@ -149,7 +149,7 @@ def projection_renderer_differentiable(surfels, rgb, camera, rotated_image=None,
     return out.view(*rgb.size())
 
 
-def projection_renderer_differentiable_fast(surfels, rgb, camera, sigma=3):
+def projection_renderer_differentiable_fast(surfels, rgb, camera, rotated_image=None, sigma=3):
     """Project surfels given in world coordinate to the camera's projection plane
        in a way that is differentiable w.r.t depth. This is achieved by interpolating
        the surfel values using bilinear interpolation then blurring the output image using a Gaussian filter.
@@ -159,6 +159,8 @@ def projection_renderer_differentiable_fast(surfels, rgb, camera, sigma=3):
         rgb: [batch_size, num_surfels, D-channel data] or [batch_size, H, W, D-channel data]
         camera: [{'eye': [num_batches,...], 'lookat': [num_batches,...], 'up': [num_batches,...],
                     'viewport': [0, 0, W, H], 'fovy': <radians>}]
+        rotated_image: [batch_size, num_surfels, D-channel data] or [batch_size, H, W, D-channel data]
+                        Image to mix in with the result of the rotation.
         sigma: Std of the Gaussian used for filtering. As a rule of thumb, surfels in a radius of 3*sigma
                around a pixel will have a contribution on that pixel in the final image.
 
@@ -196,19 +198,42 @@ def projection_renderer_differentiable_fast(surfels, rgb, camera, sigma=3):
     rgb_out += scatter_mean_dim0(rgb_in * x * (1 - y), flat_px(px_idx + tch_var_l([1, 0])))[0]
     rgb_out += scatter_mean_dim0(rgb_in * x * y, flat_px(px_idx + tch_var_l([1, 1])))[0]
 
+    soft_mask = scatter_mean_dim0((1 - x) * (1 - y), flat_px(px_idx + tch_var_l([0, 0])))[0]
+    soft_mask += scatter_mean_dim0((1 - x) * y, flat_px(px_idx + tch_var_l([0, 1])))[0]
+    soft_mask += scatter_mean_dim0(x * (1 - y), flat_px(px_idx + tch_var_l([1, 0])))[0]
+    soft_mask += scatter_mean_dim0(x * y, flat_px(px_idx + tch_var_l([1, 1])))[0]
+
     rgb_out = rgb_out.view(*rgb.size()).permute(0, 3, 1, 2)
+    soft_mask = soft_mask.view(*rgb.size()[:-1], 1).permute(0, 3, 1, 2)
 
     # Finally, blur the output image
     half_kernel_size = math.floor(3 * sigma)
     gaussian_x = torch.arange(-half_kernel_size, half_kernel_size + 1, device=rgb_out.device).float()
     gaussian_kernel = torch.exp(-gaussian_x**2 / (2 * sigma**2))
     gaussian_kernel = gaussian_kernel / gaussian_kernel.sum() # Normalize
-    gaussian_kernel = torch.eye(rgb_out.size(1), device=gaussian_kernel.device).unsqueeze(-1).unsqueeze(-1) * gaussian_kernel.view(1, 1, 1, -1)
+    gaussian_kernel_rgb = torch.eye(rgb_out.size(1), device=gaussian_kernel.device).unsqueeze(-1).unsqueeze(-1) * gaussian_kernel.view(1, 1, 1, -1)
+    gaussian_kernel_mask = gaussian_kernel.view(1, 1, 1, -1)
 
-    blurred = torch.nn.functional.conv2d(rgb_out, gaussian_kernel, padding=(0, half_kernel_size))
-    blurred = torch.nn.functional.conv2d(blurred, gaussian_kernel.transpose(-1, -2), padding=(half_kernel_size, 0))
+    # Mirror padding + 2 1D convolutions of the Gaussian kernel
+    padded = torch.nn.functional.pad(rgb_out, (half_kernel_size, half_kernel_size, half_kernel_size, half_kernel_size), mode='reflect')
+    blurred = torch.nn.functional.conv2d(padded, gaussian_kernel_rgb)
+    blurred = torch.nn.functional.conv2d(blurred, gaussian_kernel_rgb.transpose(-1, -2))
 
-    return blurred.permute(0, 2, 3, 1)
+    # The soft mask also needs to go through the blur
+    padded_mask = torch.nn.functional.pad(soft_mask, (half_kernel_size, half_kernel_size, half_kernel_size, half_kernel_size), mode='reflect')
+    blurred_mask = torch.nn.functional.conv2d(padded_mask, gaussian_kernel_mask)
+    blurred_mask = torch.nn.functional.conv2d(blurred_mask, gaussian_kernel_mask.transpose(-1, -2))
+
+    out = blurred.permute(0, 2, 3, 1)
+    out_mask = blurred_mask.permute(0, 2, 3, 1)
+
+    # If an additional image is passed in, merge it using the soft mask:
+    if rotated_image is not None:
+        out = torch.where(out_mask > 1, out / out_mask, out + rotated_image * (1 - out_mask))
+    else:
+        out = torch.where(out_mask > 0, out / out_mask, out)
+
+    return out, out_mask
 
 
 def randomly_rotate_cameras(camera, theta_range=[-np.pi / 2, np.pi / 2], phi_range=[-np.pi, np.pi]):
@@ -366,16 +391,17 @@ def test_visual_render(scene, batch_size):
 
     save_image(rotated_image.clone().permute(0, 3, 1, 2), 'test-original-rotated.png', nrow=2)
 
-    im = projection_renderer_differentiable_fast(pos_wc, image, camera, sigma=1.5)
+    im, soft_mask, unmerged = projection_renderer_differentiable_fast(pos_wc, image, camera, rotated_image, sigma=1.5)
     save_image(im.clone().permute(0, 3, 1, 2), 'test-fast-rotated-reprojected.png', nrow=2)
-
-    ims = []
-    for i in range(6):
-        rotated_image_weight = 0 if i == 0 else 3**(i-1)
-        with torch.no_grad():
-            ims.append(projection_renderer_differentiable(pos_wc, image, camera, rotated_image, rotated_image_weight=rotated_image_weight))
-    im = torch.cat(ims, 0)
-    save_image(im.clone().permute(0, 3, 1, 2), 'test-rotated-reprojected-merged.png', nrow=6)
+    save_image(soft_mask.clone().permute(0, 3, 1, 2), 'test-fast-soft-mask.png', nrow=2)
+    save_image(unmerged.clone().permute(0, 3, 1, 2), 'test-fast-unmerged.png', nrow=2)
+    # ims = []
+    # for i in range(6):
+    #     rotated_image_weight = 0 if i == 0 else 3**(i-1)
+    #     with torch.no_grad():
+    #         ims.append(projection_renderer_differentiable(pos_wc, image, camera, rotated_image, rotated_image_weight=rotated_image_weight))
+    # im = torch.cat(ims, 0)
+    # save_image(im.clone().permute(0, 3, 1, 2), 'test-rotated-reprojected-merged.png', nrow=6)
 
 
 def test_transformation_consistency(scene, batch_size):
