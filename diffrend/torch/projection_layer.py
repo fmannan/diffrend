@@ -225,14 +225,21 @@ def projection_renderer_differentiable_fast(surfels, rgb, camera, rotated_image=
     blurred_mask = torch.nn.functional.conv2d(padded_mask, gaussian_kernel_mask)
     blurred_mask = torch.nn.functional.conv2d(blurred_mask, gaussian_kernel_mask.transpose(-1, -2))
 
+    # TODO should the `rotated_image` also be blurred?
+
     out = blurred.permute(0, 2, 3, 1)
     out_mask = blurred_mask.permute(0, 2, 3, 1)
 
+    # There seems to be a bug in PyTorch where if a single division by 0 occurs in a tensor, the whole thing becomes NaN?
+    # Might be related to this issue: https://github.com/pytorch/pytorch/issues/4132
+    # Because of this behavior, one can't simply do `out / out_mask` in `torch.where`
+    out_mask_nonzero = torch.where(out_mask > 0, out_mask, torch.ones_like(out_mask))
+
     # If an additional image is passed in, merge it using the soft mask:
     if rotated_image is not None:
-        out = torch.where(out_mask > 1, out / out_mask, out + rotated_image * (1 - out_mask))
+        out = torch.where(out_mask > 1, out / out_mask_nonzero, out + rotated_image * (1 - out_mask))
     else:
-        out = torch.where(out_mask > 0, out / out_mask, out)
+        out = torch.where(out_mask > 0, out / out_mask_nonzero, out)
 
     return out, out_mask
 
