@@ -76,7 +76,7 @@ def project_image_coordinates(surfels, camera):
     max_idx_tensor = tch_var_l([max_idx])
 
     # Map out of bounds pixels to the last (extra) index
-    mask = (px_coord_idx[..., 1] < 0) | (px_coord_idx[..., 0] < 0) | (px_coord_idx[..., 1] >= H) | (px_coord_idx[..., 1] >= W)
+    mask = (px_coord_idx[..., 1] < 0) | (px_coord_idx[..., 0] < 0) | (px_coord_idx[..., 1] >= H) | (px_coord_idx[..., 0] >= W)
     px_idx = torch.where(mask, max_idx_tensor, px_idx)
 
     return px_idx, px_coord
@@ -189,7 +189,7 @@ def projection_renderer_differentiable_fast(surfels, rgb, camera, rotated_image=
         """Flatten the pixel locations and make sure everything is within bounds"""
         out = px[...,1] * W + px[...,0]
         max_idx = tch_var_l([W * H])
-        mask = (px[...,1] < 0) | (px[...,0] < 0) | (px[...,1] >= H) | (px[...,1] >= W)
+        mask = (px[...,1] < 0) | (px[...,0] < 0) | (px[...,1] >= H) | (px[...,0] >= W)
         out = torch.where(mask, max_idx, out)
         return out
 
