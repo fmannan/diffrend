@@ -2,7 +2,7 @@ import torch
 import numpy as np
 from diffrend.torch.utils import cam_to_world, world_to_cam, world_to_cam_batched, cam_to_world_batched, get_data
 from diffrend.torch.render import render_scene, load_scene, make_torch_var
-from diffrend.torch.utils import make_list2np, tch_var_f, tch_var_l, scatter_mean_dim0
+from diffrend.torch.utils import make_list2np, tch_var_f, tch_var_l, scatter_mean_dim0, nonzero_divide
 from diffrend.torch.renderer import z_to_pcl_CC, z_to_pcl_CC_batched, render
 import copy
 import math
@@ -35,8 +35,8 @@ def project_surfels(surfel_pos_WC, camera):
     x/f = X/Z and y/f = Y/Z
     """
     focal_length = camera['focal_length']
-    x = focal_length * surfels_cc[..., 0] / surfels_cc[..., 2]
-    y = focal_length * surfels_cc[..., 1] / surfels_cc[..., 2]
+    x = focal_length * nonzero_divide(surfels_cc[..., 0], surfels_cc[..., 2])
+    y = focal_length * nonzero_divide(surfels_cc[..., 1], surfels_cc[..., 2])
 
     return torch.stack((x, y), dim=-1)
 
