@@ -272,6 +272,41 @@ def randomly_rotate_cameras(camera, theta_range=[-np.pi / 2, np.pi / 2], phi_ran
     camera['eye'] = tch_var_f(camera_eye) + camera['at']
 
 
+def uniformly_rotate_cameras(camera, theta_range=[-np.pi / 2, np.pi / 2], phi_range=[-np.pi, np.pi]):
+    """
+    Given a batch of camera positions, rotate the 'eye' properties around the 'lookat' position uniformly
+    for the given angle ranges (equiangular samples)
+    :param camera: [{'eye': [num_batches,...], 'lookat': [num_batches,...], 'up': [num_batches,...],
+                    'viewport': [0, 0, W, H], 'fovy': <radians>}]
+
+    Modifies the camera object in place
+
+    ASSUMES A SQUARE NUMBER OF CAMERAS
+    """
+    num_cameras = get_data(camera['eye']).shape[0]
+    width = int(np.sqrt(num_cameras))
+
+    # Sample a theta and phi to add to the current camera rotation
+    theta_samples, phi_samples  = np.meshgrid(np.linspace(*theta_range, width), np.linspace(*phi_range, width))
+    theta_samples, phi_samples = theta_samples.ravel(), phi_samples.ravel()
+
+    # Get the current camera rotation (relative to the 'lookat' position)
+    camera_eye = cartesian_to_spherical(get_data(camera['eye']) - get_data(camera['at']))
+
+    # Rotate the camera
+    new_thetas = camera_eye[...,0] + theta_samples
+    new_phis = camera_eye[...,1] + phi_samples
+
+    # Go back to cartesian coordinates and place the camera back relative to the 'lookat' position
+    camera_eye = spherical_to_cartesian(new_thetas, new_phis, radius=np.expand_dims(camera_eye[...,2], -1))
+
+    if camera['at'].shape[-1] == 4:
+        zeros = np.zeros((camera_eye.shape[0], 1))
+        camera_eye = np.concatenate((camera_eye, zeros), axis=-1)
+
+    camera['eye'] = tch_var_f(camera_eye) + camera['at']
+
+
 def uniform_sample_sphere_patch(num_samples, theta_range=[0, np.pi], phi_range=[0, 2 * np.pi]):
     """
        Generate uniform random samples a patch defined by theta and phi ranges
