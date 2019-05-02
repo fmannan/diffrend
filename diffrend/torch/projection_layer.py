@@ -203,45 +203,39 @@ def projection_renderer_differentiable_fast(surfels, rgb, camera, rotated_image=
     soft_mask += scatter_mean_dim0(x * (1 - y), flat_px(px_idx + tch_var_l([1, 0])))[0]
     soft_mask += scatter_mean_dim0(x * y, flat_px(px_idx + tch_var_l([1, 1])))[0]
 
-    rgb_out = rgb_out.view(*rgb.size()).permute(0, 3, 1, 2)
-    soft_mask = soft_mask.view(*rgb.size()[:-1], 1).permute(0, 3, 1, 2)
+    rgb_out = rgb_out.view(*rgb.size())
+    soft_mask = soft_mask.view(*rgb.size()[:-1], 1)
 
-    # Finally, blur the output image
+    # Setup everything needed for Gaussian blur
     sigma = blur_size * rgb.size(-2) / 6
     half_kernel_size = math.floor(sigma * 3)
+    num_channels = rgb_out.size(-1)
     gaussian_x = torch.arange(-half_kernel_size, half_kernel_size + 1, device=rgb_out.device).float()
     gaussian_kernel = torch.exp(-gaussian_x**2 / (2 * sigma**2))
     gaussian_kernel = gaussian_kernel / gaussian_kernel.sum() # Normalize
-    gaussian_kernel_rgb = torch.eye(rgb_out.size(1), device=gaussian_kernel.device).unsqueeze(-1).unsqueeze(-1) * gaussian_kernel.view(1, 1, 1, -1)
-    gaussian_kernel_mask = gaussian_kernel.view(1, 1, 1, -1)
+    gaussian_kernel = torch.eye(num_channels, device=gaussian_kernel.device).unsqueeze(-1).unsqueeze(-1) * gaussian_kernel.view(1, 1, 1, -1)
 
-    # Mirror padding + 2 1D convolutions of the Gaussian kernel
-    padded = torch.nn.functional.pad(rgb_out, (half_kernel_size, half_kernel_size, half_kernel_size, half_kernel_size), mode='reflect')
-    blurred = torch.nn.functional.conv2d(padded, gaussian_kernel_rgb)
-    blurred = torch.nn.functional.conv2d(blurred, gaussian_kernel_rgb.transpose(-1, -2))
-
-    # The soft mask also needs to go through the blur
-    padded_mask = torch.nn.functional.pad(soft_mask, (half_kernel_size, half_kernel_size, half_kernel_size, half_kernel_size), mode='reflect')
-    blurred_mask = torch.nn.functional.conv2d(padded_mask, gaussian_kernel_mask)
-    blurred_mask = torch.nn.functional.conv2d(blurred_mask, gaussian_kernel_mask.transpose(-1, -2))
-
-    # TODO should the `rotated_image` also be blurred?
-
-    out = blurred.permute(0, 2, 3, 1)
-    out_mask = blurred_mask.permute(0, 2, 3, 1)
+    def blur(input):
+        # Mirror padding + 2 1D convolutions of the Gaussian kernel
+        padded = torch.nn.functional.pad(input, (half_kernel_size, half_kernel_size, half_kernel_size, half_kernel_size), mode='reflect')
+        blurred = torch.nn.functional.conv2d(padded, gaussian_kernel)
+        return torch.nn.functional.conv2d(blurred, gaussian_kernel.transpose(-1, -2))
 
     # There seems to be a bug in PyTorch where if a single division by 0 occurs in a tensor, the whole thing becomes NaN?
     # Might be related to this issue: https://github.com/pytorch/pytorch/issues/4132
     # Because of this behavior, one can't simply do `out / out_mask` in `torch.where`
-    out_mask_nonzero = torch.where(out_mask > 0, out_mask, torch.ones_like(out_mask))
+    soft_mask_nonzero = torch.where(soft_mask > 0, soft_mask, torch.ones_like(soft_mask))
 
     # If an additional image is passed in, merge it using the soft mask:
     if rotated_image is not None:
-        out = torch.where(out_mask > 1, out / out_mask_nonzero, out + rotated_image * (1 - out_mask))
+        out = torch.where(soft_mask > 1, rgb_out / soft_mask_nonzero, rgb_out + rotated_image * (1 - soft_mask))
     else:
-        out = torch.where(out_mask > 0, out / out_mask_nonzero, out)
+        out = torch.where(soft_mask > 0, rgb_out / soft_mask_nonzero, rgb_out)
 
-    return out, out_mask
+    # Finally, blur the output image
+    out = blur(out.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
+
+    return out, soft_mask
 
 
 def randomly_rotate_cameras(camera, theta_range=[-np.pi / 2, np.pi / 2], phi_range=[-np.pi, np.pi]):
