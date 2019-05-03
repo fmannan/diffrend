@@ -2,7 +2,7 @@ import torch
 import numpy as np
 from diffrend.torch.utils import cam_to_world, world_to_cam, world_to_cam_batched, cam_to_world_batched, get_data
 from diffrend.torch.render import render_scene, load_scene, make_torch_var
-from diffrend.torch.utils import make_list2np, tch_var_f, tch_var_l, scatter_mean_dim0, nonzero_divide
+from diffrend.torch.utils import make_list2np, tch_var_f, tch_var_l, scatter_mean_dim0, scatter_weighted_blended_oit, nonzero_divide
 from diffrend.torch.renderer import z_to_pcl_CC, z_to_pcl_CC_batched, render
 import copy
 import math
@@ -18,7 +18,7 @@ import math
 
 def project_surfels(surfel_pos_WC, camera):
     """Returns the surfel coordinates (defined in world coordinate) on a projection plane
-    (in the camera's coordinate frame)
+    (in the camera's coordinate frame), including the depth (ray distance)
 
     Args:
         surfels: [batch_size, num_surfels, 3D pos]
@@ -26,7 +26,7 @@ def project_surfels(surfel_pos_WC, camera):
                     'viewport': [0, 0, W, H], 'fovy': <radians>}]
 
     Returns:
-        [batch_size, num_surfels, 2D pos]
+        [batch_size, num_surfels, 3D pos]
 
     """
     surfels_cc = world_to_cam_batched(surfel_pos_WC, None, camera)['pos']
@@ -37,8 +37,11 @@ def project_surfels(surfel_pos_WC, camera):
     focal_length = camera['focal_length']
     x = focal_length * nonzero_divide(surfels_cc[..., 0], surfels_cc[..., 2])
     y = focal_length * nonzero_divide(surfels_cc[..., 1], surfels_cc[..., 2])
+    # Convert depth from camera plane (perpendicular) to depth from camera center position:
+    z = torch.sqrt((surfels_cc[..., 0] - x)**2 + (surfels_cc[..., 1] - y)**2 + surfels_cc[..., 2]**2)
+    # z = surfels_cc[..., 2] # FIXME which one to use?
 
-    return torch.stack((x, y), dim=-1)
+    return torch.stack((x, y, z), dim=-1)
 
 
 def project_image_coordinates(surfels, camera):
@@ -50,12 +53,12 @@ def project_image_coordinates(surfels, camera):
                     'viewport': [0, 0, W, H], 'fovy': <radians>}]
 
     Returns:
-        RGB image of dimensions [batch_size, H*W, 3] from projected surfels
+        Image of destination indices of dimensions [batch_size, H*W]
         Note that the range of possible coordinates is restricted to be between 0
         and W*H (inclusive). This is inclusive because we use the last index as
         a "dump" for any index that falls outside of the camera's field of view
     """
-    surfels_2d = project_surfels(surfels, camera)
+    surfels_plane = project_surfels(surfels, camera)
 
     # Rasterize
     viewport = make_list2np(camera['viewport'])
@@ -67,7 +70,8 @@ def project_image_coordinates(surfels, camera):
     h = np.tan(fovy / 2) * 2 * focal_length
     w = h * aspect_ratio
 
-    px_coord = surfels_2d * tch_var_f([-(W - 1) / w, (H - 1) / h]).unsqueeze(-2) + tch_var_f([W / 2., H / 2.]).unsqueeze(-2)
+    px_coord = surfels_plane # Make sure to also transmit the new depth
+    px_coord[...,:2] = surfels_plane[...,:2] * tch_var_f([-(W - 1) / w, (H - 1) / h]).unsqueeze(-2) + tch_var_f([W / 2., H / 2.]).unsqueeze(-2)
     px_coord_idx = torch.round(px_coord - 0.5).long()
 
     px_idx = px_coord_idx[..., 1] * W + px_coord_idx[..., 0]
@@ -95,7 +99,7 @@ def projection_renderer(surfels, rgb, camera):
         RGB image of dimensions [batch_size, H, W, 3] from projected surfels
 
     """
-    px_idx, px_coord = project_image_coordinates(surfels, camera)
+    px_idx, _ = project_image_coordinates(surfels, camera)
     viewport = make_list2np(camera['viewport'])
     W = int(viewport[2] - viewport[0])
     rgb_reshaped = rgb.view(rgb.size(0), -1, rgb.size(-1))
@@ -178,7 +182,7 @@ def projection_renderer_differentiable_fast(surfels, rgb, camera, rotated_image=
     # Idea from this paper: https://arxiv.org/pdf/1810.09381.pdf
     # Tensorflow implementation: https://github.com/eldar/differentiable-point-clouds/blob/master/dpc/util/point_cloud.py#L60
 
-    px_idx = torch.floor(px_coord - 0.5).long()
+    px_idx = torch.floor(px_coord[...,:2] - 0.5).long()
 
     # Difference to the nearest pixel center on the top left
     x = (px_coord[...,0] - 0.5) - px_idx[...,0].float()
@@ -192,16 +196,18 @@ def projection_renderer_differentiable_fast(surfels, rgb, camera, rotated_image=
         mask = (px[...,1] < 0) | (px[...,0] < 0) | (px[...,1] >= H) | (px[...,0] >= W)
         out = torch.where(mask, max_idx, out)
         return out
+    
+    depth = px_coord[...,2]
+    center_dist_2 = (x**2 + y**2).squeeze(-1) # squared distance to the nearest pixel center
+    rgb_out = scatter_weighted_blended_oit(rgb_in * (1 - x) * (1 - y), depth, center_dist_2, flat_px(px_idx + tch_var_l([0, 0])))
+    rgb_out += scatter_weighted_blended_oit(rgb_in * (1 - x) * y, depth, center_dist_2, flat_px(px_idx + tch_var_l([0, 1])))
+    rgb_out += scatter_weighted_blended_oit(rgb_in * x * (1 - y), depth, center_dist_2, flat_px(px_idx + tch_var_l([1, 0])))
+    rgb_out += scatter_weighted_blended_oit(rgb_in * x * y, depth, center_dist_2, flat_px(px_idx + tch_var_l([1, 1])))
 
-    rgb_out = scatter_mean_dim0(rgb_in * (1 - x) * (1 - y), flat_px(px_idx + tch_var_l([0, 0])))[0]
-    rgb_out += scatter_mean_dim0(rgb_in * (1 - x) * y, flat_px(px_idx + tch_var_l([0, 1])))[0]
-    rgb_out += scatter_mean_dim0(rgb_in * x * (1 - y), flat_px(px_idx + tch_var_l([1, 0])))[0]
-    rgb_out += scatter_mean_dim0(rgb_in * x * y, flat_px(px_idx + tch_var_l([1, 1])))[0]
-
-    soft_mask = scatter_mean_dim0((1 - x) * (1 - y), flat_px(px_idx + tch_var_l([0, 0])))[0]
-    soft_mask += scatter_mean_dim0((1 - x) * y, flat_px(px_idx + tch_var_l([0, 1])))[0]
-    soft_mask += scatter_mean_dim0(x * (1 - y), flat_px(px_idx + tch_var_l([1, 0])))[0]
-    soft_mask += scatter_mean_dim0(x * y, flat_px(px_idx + tch_var_l([1, 1])))[0]
+    soft_mask = scatter_weighted_blended_oit((1 - x) * (1 - y), depth, center_dist_2, flat_px(px_idx + tch_var_l([0, 0])))
+    soft_mask += scatter_weighted_blended_oit((1 - x) * y, depth, center_dist_2, flat_px(px_idx + tch_var_l([0, 1])))
+    soft_mask += scatter_weighted_blended_oit(x * (1 - y), depth, center_dist_2, flat_px(px_idx + tch_var_l([1, 0])))
+    soft_mask += scatter_weighted_blended_oit(x * y, depth, center_dist_2, flat_px(px_idx + tch_var_l([1, 1])))
 
     rgb_out = rgb_out.view(*rgb.size())
     soft_mask = soft_mask.view(*rgb.size()[:-1], 1)
@@ -404,9 +410,11 @@ def test_visual_render(scene, batch_size):
     camera['at'] = camera['at'].repeat(batch_size, 1)
     camera['up'] = camera['up'].repeat(batch_size, 1)
 
-    depth = res['depth'].repeat(batch_size, 1, 1).reshape(batch_size, -1)
-    pos_cc = z_to_pcl_CC_batched(-depth, scene['camera']) # NOTE: z = -depth
-    pos_wc = cam_to_world_batched(pos_cc, None, scene['camera'])['pos']
+    pos_wc = res['pos'].reshape(-1, res['pos'].shape[-1]).repeat(batch_size, 1, 1)
+
+    # depth = res['depth'].repeat(batch_size, 1, 1).reshape(batch_size, -1)
+    # pos_cc = z_to_pcl_CC_batched(-depth, scene['camera']) # NOTE: z = -depth
+    # pos_wc = cam_to_world_batched(pos_cc, None, scene['camera'])['pos']
 
     randomly_rotate_cameras(camera, theta_range=[-np.pi / 16, np.pi / 16], phi_range=[-np.pi / 8, np.pi / 8])
 
@@ -428,17 +436,12 @@ def test_visual_render(scene, batch_size):
 
     save_image(rotated_image.clone().permute(0, 3, 1, 2), 'test-original-rotated.png', nrow=2)
 
-    im, soft_mask = projection_renderer_differentiable_fast(pos_wc, image, camera, rotated_image, blur_size=0.02)
-    save_image(im.clone().permute(0, 3, 1, 2), 'test-fast-rotated-reprojected.png', nrow=2)
-    save_image(soft_mask.clone().permute(0, 3, 1, 2), 'test-fast-soft-mask.png', nrow=2)
+    im, soft_mask = projection_renderer_differentiable_fast(pos_wc, image, camera, blur_size=1e-10)
+    save_image(im.clone().permute(0, 3, 1, 2), 'test-fast-rotated-reprojected-unmerged.png', nrow=2)
+    save_image(soft_mask.clone().permute(0, 3, 1, 2), 'test-fast-soft-mask.png', nrow=2, normalize=True)
 
-    # ims = []
-    # for i in range(6):
-    #     rotated_image_weight = 0 if i == 0 else 3**(i-1)
-    #     with torch.no_grad():
-    #         ims.append(projection_renderer_differentiable(pos_wc, image, camera, rotated_image, rotated_image_weight=rotated_image_weight))
-    # im = torch.cat(ims, 0)
-    # save_image(im.clone().permute(0, 3, 1, 2), 'test-rotated-reprojected-merged.png', nrow=6)
+    im, _ = projection_renderer_differentiable_fast(pos_wc, image, camera, rotated_image, blur_size=1e-10)
+    save_image(im.clone().permute(0, 3, 1, 2), 'test-fast-rotated-reprojected-merged.png', nrow=2)
 
 
 def test_transformation_consistency(scene, batch_size):

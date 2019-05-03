@@ -175,6 +175,45 @@ def scatter_mean_dim0(x, idx):
     return nonzero_divide(out, freq)[...,:-1,:], mask[...,:-1,:]
 
 
+def scatter_weighted_blended_oit(x, z, center_dist_2, idx, sigma=0.5, z_scale=10, use_depth=True):
+    """
+    Similarly to `scatter_mean_dim0`, scatter elements in `x` to their destination `idx`.
+    The difference is when more than one element maps to the same destination. Instead
+    of averaging the elements of x, perform Weighted Blended Order Independent Transparency,
+    an idea from http://jcgt.org/published/0002/02/09/ which is really efficient.
+
+    :param x: [batch_size, nsurfels, surfel_size] surfels to scatter
+    :param z: [batch_size, nsurfels] depth of these surfels, assumed to be POSITIVE (w.r.t. the camera used for the reprojection)
+    :param center_dist_2: [batch_size, nsurfels] squared distance of that surfel to the nearest pixel center on the camera plane (after projection)
+    :param idx: [batch_size, nsurfels] destination index for each surfel.
+    :param sigma: Sigma of the Gaussian used to evaluate a weight (`alpha`) based on distance to the nearest pixel center
+    :param z_scale: extinction coefficient for the Beer-Lambert law used to evaluate a weight based on depth (~= importance given to the depth)
+    :param use_depth: whether to use depth `z` to weight the surfels `x`
+    """
+    new_shape = (x.size(0), x.size(1) + 1, x.size(2))
+    x_padding = tch_var_f(np.zeros((x.size(0), 1, x.size(2))))
+    x = torch.cat((x, x_padding), -2)
+    other_padding = tch_var_f(np.zeros((x.size(0), 1)))
+    z = torch.cat((z, other_padding), -1)
+    center_dist_2 = torch.cat((center_dist_2, other_padding), -1)
+
+    # Fill the index with the max index which will be thrown out after
+    idx_padding = tch_var_l(np.full((*idx.size()[:-1], 1), idx.size(-1)))
+    idx = torch.cat((idx, idx_padding), -1).unsqueeze(-1)
+    idx_repeated = idx.repeat(1, 1, x.size(-1))
+
+    # Use a gaussian that is a function of distance to the nearest pixel center for occlusion
+    alpha = 1 / (2 * np.pi * sigma**2) * torch.exp(-center_dist_2 / (2 * sigma**2)).unsqueeze(-1)
+
+    # Beer-Lambert Law for occlusion. Could use anything else that is monotonically decreasing
+    w = torch.exp(-z_scale * z).unsqueeze(-1) if use_depth else 1
+
+    C_times_w = tch_var_f(np.zeros(new_shape)).scatter_add_(-2, idx_repeated, x * alpha * w)
+    alpha_times_w = tch_var_f(np.zeros((*new_shape[:-1], 1))).scatter_add_(-2, idx, alpha * w)
+
+    return nonzero_divide(C_times_w, alpha_times_w)[...,:-1,:]
+
+
 def reflect_ray(incident, normal):
     """
     :param incident: L x N x 3 matrix
