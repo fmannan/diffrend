@@ -627,12 +627,17 @@ def test_depth_to_world_consistency(scene, batch_size):
 
     pos_wc1 = res['pos'].reshape(-1, res['pos'].shape[-1])
 
+    pos_cc1 = world_to_cam(pos_wc1, None, scene['camera'])['pos']
     # First test the non-batched z_to_pcl_CC method:
-    depth = res['depth'].reshape(-1)
-    pos_cc2 = z_to_pcl_CC(-depth, scene['camera']) # NOTE: z = -depth
+    # NOTE: z_to_pcl_CC takes as input the Z dimension in the camera coordinate
+    # and gets the full (X, Y, Z) in the camera coordinate.
+    pos_cc2 = z_to_pcl_CC(pos_cc1[:, 2], scene['camera'])
     pos_wc2 = cam_to_world(pos_cc2, None, scene['camera'])['pos']
 
-    np.testing.assert_array_almost_equal(get_data(pos_wc1[...,:3]), get_data(pos_wc2[...,:3]))
+    # Test Z -> (X, Y, Z)
+    np.testing.assert_array_almost_equal(get_data(pos_cc1[..., :3]), get_data(pos_cc2[..., :3]))
+    # Test world -> camera -> Z -> (X, Y, Z) in camera -> world
+    np.testing.assert_array_almost_equal(get_data(pos_wc1[..., :3]), get_data(pos_wc2[..., :3]))
 
     # Then test the batched version:
     camera = scene['camera']
@@ -641,12 +646,14 @@ def test_depth_to_world_consistency(scene, batch_size):
     camera['up'] = camera['up'].repeat(batch_size, 1)
 
     pos_wc1 = pos_wc1.repeat(batch_size, 1, 1)
-
-    depth = res['depth'].repeat(batch_size, 1, 1).reshape(batch_size, -1)
-    pos_cc2 = z_to_pcl_CC_batched(-depth, camera) # NOTE: z = -depth
+    pos_cc1 = world_to_cam_batched(pos_wc1, None, scene['camera'])['pos']
+    pos_cc2 = z_to_pcl_CC_batched(pos_cc1[..., 2], camera) # NOTE: z = -depth
     pos_wc2 = cam_to_world_batched(pos_cc2, None, camera)['pos']
 
-    np.testing.assert_array_almost_equal(get_data(pos_wc1[...,:3]), get_data(pos_wc2[...,:3]))
+    # Test Z -> (X, Y, Z)
+    np.testing.assert_array_almost_equal(get_data(pos_cc1[..., :3]), get_data(pos_cc2[..., :3]))
+    # Test world -> camera -> Z -> (X, Y, Z) in camera -> world
+    np.testing.assert_array_almost_equal(get_data(pos_wc1[..., :3]), get_data(pos_wc2[..., :3]))
 
 
 def main():
