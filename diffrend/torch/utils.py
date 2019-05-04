@@ -84,7 +84,7 @@ def tensor_cross_prod(u, M):
     return torch.stack((s0, s1, s2), dim=2)
 
 
-def nonzero_divide(x, y):
+def nonzero_divide(x, y, epsilon=0):
     """ x and y need to have the same dimensions.
     :param x:
     :param y:
@@ -92,7 +92,7 @@ def nonzero_divide(x, y):
     """
     mask = (torch.abs(y) > 0).float()
     divisor = y * mask + (1 - mask)
-    return x / divisor
+    return x / (divisor + epsilon)
 
 
 def unit_norm2_L2loss(x, scale):
@@ -211,7 +211,7 @@ def scatter_weighted_blended_oit(x, z, center_dist_2, idx, sigma=0.5, z_scale=10
     C_times_w = tch_var_f(np.zeros(new_shape)).scatter_add_(-2, idx_repeated, x * alpha * w)
     alpha_times_w = tch_var_f(np.zeros((*new_shape[:-1], 1))).scatter_add_(-2, idx, alpha * w)
 
-    return nonzero_divide(C_times_w, alpha_times_w)[...,:-1,:]
+    return nonzero_divide(C_times_w, alpha_times_w, epsilon=1e-8)[...,:-1,:]
 
 
 def reflect_ray(incident, normal):

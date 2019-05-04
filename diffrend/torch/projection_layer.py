@@ -70,7 +70,8 @@ def project_image_coordinates(surfels, camera):
     h = np.tan(fovy / 2) * 2 * focal_length
     w = h * aspect_ratio
 
-    px_coord = surfels_plane # Make sure to also transmit the new depth
+    px_coord = torch.zeros_like(surfels_plane)
+    px_coord[...,2] = surfels_plane[...,2] # Make sure to also transmit the new depth
     px_coord[...,:2] = surfels_plane[...,:2] * tch_var_f([-(W - 1) / w, (H - 1) / h]).unsqueeze(-2) + tch_var_f([W / 2., H / 2.]).unsqueeze(-2)
     px_coord_idx = torch.round(px_coord - 0.5).long()
 
@@ -230,7 +231,7 @@ def projection_renderer_differentiable_fast(surfels, rgb, camera, rotated_image=
     # There seems to be a bug in PyTorch where if a single division by 0 occurs in a tensor, the whole thing becomes NaN?
     # Might be related to this issue: https://github.com/pytorch/pytorch/issues/4132
     # Because of this behavior, one can't simply do `out / out_mask` in `torch.where`
-    soft_mask_nonzero = torch.where(soft_mask > 0, soft_mask, torch.ones_like(soft_mask))
+    soft_mask_nonzero = torch.where(soft_mask > 0, soft_mask, torch.ones_like(soft_mask)) + 1e-8
 
     # If an additional image is passed in, merge it using the soft mask:
     if rotated_image is not None:
