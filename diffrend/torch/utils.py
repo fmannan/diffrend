@@ -175,7 +175,7 @@ def scatter_mean_dim0(x, idx):
     return nonzero_divide(out, freq)[...,:-1,:], mask[...,:-1,:]
 
 
-def scatter_weighted_blended_oit(x, z, center_dist_2, idx, sigma=0.5, z_scale=10, use_depth=True):
+def scatter_weighted_blended_oit(x, z, center_dist_2, idx, sigma=0.5, z_scale=2, use_depth=True):
     """
     Similarly to `scatter_mean_dim0`, scatter elements in `x` to their destination `idx`.
     The difference is when more than one element maps to the same destination. Instead
