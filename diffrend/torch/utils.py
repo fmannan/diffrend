@@ -191,14 +191,14 @@ def scatter_weighted_blended_oit(x, z, center_dist_2, idx, sigma=0.5, z_scale=2,
     :param use_depth: whether to use depth `z` to weight the surfels `x`
     """
     new_shape = (x.size(0), x.size(1) + 1, x.size(2))
-    x_padding = tch_var_f(np.zeros((x.size(0), 1, x.size(2))))
+    x_padding = torch.zeros(x.size(0), 1, x.size(2), device=x.device, dtype=x.dtype)
     x = torch.cat((x, x_padding), -2)
-    other_padding = tch_var_f(np.zeros((x.size(0), 1)))
+    other_padding = torch.zeros(x.size(0), 1, device=x.device, dtype=x.dtype)
     z = torch.cat((z, other_padding), -1)
     center_dist_2 = torch.cat((center_dist_2, other_padding), -1)
 
     # Fill the index with the max index which will be thrown out after
-    idx_padding = tch_var_l(np.full((*idx.size()[:-1], 1), idx.size(-1)))
+    idx_padding = torch.zeros(*idx.size()[:-1], 1, device=idx.device, dtype=idx.dtype).fill_(idx.size(-1))
     idx = torch.cat((idx, idx_padding), -1).unsqueeze(-1)
     idx_repeated = idx.repeat(1, 1, x.size(-1))
 
@@ -208,8 +208,8 @@ def scatter_weighted_blended_oit(x, z, center_dist_2, idx, sigma=0.5, z_scale=2,
     # Beer-Lambert Law for occlusion. Could use anything else that is monotonically decreasing
     w = torch.exp(-z_scale * z).unsqueeze(-1) if use_depth else 1
 
-    C_times_w = tch_var_f(np.zeros(new_shape)).scatter_add_(-2, idx_repeated, x * alpha * w)
-    alpha_times_w = tch_var_f(np.zeros((*new_shape[:-1], 1))).scatter_add_(-2, idx, alpha * w)
+    C_times_w = torch.zeros(*new_shape, device=x.device, dtype=x.dtype).scatter_add_(-2, idx_repeated, x * alpha * w)
+    alpha_times_w = torch.zeros(*new_shape[:-1], 1, device=x.device, dtype=x.dtype).scatter_add_(-2, idx, alpha * w)
 
     return nonzero_divide(C_times_w, alpha_times_w, epsilon=1e-8)[...,:-1,:]
 
