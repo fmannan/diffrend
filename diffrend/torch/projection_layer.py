@@ -154,6 +154,21 @@ def projection_renderer_differentiable(surfels, rgb, camera, rotated_image=None,
     return out.view(*rgb.size())
 
 
+def blur(image, blur_size, kernel=None):
+    sigma = blur_size * image.size(-2) / 6
+    half_kernel_size = math.floor(sigma * 3)
+    if kernel is None:
+        num_channels = image.size(-3)
+        x_range = torch.arange(-half_kernel_size, half_kernel_size + 1, device=image.device).float()
+        kernel = torch.exp(-x_range**2 / (2 * sigma**2))
+        kernel = kernel / kernel.sum() # Normalize
+        kernel = torch.eye(num_channels, device=kernel.device).unsqueeze(-1).unsqueeze(-1) * kernel.view(1, 1, 1, -1)
+    # Mirror padding + 2 1D convolutions of the Gaussian kernel
+    padded = torch.nn.functional.pad(image, (half_kernel_size, half_kernel_size, half_kernel_size, half_kernel_size), mode='reflect')
+    blurred = torch.nn.functional.conv2d(padded, kernel)
+    return torch.nn.functional.conv2d(blurred, kernel.transpose(-1, -2))
+
+
 def projection_renderer_differentiable_fast(surfels, rgb, camera, rotated_image=None, blur_size=0.15):
     """Project surfels given in world coordinate to the camera's projection plane
        in a way that is differentiable w.r.t depth. This is achieved by interpolating
@@ -213,21 +228,6 @@ def projection_renderer_differentiable_fast(surfels, rgb, camera, rotated_image=
     rgb_out = rgb_out.view(*rgb.size())
     soft_mask = soft_mask.view(*rgb.size()[:-1], 1)
 
-    # Setup everything needed for Gaussian blur
-    sigma = blur_size * rgb.size(-2) / 6
-    half_kernel_size = math.floor(sigma * 3)
-    num_channels = rgb_out.size(-1)
-    gaussian_x = torch.arange(-half_kernel_size, half_kernel_size + 1, device=rgb_out.device).float()
-    gaussian_kernel = torch.exp(-gaussian_x**2 / (2 * sigma**2))
-    gaussian_kernel = gaussian_kernel / gaussian_kernel.sum() # Normalize
-    gaussian_kernel = torch.eye(num_channels, device=gaussian_kernel.device).unsqueeze(-1).unsqueeze(-1) * gaussian_kernel.view(1, 1, 1, -1)
-
-    def blur(input):
-        # Mirror padding + 2 1D convolutions of the Gaussian kernel
-        padded = torch.nn.functional.pad(input, (half_kernel_size, half_kernel_size, half_kernel_size, half_kernel_size), mode='reflect')
-        blurred = torch.nn.functional.conv2d(padded, gaussian_kernel)
-        return torch.nn.functional.conv2d(blurred, gaussian_kernel.transpose(-1, -2))
-
     # There seems to be a bug in PyTorch where if a single division by 0 occurs in a tensor, the whole thing becomes NaN?
     # Might be related to this issue: https://github.com/pytorch/pytorch/issues/4132
     # Because of this behavior, one can't simply do `out / out_mask` in `torch.where`
@@ -240,7 +240,7 @@ def projection_renderer_differentiable_fast(surfels, rgb, camera, rotated_image=
         out = torch.where(soft_mask > 0, rgb_out / soft_mask_nonzero, rgb_out)
 
     # Finally, blur the output image
-    out = blur(out.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
+    out = blur(out.permute(0, 3, 1, 2), blur_size).permute(0, 2, 3, 1)
 
     return out, soft_mask
 
