@@ -231,7 +231,7 @@ def projection_renderer_differentiable_fast(surfels, rgb, camera, rotated_image=
     # There seems to be a bug in PyTorch where if a single division by 0 occurs in a tensor, the whole thing becomes NaN?
     # Might be related to this issue: https://github.com/pytorch/pytorch/issues/4132
     # Because of this behavior, one can't simply do `out / out_mask` in `torch.where`
-    soft_mask_nonzero = torch.where(soft_mask > 0, soft_mask, torch.ones_like(soft_mask)) + 1e-30
+    soft_mask_nonzero = torch.where(soft_mask > 0, soft_mask, torch.ones_like(soft_mask)) + 1e-20
 
     # If an additional image is passed in, merge it using the soft mask:
     if rotated_image is not None:
