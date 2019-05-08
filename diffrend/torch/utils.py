@@ -579,8 +579,8 @@ def world_to_cam_batched(pos, normal, camera):
     if pos is not None:
         view_matrix = lookat(eye=eye, at=at, up=up).transpose(-1, -2)
         if pos.size(-1) == 3:
-            ones = np.ones((*pos.size()[:-1], 1))
-            pos = torch.cat((pos, tch_var_f(ones)), dim=-1)
+            ones = torch.ones(*pos.size()[:-1], 1, device=pos.device, dtype=pos.dtype)
+            pos = torch.cat((pos, ones), dim=-1)
         pos_CC = torch.bmm(pos, view_matrix)
 
     if normal is not None:
@@ -634,8 +634,8 @@ def cam_to_world_batched(pos, normal, camera):
     if pos is not None:
         inv_view_matrix = lookat_inv(eye=eye, at=at, up=up).transpose(-1, -2)
         if pos.size(-1) == 3:
-            ones = np.ones((*pos.size()[:-1], 1))
-            pos = torch.cat((pos, tch_var_f(ones)), dim=-1)
+            ones = torch.ones(*pos.size()[:-1], 1, device=pos.device, dtype=pos.dtype)
+            pos = torch.cat((pos, ones), dim=-1)
         pos_WC = torch.bmm(pos, inv_view_matrix)
 
     if normal is not None:
