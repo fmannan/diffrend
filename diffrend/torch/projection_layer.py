@@ -282,14 +282,21 @@ def uniformly_rotate_cameras(camera, theta_range=[-np.pi / 2, np.pi / 2], phi_ra
 
     Modifies the camera object in place
 
-    ASSUMES A SQUARE NUMBER OF CAMERAS
+    ASSUMES A SQUARE NUMBER OF CAMERAS if both theta_range and phi_range are not None
     """
     num_cameras = get_data(camera['eye']).shape[0]
-    width = int(np.sqrt(num_cameras))
 
     # Sample a theta and phi to add to the current camera rotation
-    theta_samples, phi_samples  = np.meshgrid(np.linspace(*theta_range, width), np.linspace(*phi_range, width))
-    theta_samples, phi_samples = theta_samples.ravel(), phi_samples.ravel()
+    if theta_range is not None and phi_range is not None:
+        width = int(np.sqrt(num_cameras))
+        phi_samples, theta_samples = np.meshgrid(np.linspace(*phi_range, width), np.linspace(*theta_range, width))
+        theta_samples, phi_samples = theta_samples.ravel(), phi_samples.ravel()
+    elif theta_range is not None:
+        theta_samples = np.linspace(*theta_range, num_cameras)
+        phi_samples = np.zeros(theta_samples.shape)
+    elif phi_range is not None:
+        phi_samples = np.linspace(*phi_range, num_cameras)
+        theta_samples = np.zeros(phi_samples.shape)
 
     # Get the current camera rotation (relative to the 'lookat' position)
     camera_eye = cartesian_to_spherical(get_data(camera['eye']) - get_data(camera['at']))
