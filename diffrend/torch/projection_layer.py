@@ -329,14 +329,13 @@ def uniform_sample_sphere_patch(num_samples, theta_range=[0, np.pi], phi_range=[
 
 
 def spherical_to_cartesian(theta, phi, radius=1):
-    return np.stack((np.sin(theta) * np.cos(phi), np.sin(theta) * np.sin(phi),
-                     np.cos(theta)), axis=-1) * radius
+    return np.stack((np.sin(theta) * np.cos(phi), np.cos(theta), np.sin(theta) * np.sin(phi)), axis=-1) * radius
 
 
 def cartesian_to_spherical(coords):
     x, y, z = coords[...,0], coords[...,1], coords[...,2]
-    norm2 = x**2 + y**2
-    return np.stack((np.arctan2(np.sqrt(norm2), z), np.arctan2(y, x), np.sqrt(norm2 + z**2)), axis=-1)
+    norm2 = x**2 + z**2
+    return np.stack((np.arctan2(np.sqrt(norm2), y), np.arctan2(z, x), np.sqrt(norm2 + y**2)), axis=-1)
 
 
 def test_raster_coordinates(scene, batch_size):
