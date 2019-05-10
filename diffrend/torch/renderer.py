@@ -522,8 +522,8 @@ def z_to_pcl_CC_batched(z, camera):
     Z = -torch.nn.functional.relu(-z)
 
     x, y = torch.meshgrid(torch.linspace(-1, 1, W, device=z.device), torch.linspace(1, -1, H, device=z.device))
-    x *= w / 2
-    y *= h / 2
+    x = x * w / 2
+    y = y * h / 2
 
     x = x.flatten().repeat(z.shape[0], 1)
     y = y.flatten().repeat(z.shape[0], 1)
