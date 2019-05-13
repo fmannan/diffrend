@@ -169,13 +169,13 @@ def blur(image, blur_size, kernel=None):
     return torch.nn.functional.conv2d(blurred, kernel.transpose(-1, -2))
 
 
-def projection_renderer_differentiable_fast(surfels, rgb, camera, rotated_image=None, blur_size=0.15):
+def projection_renderer_differentiable_fast(surfels, rgb, camera, rotated_image=None, blur_size=0.15, use_depth=True):
     """Project surfels given in world coordinate to the camera's projection plane
        in a way that is differentiable w.r.t depth. This is achieved by interpolating
        the surfel values using bilinear interpolation then blurring the output image using a Gaussian filter.
 
     Args:
-        surfels: [batch_size, num_surfels, pos]
+        surfels: [batch_size, num_surfels, pos] - world coordinates
         rgb: [batch_size, num_surfels, D-channel data] or [batch_size, H, W, D-channel data]
         camera: [{'eye': [num_batches,...], 'lookat': [num_batches,...], 'up': [num_batches,...],
                     'viewport': [0, 0, W, H], 'fovy': <radians>}]
@@ -183,6 +183,7 @@ def projection_renderer_differentiable_fast(surfels, rgb, camera, rotated_image=
                         Image to mix in with the result of the rotation.
         blur_size: (between 0 and 1). Determines the size of the gaussian kernel as a percentage of the width of the input image
                    The standard deviation of the Gaussian kernel is automatically calculated from this value
+        use_depth: Whether to weight the surfels landing on the same output pixel by their depth relative to the camera
 
     Returns:
         RGB image of dimensions [batch_size, H, W, 3] from projected surfels
@@ -215,15 +216,15 @@ def projection_renderer_differentiable_fast(surfels, rgb, camera, rotated_image=
     
     depth = px_coord[...,2]
     center_dist_2 = (x**2 + y**2).squeeze(-1) # squared distance to the nearest pixel center
-    rgb_out = scatter_weighted_blended_oit(rgb_in * (1 - x) * (1 - y), depth, center_dist_2, flat_px(px_idx + tch_var_l([0, 0])))
-    rgb_out += scatter_weighted_blended_oit(rgb_in * (1 - x) * y, depth, center_dist_2, flat_px(px_idx + tch_var_l([0, 1])))
-    rgb_out += scatter_weighted_blended_oit(rgb_in * x * (1 - y), depth, center_dist_2, flat_px(px_idx + tch_var_l([1, 0])))
-    rgb_out += scatter_weighted_blended_oit(rgb_in * x * y, depth, center_dist_2, flat_px(px_idx + tch_var_l([1, 1])))
+    rgb_out = scatter_weighted_blended_oit(rgb_in * (1 - x) * (1 - y), depth, center_dist_2, flat_px(px_idx + tch_var_l([0, 0])), use_depth=use_depth)
+    rgb_out += scatter_weighted_blended_oit(rgb_in * (1 - x) * y, depth, center_dist_2, flat_px(px_idx + tch_var_l([0, 1])), use_depth=use_depth)
+    rgb_out += scatter_weighted_blended_oit(rgb_in * x * (1 - y), depth, center_dist_2, flat_px(px_idx + tch_var_l([1, 0])), use_depth=use_depth)
+    rgb_out += scatter_weighted_blended_oit(rgb_in * x * y, depth, center_dist_2, flat_px(px_idx + tch_var_l([1, 1])), use_depth=use_depth)
 
-    soft_mask = scatter_weighted_blended_oit((1 - x) * (1 - y), depth, center_dist_2, flat_px(px_idx + tch_var_l([0, 0])))
-    soft_mask += scatter_weighted_blended_oit((1 - x) * y, depth, center_dist_2, flat_px(px_idx + tch_var_l([0, 1])))
-    soft_mask += scatter_weighted_blended_oit(x * (1 - y), depth, center_dist_2, flat_px(px_idx + tch_var_l([1, 0])))
-    soft_mask += scatter_weighted_blended_oit(x * y, depth, center_dist_2, flat_px(px_idx + tch_var_l([1, 1])))
+    soft_mask = scatter_weighted_blended_oit((1 - x) * (1 - y), depth, center_dist_2, flat_px(px_idx + tch_var_l([0, 0])), use_depth=use_depth)
+    soft_mask += scatter_weighted_blended_oit((1 - x) * y, depth, center_dist_2, flat_px(px_idx + tch_var_l([0, 1])), use_depth=use_depth)
+    soft_mask += scatter_weighted_blended_oit(x * (1 - y), depth, center_dist_2, flat_px(px_idx + tch_var_l([1, 0])), use_depth=use_depth)
+    soft_mask += scatter_weighted_blended_oit(x * y, depth, center_dist_2, flat_px(px_idx + tch_var_l([1, 1])), use_depth=use_depth)
 
     rgb_out = rgb_out.view(*rgb.size())
     soft_mask = soft_mask.view(*rgb.size()[:-1], 1)
