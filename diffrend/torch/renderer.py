@@ -521,7 +521,7 @@ def z_to_pcl_CC_batched(z, camera):
     # Force the caller to set the z coordinate with the correct sign
     Z = -torch.nn.functional.relu(-z)
 
-    x, y = torch.meshgrid(torch.linspace(-1, 1, W, device=z.device), torch.linspace(1, -1, H, device=z.device))
+    y, x = torch.meshgrid(torch.linspace(1, -1, H, device=z.device), torch.linspace(-1, 1, W, device=z.device))
     x = x * w / 2
     y = y * h / 2
 
