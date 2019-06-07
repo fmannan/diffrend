@@ -169,7 +169,7 @@ def blur(image, blur_size, kernel=None):
     return torch.nn.functional.conv2d(blurred, kernel.transpose(-1, -2))
 
 
-def projection_renderer_differentiable_fast(surfels, rgb, camera, rotated_image=None, blur_size=0.15, use_depth=True):
+def projection_renderer_differentiable_fast(surfels, rgb, camera, rotated_image=None, blur_size=0.15, use_depth=True, compute_new_depth=False):
     """Project surfels given in world coordinate to the camera's projection plane
        in a way that is differentiable w.r.t depth. This is achieved by interpolating
        the surfel values using bilinear interpolation then blurring the output image using a Gaussian filter.
@@ -184,6 +184,7 @@ def projection_renderer_differentiable_fast(surfels, rgb, camera, rotated_image=
         blur_size: (between 0 and 1). Determines the size of the gaussian kernel as a percentage of the width of the input image
                    The standard deviation of the Gaussian kernel is automatically calculated from this value
         use_depth: Whether to weight the surfels landing on the same output pixel by their depth relative to the camera
+        compute_new_depth: Whether to compute and output the depth as seen by the new camera
 
     Returns:
         RGB image of dimensions [batch_size, H, W, 3] from projected surfels
@@ -226,6 +227,14 @@ def projection_renderer_differentiable_fast(surfels, rgb, camera, rotated_image=
     soft_mask += scatter_weighted_blended_oit(x * (1 - y), depth, center_dist_2, flat_px(px_idx + tch_var_l([1, 0])), use_depth=use_depth)
     soft_mask += scatter_weighted_blended_oit(x * y, depth, center_dist_2, flat_px(px_idx + tch_var_l([1, 1])), use_depth=use_depth)
 
+    if compute_new_depth:
+        depth_in = depth.unsqueeze(-1)
+        depth_out = scatter_weighted_blended_oit(depth_in * (1 - x) * (1 - y), depth, center_dist_2, flat_px(px_idx + tch_var_l([0, 0])), use_depth=use_depth)
+        depth_out += scatter_weighted_blended_oit(depth_in * (1 - x) * y, depth, center_dist_2, flat_px(px_idx + tch_var_l([0, 1])), use_depth=use_depth)
+        depth_out += scatter_weighted_blended_oit(depth_in * x * (1 - y), depth, center_dist_2, flat_px(px_idx + tch_var_l([1, 0])), use_depth=use_depth)
+        depth_out += scatter_weighted_blended_oit(depth_in * x * y, depth, center_dist_2, flat_px(px_idx + tch_var_l([1, 1])), use_depth=use_depth)
+        depth_out = depth_out.view(*rgb.size()[:-1], 1)
+
     rgb_out = rgb_out.view(*rgb.size())
     soft_mask = soft_mask.view(*rgb.size()[:-1], 1)
 
@@ -235,15 +244,26 @@ def projection_renderer_differentiable_fast(surfels, rgb, camera, rotated_image=
     soft_mask_nonzero = torch.where(soft_mask > 0, soft_mask, torch.ones_like(soft_mask)) + 1e-20
 
     # If an additional image is passed in, merge it using the soft mask:
+    rgb_out_normalized = torch.where(soft_mask > 0, rgb_out / soft_mask_nonzero, rgb_out)
     if rotated_image is not None:
         out = torch.where(soft_mask > 1, rgb_out / soft_mask_nonzero, rgb_out + rotated_image * (1 - soft_mask))
     else:
-        out = torch.where(soft_mask > 0, rgb_out / soft_mask_nonzero, rgb_out)
+        out = rgb_out_normalized
 
     # Finally, blur the output image
     out = blur(out.permute(0, 3, 1, 2), blur_size).permute(0, 2, 3, 1)
 
-    return out, soft_mask
+    # Other things to output:
+    proj_out = {
+        'mask': soft_mask,
+        'image1': rgb_out_normalized
+    }
+
+    if compute_new_depth:
+        depth_out = torch.where(soft_mask > 0, depth_out / soft_mask_nonzero, depth_out)
+        proj_out['depth'] = depth_out
+
+    return out, proj_out
 
 
 def randomly_rotate_cameras(camera, theta_range=[-np.pi / 2, np.pi / 2], phi_range=[-np.pi, np.pi]):
@@ -420,7 +440,7 @@ def test_visual_render(scene, batch_size):
 
     pos_wc = res['pos'].reshape(-1, res['pos'].shape[-1]).repeat(batch_size, 1, 1)
 
-    # depth = res['depth'].repeat(batch_size, 1, 1).reshape(batch_size, -1)
+    depth = res['depth'].repeat(batch_size, 1, 1).reshape(batch_size, -1)
     # pos_cc = z_to_pcl_CC_batched(-depth, scene['camera']) # NOTE: z = -depth
     # pos_wc = cam_to_world_batched(pos_cc, None, scene['camera'])['pos']
 
@@ -428,9 +448,10 @@ def test_visual_render(scene, batch_size):
 
     image = res['image'].repeat(batch_size, 1, 1, 1)
     save_image(image.clone().permute(0, 3, 1, 2), 'test-original.png', nrow=2)
+    save_image(depth.view(*image.size()[:-1], 1).clone().permute(0, 3, 1, 2), 'test-original-depth.png', nrow=2, normalize=True)
 
-    im, mask = projection_renderer(pos_wc, image, camera)
-    save_image(im.clone().permute(0, 3, 1, 2), 'test-rotated-reprojected-nonblurred.png', nrow=2)
+    # im, _ = projection_renderer(pos_wc, image, camera)
+    # save_image(im.clone().permute(0, 3, 1, 2), 'test-rotated-reprojected-nonblurred.png', nrow=2)
 
     # If we want to merge with another already rotated image
     # NOTE: only works on batch 1 because `render` is not batched
@@ -444,9 +465,15 @@ def test_visual_render(scene, batch_size):
 
     save_image(rotated_image.clone().permute(0, 3, 1, 2), 'test-original-rotated.png', nrow=2)
 
-    im, soft_mask = projection_renderer_differentiable_fast(pos_wc, image, camera, blur_size=1e-10)
+    im, proj_out = projection_renderer_differentiable_fast(pos_wc, image, camera, blur_size=1e-10, compute_new_depth=True)
     save_image(im.clone().permute(0, 3, 1, 2), 'test-fast-rotated-reprojected-unmerged.png', nrow=2)
-    save_image(soft_mask.clone().permute(0, 3, 1, 2), 'test-fast-soft-mask.png', nrow=2, normalize=True)
+    save_image(proj_out['mask'].clone().permute(0, 3, 1, 2), 'test-fast-soft-mask.png', nrow=2, normalize=True)
+    save_image(proj_out['depth'].clone().permute(0, 3, 1, 2), 'test-fast-depth.png', nrow=2, normalize=True)
+
+    for key in proj_out.keys():
+        proj_out[key] = proj_out[key].cpu().numpy()
+    np.savez('test-fast-rotation-reprojection.npz', **proj_out,
+             image=im.cpu().numpy(), image_in=image.cpu().numpy(), depth_in=depth.view(*image.size()[:-1], 1).cpu().numpy())
 
     im, _ = projection_renderer_differentiable_fast(pos_wc, image, camera, rotated_image, blur_size=1e-10)
     save_image(im.clone().permute(0, 3, 1, 2), 'test-fast-rotated-reprojected-merged.png', nrow=2)
