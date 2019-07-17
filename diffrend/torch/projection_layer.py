@@ -580,7 +580,8 @@ def test_depth_optimization(scene, batch_size, print_interval=20, imsave_interva
     camera['up'] = camera['up'].repeat(batch_size, 1)
 
     true_depth = res['depth'].repeat(batch_size, 1, 1).reshape(batch_size, -1)
-    depth = true_depth.clone() + 0.1 * torch.randn(res['depth'].size(), device=res['depth'].device)
+    # depth = true_depth.clone() + 0.1 * torch.randn_like(true_depth)
+    depth = 0.1 * torch.randn_like(true_depth)
     depth.requires_grad = True
 
     true_pos_cc = z_to_pcl_CC_batched(-true_depth, camera) # NOTE: z = -depth
@@ -588,11 +589,13 @@ def test_depth_optimization(scene, batch_size, print_interval=20, imsave_interva
 
     rotated_camera = copy.deepcopy(camera)
     randomly_rotate_cameras(rotated_camera, theta_range=[-np.pi / 16, np.pi / 16], phi_range=[-np.pi / 8, np.pi / 8])
-    target_image, _ = projection_renderer(true_pos_wc, true_input_img, rotated_camera)
+    # target_image, _ = projection_renderer_differentiable_fast(true_pos_wc, true_input_img, rotated_camera)
+    target_image = projection_renderer_differentiable(true_pos_wc, true_input_img, rotated_camera)
+    # target_image, _ = projection_renderer(true_pos_wc, true_input_img, rotated_camera)
 
     input_image = true_input_img # + 0.1 * torch.randn(target_image.size(), device=target_image.device)
 
-    criterion = torch.nn.MSELoss(size_average=True).cuda()
+    criterion = torch.nn.MSELoss(reduction='sum').cuda()
     optimizer = optim.Adam([depth], lr=1e-2)
 
     h1 = plt.figure()
@@ -600,14 +603,19 @@ def test_depth_optimization(scene, batch_size, print_interval=20, imsave_interva
     depth_imgs = []
     out_imgs = []
 
-    imageio.imsave(out_dir + '/optimization_target_image.png', target_image[0])
+    imageio.imsave(out_dir + '/optimization_target_image.png', target_image[0].cpu().numpy())
+    imageio.imsave(out_dir + '/optimization_target_depth.png', true_depth.view(*input_image.size()[:-1], 1)[0].cpu().numpy())
 
     loss_per_iter = []
-    for iter in range(100):
-        pos_cc = z_to_pcl_CC_batched(-depth, camera) # NOTE: z = -depth
-        pos_wc = cam_to_world_batched(pos_cc, None, camera)['pos']
-        im_est, mask = projection_renderer(pos_wc, input_image, rotated_camera)
+    for iter in range(500):
         optimizer.zero_grad()
+        # depth_in = torch.nn.functional.softplus(depth + 3)
+        depth_in = depth + 4
+        pos_cc = z_to_pcl_CC_batched(-depth_in, camera) # NOTE: z = -depth
+        pos_wc = cam_to_world_batched(pos_cc, None, camera)['pos']
+        im_est = projection_renderer_differentiable(pos_wc, input_image, rotated_camera)
+        # im_est, _ = projection_renderer_differentiable_fast(pos_wc, input_image, rotated_camera)
+        # im_est, mask = projection_renderer(pos_wc, input_image, rotated_camera)
         loss = criterion(im_est * 255, target_image * 255)
         loss_ = get_data(loss)
         loss_per_iter.append(loss_)
@@ -626,7 +634,7 @@ def test_depth_optimization(scene, batch_size, print_interval=20, imsave_interva
             fig_imgs.append(fig_data)
 
             # Depth
-            im_out_ = get_data(depth.view(*input_image.size()[:-1], 1).detach())
+            im_out_ = get_data(depth_in.view(*input_image.size()[:-1], 1).detach())
             im_out_ = np.uint8(255 * im_out_ / im_out_.max())
             fig = plt.figure(h1.number)
             plot = fig.add_subplot(111)
@@ -647,8 +655,8 @@ def test_depth_optimization(scene, batch_size, print_interval=20, imsave_interva
             out_data = np.array(fig.canvas.renderer._renderer)
             out_imgs.append(out_data)
 
-        # loss.backward()
-        # optimizer.step()
+        loss.backward()
+        optimizer.step()
     
     imageio.mimsave(out_dir + '/optimization_anim_in.gif', fig_imgs)
     imageio.mimsave(out_dir + '/optimization_anim_depth.gif', depth_imgs)
@@ -708,12 +716,12 @@ def main():
 
     batch_size = 6
 
-    test_depth_to_world_consistency(scene, batch_size)
-    test_visual_render(scene, 1)
-    test_render_projection_consistency(scene, batch_size)
-    test_raster_coordinates(scene, batch_size)
-    test_transformation_consistency(scene, batch_size)
-    test_optimization(scene, 1)
+    # test_depth_to_world_consistency(scene, batch_size)
+    # test_visual_render(scene, 1)
+    # test_render_projection_consistency(scene, batch_size)
+    # test_raster_coordinates(scene, batch_size)
+    # test_transformation_consistency(scene, batch_size)
+    # test_optimization(scene, 1)
     test_depth_optimization(scene, 1)
 
 
