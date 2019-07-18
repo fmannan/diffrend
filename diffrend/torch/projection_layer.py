@@ -555,7 +555,7 @@ def test_optimization(scene, batch_size, print_interval=20, imsave_interval=20, 
         optimizer.step()
 
 def test_depth_optimization(scene, batch_size, print_interval=20, imsave_interval=20, max_iter=100,
-                      out_dir='./proj_tmp_depth/'):
+                      out_dir='./proj_tmp_depth-fast/'):
     """ First render using the full renderer to get the surfel position and color
     and then render using the projection layer for testing
 
@@ -563,20 +563,20 @@ def test_depth_optimization(scene, batch_size, print_interval=20, imsave_interva
 
     """
     from torch import optim
+    import torchvision
     import os
     import matplotlib
     matplotlib.use('agg')
     import matplotlib.pyplot as plt
     import imageio
+    from PIL import Image
     plt.ion()
-
-    # HIGHLIGHT
-    # TODO Run this but with the chair images instead. Does it give worse results than the cube+sphere test scene?
 
     if not os.path.exists(out_dir):
         os.makedirs(out_dir)
 
-    use_fast_projection = False
+    use_chair = True
+    use_fast_projection = True
     use_masked_loss = True
     use_same_render_method_for_target = False
     lr = 1e-2
@@ -587,38 +587,61 @@ def test_depth_optimization(scene, batch_size, print_interval=20, imsave_interva
     # true_pos_wc = res['pos'].reshape(-1, res['pos'].shape[-1]).repeat(batch_size, 1, 1)
     true_input_img = res['image'].unsqueeze(0).repeat(batch_size, 1, 1, 1)
 
-    camera = scene['camera']
-    camera['eye'] = camera['eye'].repeat(batch_size, 1)
-    camera['at'] = camera['at'].repeat(batch_size, 1)
-    camera['up'] = camera['up'].repeat(batch_size, 1)
+    if use_chair:
+        camera = scene['camera']
+        camera['eye'] = tch_var_f([0, 0, 4, 1]).repeat(batch_size, 1)
+        camera['at'] = tch_var_f([0, 0, 0, 1]).repeat(batch_size, 1)
+        camera['up'] = tch_var_f([0, 1, 0, 0]).repeat(batch_size, 1)
+    else:
+        camera = scene['camera']
+        camera['eye'] = camera['eye'].repeat(batch_size, 1)
+        camera['at'] = camera['at'].repeat(batch_size, 1)
+        camera['up'] = camera['up'].repeat(batch_size, 1)
 
-    true_depth = res['depth'].repeat(batch_size, 1, 1).reshape(batch_size, -1)
+    if use_chair:
+        chair_0 = Image.open('object-0-azimuth-000.006-rgb.png')
+        true_input_img = torchvision.transforms.ToTensor()(chair_0).to(true_input_img.device).unsqueeze(0)
+        true_input_img = true_input_img.permute(0, 2, 3, 1)
+        camera['viewport'] = [0, 0, 128, 128] # TODO don't hardcode
+
+    true_depth = res['depth'].repeat(batch_size, 1, 1).reshape(batch_size, -1) # Not relevant if 'use_chair' is True
     # depth = true_depth.clone() + 0.1 * torch.randn_like(true_depth)
-    depth = 0.1 * torch.randn_like(true_depth)
+    depth = 0.1 * torch.randn(batch_size, true_input_img.size(-2) * true_input_img.size(-3), device=true_input_img.device, dtype=torch.float)
     depth.requires_grad = True
 
-    true_pos_cc = z_to_pcl_CC_batched(-true_depth, camera) # NOTE: z = -depth
-    true_pos_wc = cam_to_world_batched(true_pos_cc, None, camera)['pos']
+    if use_chair:
+        target_angle = np.deg2rad(20)
+    else:
+        target_angle = -np.pi / 12
 
     rotated_camera = copy.deepcopy(camera)
     # randomly_rotate_cameras(rotated_camera, theta_range=[-np.pi / 16, np.pi / 16], phi_range=[-np.pi / 8, np.pi / 8])
-    randomly_rotate_cameras(rotated_camera, theta_range=[0, 1e-10], phi_range=[-np.pi / 12, -np.pi / 12 + 1e-10])
+    randomly_rotate_cameras(rotated_camera, theta_range=[0, 1e-10], phi_range=[target_angle, target_angle + 1e-10])
 
-    if use_same_render_method_for_target:
-        if use_fast_projection:
-            target_image, proj_out = projection_renderer_differentiable_fast(true_pos_wc, true_input_img, rotated_camera)
-            target_mask = proj_out['mask']
-        else:
-            target_image, target_mask = projection_renderer_differentiable(true_pos_wc, true_input_img, rotated_camera)
-        # target_image, _ = projection_renderer(true_pos_wc, true_input_img, rotated_camera)
-    else:
-        scene2 = copy.deepcopy(scene)
-        scene['camera'] = copy.deepcopy(rotated_camera)
-        scene['camera']['eye'] = scene['camera']['eye'][0]
-        scene['camera']['at'] = scene['camera']['at'][0]
-        scene['camera']['up'] = scene['camera']['up'][0]
-        target_image = render(scene)['image'].unsqueeze(0).repeat(batch_size, 1, 1, 1)
+    if use_chair:
+        target_image = Image.open('object-0-azimuth-020.006-rgb.png')
+        target_image = torchvision.transforms.ToTensor()(target_image).to(true_input_img.device).unsqueeze(0)
+        target_image = target_image.permute(0, 2, 3, 1)
         target_mask = torch.ones(*target_image.size()[:-1], 1, device=target_image.device, dtype=torch.float)
+    else:
+        true_pos_cc = z_to_pcl_CC_batched(-true_depth, camera) # NOTE: z = -depth
+        true_pos_wc = cam_to_world_batched(true_pos_cc, None, camera)['pos']
+
+        if use_same_render_method_for_target:
+            if use_fast_projection:
+                target_image, proj_out = projection_renderer_differentiable_fast(true_pos_wc, true_input_img, rotated_camera)
+                target_mask = proj_out['mask']
+            else:
+                target_image, target_mask = projection_renderer_differentiable(true_pos_wc, true_input_img, rotated_camera)
+            # target_image, _ = projection_renderer(true_pos_wc, true_input_img, rotated_camera)
+        else:
+            scene2 = copy.deepcopy(scene)
+            scene['camera'] = copy.deepcopy(rotated_camera)
+            scene['camera']['eye'] = scene['camera']['eye'][0]
+            scene['camera']['at'] = scene['camera']['at'][0]
+            scene['camera']['up'] = scene['camera']['up'][0]
+            target_image = render(scene)['image'].unsqueeze(0).repeat(batch_size, 1, 1, 1)
+            target_mask = torch.ones(*target_image.size()[:-1], 1, device=target_image.device, dtype=torch.float)
 
     input_image = true_input_img # + 0.1 * torch.randn(target_image.size(), device=target_image.device)
 
@@ -632,7 +655,8 @@ def test_depth_optimization(scene, batch_size, print_interval=20, imsave_interva
 
     imageio.imsave(out_dir + '/optimization_input_image.png', input_image[0].cpu().numpy())
     imageio.imsave(out_dir + '/optimization_target_image.png', target_image[0].cpu().numpy())
-    imageio.imsave(out_dir + '/optimization_target_depth.png', true_depth.view(*input_image.size()[:-1], 1)[0].cpu().numpy())
+    if not use_chair:
+        imageio.imsave(out_dir + '/optimization_target_depth.png', true_depth.view(*input_image.size()[:-1], 1)[0].cpu().numpy())
 
     loss_per_iter = []
     for iter in range(500):
