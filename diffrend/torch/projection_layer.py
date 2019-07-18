@@ -107,7 +107,7 @@ def projection_renderer(surfels, rgb, camera):
     rgb_out, mask = scatter_mean_dim0(rgb_reshaped, px_idx.long())
     return rgb_out.reshape(rgb.shape), mask.reshape(rgb.shape)
 
-def projection_renderer_differentiable(surfels, rgb, camera, rotated_image=None, sigma=3, rotated_image_weight=10):
+def projection_renderer_differentiable(surfels, rgb, camera, rotated_image=None, blur_size=0.15):
     """Project surfels given in world coordinate to the camera's projection plane
        in a way that is differentiable w.r.t depth. This is achieved by interpolating
        the surfel values using a Gaussian filter.
@@ -118,12 +118,9 @@ def projection_renderer_differentiable(surfels, rgb, camera, rotated_image=None,
         camera: [{'eye': [num_batches,...], 'lookat': [num_batches,...], 'up': [num_batches,...],
                     'viewport': [0, 0, W, H], 'fovy': <radians>}]
         rotated_image: [batch_size, num_surfels, D-channel data] or [batch_size, H, W, D-channel data]
-                        Image to mix in with the result of the rotation. Surfels from this image will
-                        be placed at pixel center locations before the Gaussian filtering step
+                        Image to mix in with the result of the rotation.
         sigma: Std of the Gaussian used for filtering. As a rule of thumb, surfels in a radius of 3*sigma
                around a pixel will have a contribution on that pixel in the final image.
-        rotated_image_weight: weight of the rotated image pixels compared to the weights for the surfels
-                              Controls how much the rotated image appears in the final image
 
     Returns:
         RGB image of dimensions [batch_size, H, W, 3] from projected surfels
@@ -143,15 +140,18 @@ def projection_renderer_differentiable(surfels, rgb, camera, rotated_image=None,
     x, y = x.unsqueeze(-1), y.unsqueeze(-1)
 
     xp, yp = px_coord[...,0].unsqueeze(-2), px_coord[...,1].unsqueeze(-2)
+    sigma = blur_size * rgb.size(-2) / 6
     scale = torch.exp((-(xp - x)**2 - (yp - y)**2) / (2 * sigma**2))
 
+    mask = scale.sum(-1)
     if rotated_image is not None:
         rotated_image = rotated_image.view(*rgb_reshaped.size())
-        out = (rotated_image_weight * rotated_image + torch.sum(scale.unsqueeze(-1) * rgb_reshaped.unsqueeze(-3), -2)) / (scale.sum(-1) + rotated_image_weight + 1e-10).unsqueeze(-1)
+        # out = (rotated_image_weight * rotated_image + torch.sum(scale.unsqueeze(-1) * rgb_reshaped.unsqueeze(-3), -2)) / (scale.sum(-1) + rotated_image_weight + 1e-10).unsqueeze(-1)
+        out = torch.sum(scale.unsqueeze(-1) * rgb_reshaped.unsqueeze(-3), -2) + rotated_image * (1 - mask)
     else:
-        out = torch.sum(scale.unsqueeze(-1) * rgb_reshaped.unsqueeze(-3), -2) / (scale.sum(-1) + 1e-10).unsqueeze(-1)
+        out = torch.sum(scale.unsqueeze(-1) * rgb_reshaped.unsqueeze(-3), -2) / (mask + 1e-10).unsqueeze(-1)
 
-    return out.view(*rgb.size())
+    return out.view(*rgb.size()), mask.view(*rgb.size()[:-1], 1)
 
 
 def blur(image, blur_size, kernel=None):
@@ -164,12 +164,12 @@ def blur(image, blur_size, kernel=None):
         kernel = kernel / kernel.sum() # Normalize
         kernel = torch.eye(num_channels, device=kernel.device).unsqueeze(-1).unsqueeze(-1) * kernel.view(1, 1, 1, -1)
     # Mirror padding + 2 1D convolutions of the Gaussian kernel
-    padded = torch.nn.functional.pad(image, (half_kernel_size, half_kernel_size, half_kernel_size, half_kernel_size), mode='reflect')
+    padded = torch.nn.functional.pad(image, (half_kernel_size, half_kernel_size, half_kernel_size, half_kernel_size), mode='constant') # zero padding
     blurred = torch.nn.functional.conv2d(padded, kernel)
     return torch.nn.functional.conv2d(blurred, kernel.transpose(-1, -2))
 
 
-def projection_renderer_differentiable_fast(surfels, rgb, camera, rotated_image=None, blur_size=0.15, use_depth=True, compute_new_depth=False):
+def projection_renderer_differentiable_fast(surfels, rgb, camera, rotated_image=None, blur_size=0.15, use_depth=True, compute_new_depth=False, blur_rotated_image=True):
     """Project surfels given in world coordinate to the camera's projection plane
        in a way that is differentiable w.r.t depth. This is achieved by interpolating
        the surfel values using bilinear interpolation then blurring the output image using a Gaussian filter.
@@ -185,6 +185,8 @@ def projection_renderer_differentiable_fast(surfels, rgb, camera, rotated_image=
                    The standard deviation of the Gaussian kernel is automatically calculated from this value
         use_depth: Whether to weight the surfels landing on the same output pixel by their depth relative to the camera
         compute_new_depth: Whether to compute and output the depth as seen by the new camera
+        blur_rotated_image: Whether to blur the 'rotated_image' passed as argument before merging it with the output image.
+                            Set to False if the rotated image is already blurred
 
     Returns:
         RGB image of dimensions [batch_size, H, W, 3] from projected surfels
@@ -238,6 +240,10 @@ def projection_renderer_differentiable_fast(surfels, rgb, camera, rotated_image=
     rgb_out = rgb_out.view(*rgb.size())
     soft_mask = soft_mask.view(*rgb.size()[:-1], 1)
 
+    # Blur the rgb and mask images
+    rgb_out = blur(rgb_out.permute(0, 3, 1, 2), blur_size).permute(0, 2, 3, 1)
+    soft_mask = blur(soft_mask.permute(0, 3, 1, 2), blur_size).permute(0, 2, 3, 1)
+
     # There seems to be a bug in PyTorch where if a single division by 0 occurs in a tensor, the whole thing becomes NaN?
     # Might be related to this issue: https://github.com/pytorch/pytorch/issues/4132
     # Because of this behavior, one can't simply do `out / out_mask` in `torch.where`
@@ -246,12 +252,11 @@ def projection_renderer_differentiable_fast(surfels, rgb, camera, rotated_image=
     # If an additional image is passed in, merge it using the soft mask:
     rgb_out_normalized = torch.where(soft_mask > 0, rgb_out / soft_mask_nonzero, rgb_out)
     if rotated_image is not None:
+        if blur_rotated_image:
+            rotated_image = blur(rotated_image.permute(0, 3, 1, 2), blur_size).permute(0, 2, 3, 1)
         out = torch.where(soft_mask > 1, rgb_out / soft_mask_nonzero, rgb_out + rotated_image * (1 - soft_mask))
     else:
         out = rgb_out_normalized
-
-    # Finally, blur the output image
-    out = blur(out.permute(0, 3, 1, 2), blur_size).permute(0, 2, 3, 1)
 
     # Other things to output:
     proj_out = {
@@ -565,8 +570,16 @@ def test_depth_optimization(scene, batch_size, print_interval=20, imsave_interva
     import imageio
     plt.ion()
 
+    # HIGHLIGHT
+    # TODO Run this but with the chair images instead. Does it give worse results than the cube+sphere test scene?
+
     if not os.path.exists(out_dir):
         os.makedirs(out_dir)
+
+    use_fast_projection = False
+    use_masked_loss = True
+    use_same_render_method_for_target = False
+    lr = 1e-2
 
     res = render_scene(scene)
 
@@ -588,21 +601,36 @@ def test_depth_optimization(scene, batch_size, print_interval=20, imsave_interva
     true_pos_wc = cam_to_world_batched(true_pos_cc, None, camera)['pos']
 
     rotated_camera = copy.deepcopy(camera)
-    randomly_rotate_cameras(rotated_camera, theta_range=[-np.pi / 16, np.pi / 16], phi_range=[-np.pi / 8, np.pi / 8])
-    # target_image, _ = projection_renderer_differentiable_fast(true_pos_wc, true_input_img, rotated_camera)
-    target_image = projection_renderer_differentiable(true_pos_wc, true_input_img, rotated_camera)
-    # target_image, _ = projection_renderer(true_pos_wc, true_input_img, rotated_camera)
+    # randomly_rotate_cameras(rotated_camera, theta_range=[-np.pi / 16, np.pi / 16], phi_range=[-np.pi / 8, np.pi / 8])
+    randomly_rotate_cameras(rotated_camera, theta_range=[0, 1e-10], phi_range=[-np.pi / 12, -np.pi / 12 + 1e-10])
+
+    if use_same_render_method_for_target:
+        if use_fast_projection:
+            target_image, proj_out = projection_renderer_differentiable_fast(true_pos_wc, true_input_img, rotated_camera)
+            target_mask = proj_out['mask']
+        else:
+            target_image, target_mask = projection_renderer_differentiable(true_pos_wc, true_input_img, rotated_camera)
+        # target_image, _ = projection_renderer(true_pos_wc, true_input_img, rotated_camera)
+    else:
+        scene2 = copy.deepcopy(scene)
+        scene['camera'] = copy.deepcopy(rotated_camera)
+        scene['camera']['eye'] = scene['camera']['eye'][0]
+        scene['camera']['at'] = scene['camera']['at'][0]
+        scene['camera']['up'] = scene['camera']['up'][0]
+        target_image = render(scene)['image'].unsqueeze(0).repeat(batch_size, 1, 1, 1)
+        target_mask = torch.ones(*target_image.size()[:-1], 1, device=target_image.device, dtype=torch.float)
 
     input_image = true_input_img # + 0.1 * torch.randn(target_image.size(), device=target_image.device)
 
-    criterion = torch.nn.MSELoss(reduction='sum').cuda()
+    criterion = torch.nn.MSELoss(reduction='none').cuda()
     optimizer = optim.Adam([depth], lr=1e-2)
 
     h1 = plt.figure()
-    fig_imgs = []
+    # fig_imgs = []
     depth_imgs = []
     out_imgs = []
 
+    imageio.imsave(out_dir + '/optimization_input_image.png', input_image[0].cpu().numpy())
     imageio.imsave(out_dir + '/optimization_target_image.png', target_image[0].cpu().numpy())
     imageio.imsave(out_dir + '/optimization_target_depth.png', true_depth.view(*input_image.size()[:-1], 1)[0].cpu().numpy())
 
@@ -613,25 +641,31 @@ def test_depth_optimization(scene, batch_size, print_interval=20, imsave_interva
         depth_in = depth + 4
         pos_cc = z_to_pcl_CC_batched(-depth_in, camera) # NOTE: z = -depth
         pos_wc = cam_to_world_batched(pos_cc, None, camera)['pos']
-        im_est = projection_renderer_differentiable(pos_wc, input_image, rotated_camera)
-        # im_est, _ = projection_renderer_differentiable_fast(pos_wc, input_image, rotated_camera)
+        if use_fast_projection:
+            im_est, proj_out = projection_renderer_differentiable_fast(pos_wc, input_image, rotated_camera)
+            im_mask = proj_out['mask']
+        else:
+            im_est, im_mask = projection_renderer_differentiable(pos_wc, input_image, rotated_camera)
         # im_est, mask = projection_renderer(pos_wc, input_image, rotated_camera)
-        loss = criterion(im_est * 255, target_image * 255)
+        if use_masked_loss:
+            loss = torch.sum(target_mask * im_mask * criterion(im_est * 255, target_image * 255)) / torch.sum(target_mask * im_mask)
+        else:
+            loss = criterion(im_est * 255, target_image * 255).mean()
         loss_ = get_data(loss)
         loss_per_iter.append(loss_)
         if iter % print_interval == 0 or iter == max_iter - 1:
             print('{}. Loss: {}'.format(iter, loss_))
         if iter % imsave_interval == 0 or iter == max_iter - 1:
             # Input image
-            im_out_ = get_data(input_image.detach())
-            im_out_ = np.uint8(255 * im_out_ / im_out_.max())
-            fig = plt.figure(h1.number)
-            plot = fig.add_subplot(111)
-            plot.imshow(im_out_[0].squeeze())
-            plot.set_title('%d. loss= %f' % (iter, loss_))
-            # plt.savefig(out_dir + '/fig_%05d.png' % iter)
-            fig_data = np.array(fig.canvas.renderer._renderer)
-            fig_imgs.append(fig_data)
+            # im_out_ = get_data(input_image.detach())
+            # im_out_ = np.uint8(255 * im_out_ / im_out_.max())
+            # fig = plt.figure(h1.number)
+            # plot = fig.add_subplot(111)
+            # plot.imshow(im_out_[0].squeeze())
+            # plot.set_title('%d. loss= %f' % (iter, loss_))
+            # # plt.savefig(out_dir + '/fig_%05d.png' % iter)
+            # fig_data = np.array(fig.canvas.renderer._renderer)
+            # fig_imgs.append(fig_data)
 
             # Depth
             im_out_ = get_data(depth_in.view(*input_image.size()[:-1], 1).detach())
@@ -658,7 +692,7 @@ def test_depth_optimization(scene, batch_size, print_interval=20, imsave_interva
         loss.backward()
         optimizer.step()
     
-    imageio.mimsave(out_dir + '/optimization_anim_in.gif', fig_imgs)
+    # imageio.mimsave(out_dir + '/optimization_anim_in.gif', fig_imgs)
     imageio.mimsave(out_dir + '/optimization_anim_depth.gif', depth_imgs)
     imageio.mimsave(out_dir + '/optimization_anim_out.gif', out_imgs)
 
