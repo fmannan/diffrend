@@ -37,9 +37,7 @@ def project_surfels(surfel_pos_WC, camera):
     focal_length = camera['focal_length']
     x = focal_length * nonzero_divide(surfels_cc[..., 0], surfels_cc[..., 2])
     y = focal_length * nonzero_divide(surfels_cc[..., 1], surfels_cc[..., 2])
-    # Convert depth from camera plane (perpendicular) to depth from camera center position:
-    z = torch.sqrt((surfels_cc[..., 0] - x)**2 + (surfels_cc[..., 1] - y)**2 + surfels_cc[..., 2]**2)
-    # z = surfels_cc[..., 2] # FIXME which one to use?
+    z = surfels_cc[..., 2] # use depth perpendicular to cam plane so that it matches generated depth from NN
 
     return torch.stack((x, y, z), dim=-1)
 
