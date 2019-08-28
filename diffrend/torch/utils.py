@@ -175,7 +175,7 @@ def scatter_mean_dim0(x, idx):
     return nonzero_divide(out, freq)[...,:-1,:], mask[...,:-1,:]
 
 
-def scatter_weighted_blended_oit(x, z, center_dist_2, idx, sigma=0.5, z_scale=2, use_depth=True):
+def scatter_weighted_blended_oit(x, z, center_dist_2, idx, sigma=0.5, z_scale=2, use_depth=True, use_center_dist=True):
     """
     Similarly to `scatter_mean_dim0`, scatter elements in `x` to their destination `idx`.
     The difference is when more than one element maps to the same destination. Instead
@@ -189,6 +189,7 @@ def scatter_weighted_blended_oit(x, z, center_dist_2, idx, sigma=0.5, z_scale=2,
     :param sigma: Sigma of the Gaussian used to evaluate a weight (`alpha`) based on distance to the nearest pixel center
     :param z_scale: extinction coefficient for the Beer-Lambert law used to evaluate a weight based on depth (~= importance given to the depth)
     :param use_depth: whether to use depth `z` to weight the surfels `x`
+    :param use_center_dist: whether to use the distance to the nearest pixel center (`center_dist_2`) to weight the surfels `x`
     """
     new_shape = (x.size(0), x.size(1) + 1, x.size(2))
     x_padding = torch.zeros(x.size(0), 1, x.size(2), device=x.device, dtype=x.dtype)
@@ -203,10 +204,10 @@ def scatter_weighted_blended_oit(x, z, center_dist_2, idx, sigma=0.5, z_scale=2,
     idx_repeated = idx.repeat(1, 1, x.size(-1))
 
     # Use a gaussian that is a function of distance to the nearest pixel center for occlusion
-    alpha = 1 / (2 * np.pi * sigma**2) * torch.exp(-center_dist_2 / (2 * sigma**2)).unsqueeze(-1)
+    alpha = 1 / (2 * np.pi * sigma**2) * torch.exp(-center_dist_2 / (2 * sigma**2)).unsqueeze(-1) if use_center_dist else 1
 
     # Beer-Lambert Law for occlusion. Could use anything else that is monotonically decreasing
-    w = torch.exp(-z_scale * z).unsqueeze(-1) if use_depth else 1
+    w = torch.exp(-z_scale * z).unsqueeze(-1) if use_depth else torch.ones_like(z).unsqueeze(-1)
 
     C_times_w = torch.zeros(*new_shape, device=x.device, dtype=x.dtype).scatter_add_(-2, idx_repeated, x * alpha * w)
     alpha_times_w = torch.zeros(*new_shape[:-1], 1, device=x.device, dtype=x.dtype).scatter_add_(-2, idx, alpha * w)
