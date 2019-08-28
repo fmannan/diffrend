@@ -278,6 +278,7 @@ def randomly_rotate_cameras(camera, theta_range=[-np.pi / 2, np.pi / 2], phi_ran
     
     Modifies the camera object in place
     """
+
     # Sample a theta and phi to add to the current camera rotation
     theta_samples, phi_samples = uniform_sample_sphere_patch(get_data(camera['eye']).shape[0], theta_range, phi_range)
 
@@ -285,7 +286,7 @@ def randomly_rotate_cameras(camera, theta_range=[-np.pi / 2, np.pi / 2], phi_ran
     camera_eye = cartesian_to_spherical(get_data(camera['eye']) - get_data(camera['at']))
 
     # Rotate the camera
-    new_thetas = camera_eye[...,0] + theta_samples
+    new_thetas = camera_eye[...,0] - theta_samples # Flip the theta samples to allow users to enter a positive value for theta range
     new_phis = camera_eye[...,1] + phi_samples
 
     # Go back to cartesian coordinates and place the camera back relative to the 'lookat' position
