@@ -791,6 +791,28 @@ def grad_spatial2d(x, pad_type='reflect'):
 
     return torch.stack(nbhr_diff, dim=0)
 
+def grad_spatial2d_batched(x, pad_type='reflect'):
+    """
+    Args:
+        x: 4D Tensor [batch, H, W, C]
+
+    Returns:
+        5D Tensor [batch, 8, H, W, C]
+
+    """
+    x = pad2d(x, (1, 1, 1, 1), pad_type)
+    H, W = x.shape[-3:-1]
+    center = x[..., 1:-1, 1:-1, :]
+    nbhr_diff = []
+    delta = [-1, 0, 1]
+    for dy in delta:
+        for dx in delta:
+            if dx == 0 and dy == 0:
+                continue
+            nbhr_diff.append(x[..., 1 + dy:H + dy - 1, 1 + dx:W + dx - 1, :] - center)
+
+    return torch.stack(nbhr_diff, dim=-4)
+
 
 def spatial_3x3(pos, norm=1):
     nbhr_diff = grad_spatial2d(pos)
@@ -898,6 +920,45 @@ def estimate_surface_normals_plane_fit(pos, kernel_size):
     # (M^TM)^{-1}M^T -(z - z0)
     normal = MtMinv.matmul(Mt.matmul(-nbhr_diff[..., 2].transpose(1, 0)[:, :, np.newaxis])).squeeze()
     normal = torch.cat([normal, tch_var_f(np.ones((normal.shape[0], 1)))], dim=1).view(pos.shape)
+
+    return normalize(normal)
+
+def estimate_surface_normals_plane_fit_batched(pos):
+    """Performs constrained plane estimation with the requirements that
+    the splat position has to be on the plane and the normal has to be on
+    the positive hemisphere facing the camera (we also enforced the second
+    constraint when we generated normals). The setup is that the camera is
+    looking towards the -z axis (negative z) and the normals (nx, ny, nz)
+    need to have nz > 0.
+    So, for position (x0, y0, z0) and some neighbor (x, y, z),
+
+    nx (x - x0) + ny (y - y0) + nz (z - z0) = 0
+
+    Setting nz to be some positive constant c gives,
+    nx (x - x0) + ny (y - y0) = -c (z - z0)
+
+    The code solves for (nx, ny) and renormalizes to have unit length.
+
+    Args:
+        pos: [batch, H, W, 3]
+
+    Returns:
+        normals: [batch, H, W, 3]
+
+    """
+    nbhr_diff = normalize(grad_spatial2d_batched(pos), 1e-10) # [batch, 8, H, W, 3]
+    nbhr_diff = nbhr_diff.view(*nbhr_diff.shape[:-3], -1, 3) # [batch, 8, num_positions, 3]
+    M = nbhr_diff[..., :2].transpose(-2, -3) # [batch, num_positions, 8, 2]
+    Mt = M.transpose(-1, -2) # [batch, num_positions, 2, 8]
+    MtM = Mt.matmul(M) # [batch, num_positions, 2, 2]
+    ad_m_bc = MtM[..., 0, 0] * MtM[..., 1, 1] - MtM[..., 0, 1] * MtM[..., 1, 0] # [batch, num_positions]
+    # [[a, b], [c, d]] --> [[d, -b], [-c, a]]
+    MtM = MtM.index_select(-2, tch_var_l([1, 0])).transpose(-1, -2).index_select(-2, tch_var_l([1, 0])) * \
+          tch_var_f([[1, -1], [-1, 1]]) # flip the rows, transpose, flip again, then multiply by this matrix results in inverse
+    MtMinv = MtM / (ad_m_bc.unsqueeze(-1).unsqueeze(-1) + 1e-12) # [batch, num_positions, 2, 2]
+    # -(M^TM)^{-1}M^T (z - z0)
+    normal = MtMinv.matmul(Mt.matmul(-nbhr_diff[..., 2].transpose(-1, -2).unsqueeze(-1))).squeeze(-1) # [batch, num_positions, 2]
+    normal = torch.cat([normal, tch_var_f(np.ones((*normal.shape[:-1], 1)))], dim=-1).view(pos.shape)
 
     return normalize(normal)
 
