@@ -167,7 +167,7 @@ def blur(image, blur_size, kernel=None):
     return torch.nn.functional.conv2d(blurred, kernel.transpose(-1, -2))
 
 
-def projection_renderer_differentiable_fast(surfels, rgb, camera, rotated_image=None, blur_size=0.15, use_depth=True, use_center_dist=True, compute_new_depth=False, blur_rotated_image=True, detach_mask=False):
+def projection_renderer_differentiable_fast(surfels, rgb, camera, rotated_image=None, blur_size=0.15, use_depth=True, use_center_dist=True, compute_new_depth=False, blur_rotated_image=True, detach_mask=False, detach_mask2=False):
     """Project surfels given in world coordinate to the camera's projection plane
        in a way that is differentiable w.r.t depth. This is achieved by interpolating
        the surfel values using bilinear interpolation then blurring the output image using a Gaussian filter.
@@ -186,7 +186,8 @@ def projection_renderer_differentiable_fast(surfels, rgb, camera, rotated_image=
         compute_new_depth: Whether to compute and output the depth as seen by the new camera
         blur_rotated_image: Whether to blur the 'rotated_image' passed as argument before merging it with the output image.
                             Set to False if the rotated image is already blurred
-        detach_mask: Whether to detach the mask from the computation graph when computing the merged image
+        detach_mask: Whether to detach the mask m in I_top + (1 - m) * I_bottom
+        detach_mask2: Alternative, to `detach_mask`, Whether to detach the mask m in m * (I_top / m') + (1 - m) * I_bottom
 
     Returns:
         RGB image of dimensions [batch_size, H, W, 3] from projected surfels
@@ -255,8 +256,9 @@ def projection_renderer_differentiable_fast(surfels, rgb, camera, rotated_image=
         if blur_rotated_image:
             rotated_image = blur(rotated_image.permute(0, 3, 1, 2), blur_size).permute(0, 2, 3, 1)
         if detach_mask:
+            out = torch.where(soft_mask > 1, rgb_out / soft_mask_nonzero.detach(), rgb_out + rotated_image * (1 - soft_mask.detach()))
+        elif detach_mask2:
             soft_mask_detached = soft_mask.detach()
-            # rgb_out_normalized2 = torch.where(soft_mask > 0, rgb_out / soft_mask_nonzero.detach(), rgb_out)
             out = soft_mask_detached * rgb_out_normalized + (1 - soft_mask_detached) * rotated_image
         else:
             out = torch.where(soft_mask > 1, rgb_out / soft_mask_nonzero, rgb_out + rotated_image * (1 - soft_mask))
