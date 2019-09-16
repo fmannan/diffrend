@@ -167,7 +167,7 @@ def blur(image, blur_size, kernel=None):
     return torch.nn.functional.conv2d(blurred, kernel.transpose(-1, -2))
 
 
-def projection_renderer_differentiable_fast(surfels, rgb, camera, rotated_image=None, blur_size=0.15, use_depth=True, use_center_dist=True, compute_new_depth=False, blur_rotated_image=True, detach_mask=False, detach_mask2=False):
+def projection_renderer_differentiable_fast(surfels, rgb, camera, rotated_image=None, blur_size=0.15, use_depth=True, use_center_dist=True, compute_new_depth=False, blur_rotated_image=True, detach_mask=False, detach_mask2=False, detach_depth_merge=False):
     """Project surfels given in world coordinate to the camera's projection plane
        in a way that is differentiable w.r.t depth. This is achieved by interpolating
        the surfel values using bilinear interpolation then blurring the output image using a Gaussian filter.
@@ -218,7 +218,7 @@ def projection_renderer_differentiable_fast(surfels, rgb, camera, rotated_image=
         out = torch.where(mask, max_idx, out)
         return out
 
-    depth = px_coord[...,2]
+    depth = px_coord[...,2].detach() if detach_depth_merge else px_coord[...,2]
     center_dist_2 = (x**2 + y**2).squeeze(-1) # squared distance to the nearest pixel center
     rgb_out = scatter_weighted_blended_oit(rgb_in * (1 - x) * (1 - y), depth, center_dist_2, flat_px(px_idx + tch_var_l([0, 0])), use_depth=use_depth, use_center_dist=use_center_dist)
     rgb_out += scatter_weighted_blended_oit(rgb_in * (1 - x) * y, depth, center_dist_2, flat_px(px_idx + tch_var_l([0, 1])), use_depth=use_depth, use_center_dist=use_center_dist)
