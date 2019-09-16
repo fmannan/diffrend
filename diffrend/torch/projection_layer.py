@@ -361,8 +361,8 @@ def uniform_sample_sphere_patch(num_samples, theta_range=[0, np.pi], phi_range=[
     pts_2d = np.random.rand(num_samples, 2)
     s_range = 1 - np.cos(np.array(theta_range) / 2) ** 2
     t_range = np.array(phi_range) / (2 * np.pi)
-    s = min(s_range) + pts_2d[:, 0] * (max(s_range) - min(s_range))
-    t = min(t_range) + pts_2d[:, 1] * (max(t_range) - min(t_range))
+    s = s_range.min(-1) + pts_2d[:, 0] * (s_range.max(-1) - s_range.min(-1))
+    t = t_range.min(-1) + pts_2d[:, 1] * (t_range.max(-1) - t_range.min(-1))
     # theta is angle from the z-axis
     theta = 2 * np.arccos(np.sqrt(1 - s))
     phi = 2 * np.pi * t
