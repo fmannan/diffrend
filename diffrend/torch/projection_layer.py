@@ -278,6 +278,24 @@ def projection_renderer_differentiable_fast(surfels, rgb, camera, rotated_image=
     return out, proj_out
 
 
+def rotate_cameras(camera, theta=0, phi=0):
+    # Get the current camera rotation (relative to the 'lookat' position)
+    camera_eye = cartesian_to_spherical(get_data(camera['eye']) - get_data(camera['at']))
+
+    # Rotate the camera
+    new_thetas = camera_eye[...,0] + theta
+    new_phis = camera_eye[...,1] + phi
+
+    # Go back to cartesian coordinates and place the camera back relative to the 'lookat' position
+    camera_eye = spherical_to_cartesian(new_thetas, new_phis, radius=np.expand_dims(camera_eye[...,2], -1))
+
+    if camera['at'].shape[-1] == 4:
+        zeros = np.zeros((camera_eye.shape[0], 1))
+        camera_eye = np.concatenate((camera_eye, zeros), axis=-1)
+
+    camera['eye'] = tch_var_f(camera_eye) + camera['at']
+
+
 def randomly_rotate_cameras(camera, theta_range=[-np.pi / 2, np.pi / 2], phi_range=[-np.pi, np.pi]):
     """
     Given a batch of camera positions, rotate the 'eye' properties around the 'lookat' position
@@ -290,21 +308,8 @@ def randomly_rotate_cameras(camera, theta_range=[-np.pi / 2, np.pi / 2], phi_ran
     # Sample a theta and phi to add to the current camera rotation
     theta_samples, phi_samples = uniform_sample_sphere_patch(get_data(camera['eye']).shape[0], theta_range, phi_range)
 
-    # Get the current camera rotation (relative to the 'lookat' position)
-    camera_eye = cartesian_to_spherical(get_data(camera['eye']) - get_data(camera['at']))
-
-    # Rotate the camera
-    new_thetas = camera_eye[...,0] - theta_samples # Flip the theta samples to allow users to enter a positive value for theta range
-    new_phis = camera_eye[...,1] + phi_samples
-
-    # Go back to cartesian coordinates and place the camera back relative to the 'lookat' position
-    camera_eye = spherical_to_cartesian(new_thetas, new_phis, radius=np.expand_dims(camera_eye[...,2], -1))
-
-    if camera['at'].shape[-1] == 4:
-        zeros = np.zeros((camera_eye.shape[0], 1))
-        camera_eye = np.concatenate((camera_eye, zeros), axis=-1)
-
-    camera['eye'] = tch_var_f(camera_eye) + camera['at']
+    # Flip the theta samples to allow users to enter a positive value for theta range
+    rotate_cameras(camera, theta=-theta_samples, phi=phi_samples)
 
 
 def uniformly_rotate_cameras(camera, theta_range=[-np.pi / 2, np.pi / 2], phi_range=[-np.pi, np.pi]):
@@ -332,21 +337,7 @@ def uniformly_rotate_cameras(camera, theta_range=[-np.pi / 2, np.pi / 2], phi_ra
         phi_samples = np.linspace(*phi_range, num_cameras)
         theta_samples = np.zeros(phi_samples.shape)
 
-    # Get the current camera rotation (relative to the 'lookat' position)
-    camera_eye = cartesian_to_spherical(get_data(camera['eye']) - get_data(camera['at']))
-
-    # Rotate the camera
-    new_thetas = camera_eye[...,0] + theta_samples
-    new_phis = camera_eye[...,1] + phi_samples
-
-    # Go back to cartesian coordinates and place the camera back relative to the 'lookat' position
-    camera_eye = spherical_to_cartesian(new_thetas, new_phis, radius=np.expand_dims(camera_eye[...,2], -1))
-
-    if camera['at'].shape[-1] == 4:
-        zeros = np.zeros((camera_eye.shape[0], 1))
-        camera_eye = np.concatenate((camera_eye, zeros), axis=-1)
-
-    camera['eye'] = tch_var_f(camera_eye) + camera['at']
+    rotate_cameras(camera, theta=theta_samples, phi=phi_samples)
 
 
 def uniform_sample_sphere_patch(num_samples, theta_range=[0, np.pi], phi_range=[0, 2 * np.pi]):
