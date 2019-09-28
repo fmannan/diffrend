@@ -278,6 +278,53 @@ def projection_renderer_differentiable_fast(surfels, rgb, camera, rotated_image=
     return out, proj_out
 
 
+def projection_reverse_renderer(rgb, in_pos_wc, out_pos_wc, camera1, camera2, rotated_image=None, compute_new_depth=False, depth_epsilon=1e-1):
+    """
+    Compute the rotated image in the opposite direction: take the surfel positions of the output image (out_pos_wc),
+    and use them to find the corresponding u,v positions on the input image (rgb). Sample these positions using
+    bilinear interpolation.
+    """
+    viewport = make_list2np(camera1['viewport'])
+    W = int(viewport[2] - viewport[0])
+    H = int(viewport[3] - viewport[1])
+    _, px_coord = project_image_coordinates(out_pos_wc, camera1)
+
+    px_coord = px_coord.view(*rgb.size()[:-1], 3)
+    normalized_px_coord = px_coord[...,:2] / torch.tensor([W, H], dtype=torch.float, device=px_coord.device) * 2 - 1
+    out = torch.nn.functional.grid_sample(rgb.permute(0, 3, 1, 2), normalized_px_coord).permute(0, 2, 3, 1)
+
+    # TODO this is a hard mask, should we make it soft by using the bilinear weights (at the edges only or everywhere?)
+    # |- An alternative would be to try Dropout on the mask
+    # NOTE: use 0.5 to account for bilinear interpolation
+    mask = (px_coord[...,1] < 0.5) | (px_coord[...,0] < 0.5) | (px_coord[...,1] >= H - 0.5) | (px_coord[...,0] >= W - 0.5)
+    mask = 1 - mask.view(*rgb.size()[:-1], 1).float()
+
+    # Use depth to mask out pixels that end up on the same location
+    # NOTE I can't explan exactly why the following way of masking out overlapping depth works...
+    depth = px_coord[...,2].unsqueeze(-1)
+    _, px_coord_out = project_image_coordinates(in_pos_wc, camera2)
+    px_coord_out = px_coord_out.view(*rgb.size()[:-1], 3)
+    normalized_px_coord_out = px_coord_out[...,:2] / torch.tensor([W, H], dtype=torch.float, device=px_coord_out.device) * 2 - 1
+    depth_sampled_in = torch.nn.functional.grid_sample(depth.permute(0, 3, 1, 2), normalized_px_coord_out)
+    depth_sampled_out = torch.nn.functional.grid_sample(depth_sampled_in, normalized_px_coord).permute(0, 2, 3, 1)
+    mask = mask * (depth <= depth_sampled_out + depth_epsilon).float()
+
+    proj_out = {
+        'mask': mask,
+        'image1': out
+    }
+
+    if rotated_image is not None:
+        # mask = mask.detach() if detach_mask else mask # NOTE: Right now, it doesnt even matter since mask is non-differentiable
+        out = mask * out + (1 - mask) * rotated_image
+
+    if compute_new_depth:
+        depth2 = px_coord_out[...,2].unsqueeze(-1)
+        proj_out['depth'] = torch.nn.functional.grid_sample(depth2.permute(0, 3, 1, 2), normalized_px_coord).permute(0, 2, 3, 1)
+
+    return out, proj_out
+
+
 def rotate_cameras(camera, theta=0, phi=0):
     # Get the current camera rotation (relative to the 'lookat' position)
     camera_eye = cartesian_to_spherical(get_data(camera['eye']) - get_data(camera['at']))
@@ -482,6 +529,74 @@ def test_visual_render(scene, batch_size):
     im, _ = projection_renderer_differentiable_fast(pos_wc, image, camera, rotated_image, blur_size=1e-10)
     save_image(im.clone().permute(0, 3, 1, 2), 'test-fast-rotated-reprojected-merged.png', nrow=2)
 
+
+def test_visual_reverse_renderer(scene, batch_size):
+    """
+    Test that outputs visual images for the user to compare
+    """
+    from torchvision.utils import save_image
+    import time
+
+    res = render_scene(scene)
+
+    scene = make_torch_var(load_scene(scene))
+
+    camera = scene['camera']
+    camera['eye'] = camera['eye'].repeat(batch_size, 1)
+    camera['at'] = camera['at'].repeat(batch_size, 1)
+    camera['up'] = camera['up'].repeat(batch_size, 1)
+    original_camera = copy.deepcopy(camera)
+
+    pos_wc = res['pos'].reshape(-1, res['pos'].shape[-1]).repeat(batch_size, 1, 1)
+
+    depth = res['depth'].repeat(batch_size, 1, 1).reshape(batch_size, -1)
+    # pos_cc = z_to_pcl_CC_batched(-depth, scene['camera']) # NOTE: z = -depth
+    # pos_wc = cam_to_world_batched(pos_cc, None, scene['camera'])['pos']
+
+    randomly_rotate_cameras(camera, theta_range=[-np.pi / 16, np.pi / 16], phi_range=[-np.pi / 8, np.pi / 8])
+
+    image = res['image'].repeat(batch_size, 1, 1, 1)
+    save_image(image.clone().permute(0, 3, 1, 2), 'test-original.png', nrow=2)
+    save_image(depth.view(*image.size()[:-1], 1).clone().permute(0, 3, 1, 2), 'test-original-depth.png', nrow=2, normalize=True)
+
+    # im, _ = projection_renderer(pos_wc, image, camera)
+    # save_image(im.clone().permute(0, 3, 1, 2), 'test-rotated-reprojected-nonblurred.png', nrow=2)
+
+    # If we want to merge with another already rotated image
+    # NOTE: only works on batch 1 because `render` is not batched
+    rotated_scene = copy.deepcopy(scene)
+    rotated_scene['camera'] = copy.deepcopy(camera)
+    rotated_scene['camera']['eye'] = rotated_scene['camera']['eye'][0]
+    rotated_scene['camera']['at'] = rotated_scene['camera']['at'][0]
+    rotated_scene['camera']['up'] = rotated_scene['camera']['up'][0]
+    res_rotated = render(rotated_scene)
+    rotated_image = res_rotated['image'].repeat(batch_size, 1, 1, 1)
+
+    save_image(rotated_image.clone().permute(0, 3, 1, 2), 'test-original-rotated.png', nrow=2)
+
+    out_pos_wc = res_rotated['pos'].reshape(-1, res['pos'].shape[-1]).repeat(batch_size, 1, 1)
+
+    torch.cuda.synchronize()
+    st = time.time()
+    im, proj_out = projection_reverse_renderer(image, pos_wc, out_pos_wc, original_camera, camera, compute_new_depth=True)
+    torch.cuda.synchronize()
+    print(f"t1: {time.time() - st}")
+    st = time.time()
+    projection_renderer_differentiable_fast(pos_wc, image, camera, blur_size=1e-10, compute_new_depth=True)
+    torch.cuda.synchronize()
+    print(f"t2: {time.time() - st}")
+
+    save_image(im.clone().permute(0, 3, 1, 2), 'test-fast-rotated-reprojected-unmerged.png', nrow=2)
+    save_image(proj_out['mask'].clone().permute(0, 3, 1, 2), 'test-fast-soft-mask.png', nrow=2, normalize=True)
+    save_image(proj_out['depth'].clone().permute(0, 3, 1, 2), 'test-fast-depth.png', nrow=2, normalize=True)
+
+    for key in proj_out.keys():
+        proj_out[key] = proj_out[key].cpu().numpy()
+    np.savez('test-fast-rotation-reprojection.npz', **proj_out,
+             image=im.cpu().numpy(), image_in=image.cpu().numpy(), depth_in=depth.view(*image.size()[:-1], 1).cpu().numpy())
+
+    im, _ = projection_reverse_renderer(image, pos_wc, out_pos_wc, original_camera, camera, rotated_image)
+    save_image(im.clone().permute(0, 3, 1, 2), 'test-fast-rotated-reprojected-merged.png', nrow=2)
 
 def test_transformation_consistency(scene, batch_size):
     print('test_transformation_consistency')
@@ -779,7 +894,8 @@ def main():
     # test_raster_coordinates(scene, batch_size)
     # test_transformation_consistency(scene, batch_size)
     # test_optimization(scene, 1)
-    test_depth_optimization(scene, 1)
+    # test_depth_optimization(scene, 1)
+    test_visual_reverse_renderer(scene, 1)
 
 
 if __name__ == '__main__':
