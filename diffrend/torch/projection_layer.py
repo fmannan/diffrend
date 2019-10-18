@@ -278,7 +278,7 @@ def projection_renderer_differentiable_fast(surfels, rgb, camera, rotated_image=
     return out, proj_out
 
 
-def projection_reverse_renderer(rgb, in_pos_wc, out_pos_wc, camera1, camera2, rotated_image=None, compute_new_depth=False, depth_epsilon=1e-1):
+def projection_reverse_renderer(rgb, in_pos_wc, out_pos_wc, camera1, camera2, rotated_image=None, compute_new_depth=False, depth_epsilon=1e-1, mask_dropout=0):
     """
     Compute the rotated image in the opposite direction: take the surfel positions of the output image (out_pos_wc),
     and use them to find the corresponding u,v positions on the input image (rgb). Sample these positions using
@@ -300,14 +300,22 @@ def projection_reverse_renderer(rgb, in_pos_wc, out_pos_wc, camera1, camera2, ro
     mask = 1 - mask.view(*rgb.size()[:-1], 1).float()
 
     # Use depth to mask out pixels that end up on the same location
-    # NOTE I can't explan exactly why the following way of masking out overlapping depth works...
-    depth = px_coord[...,2].unsqueeze(-1)
-    _, px_coord_out = project_image_coordinates(in_pos_wc, camera2)
+    # This process could be done by averaging the depth of neighboring pixels, but instead uses grid_sample to interpolate (twice) which turns out to be more efficient
+    depth = px_coord[...,2].unsqueeze(-1) # (1) depth from cam1, ordered as cam2 pixels
+    _, px_coord_out = project_image_coordinates(in_pos_wc, camera2) # project the points from the cam1 (top) image to the bottom image space
     px_coord_out = px_coord_out.view(*rgb.size()[:-1], 3)
     normalized_px_coord_out = px_coord_out[...,:2] / torch.tensor([W, H], dtype=torch.float, device=px_coord_out.device) * 2 - 1
+    # sample the depth from cam1 (ordered as cam2 pixels) using the points from the cam1 (top) image
+    # we get depth from cam1 (ordered as cam1 pixels)
     depth_sampled_in = torch.nn.functional.grid_sample(depth.permute(0, 3, 1, 2), normalized_px_coord_out)
-    depth_sampled_out = torch.nn.functional.grid_sample(depth_sampled_in, normalized_px_coord).permute(0, 2, 3, 1)
+    # we then need to flip the whole thing to get a mask in cam2 space (ordered as cam2 pixels)
+    # sample the depth from cam1 (ordered as cam1 pixels) using the points from the cam2 (bottom) image
+    # we get depth from cam1 (ordered as cam2 pixels)
+    depth_sampled_out = torch.nn.functional.grid_sample(depth_sampled_in, normalized_px_coord).permute(0, 2, 3, 1) # (2)
+    # comparing the two depths images from cam1 (ordered as cam2 pixels) ((1) and (2)), we can get a mask
     mask = mask * (depth <= depth_sampled_out + depth_epsilon).float()
+    if mask_dropout > 0:
+        mask = torch.nn.functional.dropout(mask, mask_dropout, training=True)
 
     proj_out = {
         'mask': mask,
